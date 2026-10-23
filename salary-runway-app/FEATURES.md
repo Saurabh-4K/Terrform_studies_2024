@@ -19,8 +19,9 @@ Everything the app can do today, screen by screen, with the rules it follows. Fo
 12. [Grow tab: safety nets and saving](#12-grow-tab-safety-nets-and-saving)
 13. [Spending insights](#13-spending-insights)
 14. [Android app extras](#14-android-app-extras)
-15. [Regulatory design](#15-regulatory-design)
-16. [Current limits](#16-current-limits)
+15. [Design and behaviour principles](#15-design-and-behaviour-principles)
+16. [Regulatory design](#16-regulatory-design)
+17. [Current limits](#17-current-limits)
 
 ---
 
@@ -111,6 +112,16 @@ A three-part meter, **Green · Careful · Red**, with a headline that says what 
 - **Next salary:** days to payday.
 - **Flexible spending:** spent against the budget, including money received, since the balance check if there is one.
 
+### Next payday preview
+- **"Effective payday: ₹50,742"**: your usual pay minus what's **already borrowed against it**:
+  - this month's shortfall at your current pace (it ends up borrowed)
+  - card bills from before you added the card that fall due next month
+  - card EMIs and carried card balances starting next month
+- This month's card spending is **not** subtracted again, because it was already counted when it happened.
+- The line under it is grey up to 20% borrowed, amber from 20% to 50%, and red above 50%. When nothing is borrowed: "Nothing borrowed against your next salary. Keep it that way."
+- If borrowing uses up the whole salary: **"Next paycheck fully used up: ₹0 in hand"**, with a red banner.
+- It also shows what's left after fixed payments, loan minimums and bills.
+
 ### Cards on the Runway tab (when they apply)
 - Payday check-in
 - Balance question ("How much money is in your account this morning?"), once per cycle, or *Update* at any time
@@ -127,7 +138,10 @@ A three-part meter, **Green · Careful · Red**, with a headline that says what 
 
 ## 5. Spend tab: recording money in and out
 
-- **Add a payment:** amount, category, date, where or what, and **Paid from** (bank account / UPI / debit card, or one of your credit cards).
+- **Add a payment:** amount, category, date, where or what, and **Paid from**:
+  - *Bank account / UPI / debit card (paid from my money)*
+  - *HDFC card ••1234 (borrows from next paycheck @ 42%)* for cards at 15%+, or *(credit card @ X%)* for low-rate cards
+  - Choosing a card shows a red line underneath, for example: *Borrowed money at 42% a year. Counted as spent today; it's on the bill due 25 Nov.*
 - **Money in:** amount, category (Money received, Money returned, From family, Refund, Cashback, Side income, Gift), date and from whom.
 - **Needs your check:** payments recorded from SMS that you haven't confirmed. Change the category or Paid from, then *Looks right* or *Not a payment*. Highlighted until done.
 - **Bills to pay:** bills that vary that are due, with *Paid*, plus bill payments from SMS to link to the right bill.
@@ -156,13 +170,16 @@ For a refund, money from home, money returned, cashback, side income or extra pa
   - **Add to emergency fund:** the fund before and after, against its target
   - **Pay off the costliest loan:** interest saved and how many months sooner you're debt-free
   - **Set aside to invest:** with a reminder to talk to a SEBI-registered adviser
-- **Suggestion order:** cover this month if money would run out → one month of emergency fund → loans at 15%+ → full emergency fund → invest. It always explains why, and the choice is yours.
+- **Suggestion order (safety first):** cover this month if money would run out → emergency fund until it covers **30 Days of Freedom** → loans at 15%+ → full emergency fund → invest. An empty fund comes before debt, because without it the next surprise goes on a card. It always explains why, and the choice is yours (one tap).
+- With a loan at 15%+, *Keep it for this month* shows the badge **Extends this month's budget, but delays your debt-free date**.
+- Moving money to safety gives a light vibration and a green message with true numbers, e.g. *Nice move! +2 days of freedom (8 now)* or *Saves about ₹24 in interest a year*.
 - Until you choose, it counts as this month's money. You can change the choice later, and the old effect is undone.
 
 ## 8. Daily savings: "you saved ₹58 today"
 
 - When a day ends under its amount, the app asks (the next morning, or after 8 PM the same day): *"You spent ₹142 of your ₹200. Saving that much every day adds up to ₹1,740 a month."*
-- Choices: emergency fund, pay off the costliest loan (with interest saved a year), set aside to invest, or keep it for this month. One is suggested.
+- Choices: emergency fund, pay off the costliest loan (with interest saved a year), set aside to invest, or keep it for this month. One is suggested, in the same safety-first order; when you're not in the green, keeping it is suggested.
+- Moving it gives a light vibration and a green message with true numbers: *Nice move! Saves about ₹24 in interest a year. Do this daily and it's ₹1,740 a month.*
 - Moving the money takes it out of this month's spending money **without lowering the days ahead**.
 - The Grow tab shows the total saved from daily leftovers this month. Deleting a move undoes it.
 - **Streaks:** days in a row within the daily amount, and card-free days.
@@ -195,6 +212,7 @@ For a refund, money from home, money returned, cashback, side income or extra pa
 
 ## 11. Debts tab: loans and payoff plans
 
+- **Interest leak banner** at the top: **You are losing ₹151/day to bank interest**, with the monthly total and the biggest leaks. It's red with any debt at 15%+, amber otherwise. Only money that actually costs interest counts: loans (including card EMIs and carried balances) and card bills past their due date. A card bill paid in full on time costs nothing, and 0% (no-cost) EMIs are left out.
 - **Credit cards** section (above).
 - **Loans:** name, balance, interest rate, monthly minimum and due day. Card EMIs and carried card balances land here too.
 - Monthly **interest cost** of each loan, highlighted at 15%+.
@@ -208,6 +226,7 @@ For a refund, money from home, money returned, cashback, side income or extra pa
 
 - **This month's set-aside:** what to move aside this cycle, with *I've moved this money aside* to add it to your funds.
 - **Saved from daily leftovers** this month.
+- **Days of Freedom:** the emergency fund as time. *6 Days of Freedom 🛡️* means it covers your basics (fixed payments, loan minimums, bills that vary, groceries and health) for that long, at your own daily cost. Badges: **Unprotected** (0 days), **Starter shield** (1–14), **Incident proof** (15–89), **Unshakeable** (90+). At 0 days: *Every ₹1,253 saved buys one day of complete financial security.* Until basics are set up: *Add your fixed payments and budgets to see your Days of Freedom.*
 - **Emergency fund:** amount saved, target (3 or 6 months of needs) and progress. A first milestone of one month of needs, then the full target, with how long each takes.
 - **Yearly costs:** progress for each.
 - **Something unexpected happened? (Emergency mode)**
@@ -232,19 +251,27 @@ Built from your last three salary cycles, with every point in rupees:
 ## 14. Android app extras
 
 - **Home-screen widget "Spend today"** (3×1):
-  - Shows what's left to spend today, or "₹X over".
+  - Shows what's left to spend today. When you go over: **Over by ₹147 · Tomorrow's safe spend drops to ₹135**, in amber. This updates even for expenses added from the widget or card SMS while the app is closed.
   - **+ Add** opens a small window over the home screen (amount, category, note) to record an expense **without opening the app**. The widget's amount drops straight away, and the app saves the expense next time it opens.
   - After midnight it shows "Open app" until the app works out the new day.
 - **Notifications for new bank SMS** (turn on in the Spend tab; asks for SMS and notification permission):
-  - A payment shows *"₹450 paid to Swiggy · Tap to check the category"*. On a card: *"₹750 on HDFC card to Amazon · Borrowed money: tap to check it"*.
+  - A payment shows *₹450 paid to Swiggy · Tap to check the category*. On a card: *₹750 paid via HDFC card · Borrowed money: tap to verify the category*.
   - Tapping opens **Check this payment**: the SMS text, category, **Paid from**, a note, and *Save* or *Not a payment*.
   - Payments you don't check are recorded anyway and wait under **Needs your check**.
-  - **Salary SMS:** "Salary ₹57,500 credited · Tap to record this month's pay".
+  - **Salary SMS:** *Payday! ₹57,500 credited · Tap to review your monthly plan*.
   - **Card statement:** "HDFC card bill: ₹12,500 · Tap to plan the payment".
   - Card bill payments are recorded quietly.
 - **Updates:** a new APK every **Sunday morning** (India time), only if something changed. It installs over the old one and keeps your data.
 
-## 15. Regulatory design
+## 15. Design and behaviour principles
+
+- **Friction only on harmful choices:** borrowing on a card gets red labels and warnings; good choices (saving, paying debt) are one tap.
+- **Smart defaults, never forced:** a *Suggested* badge, always with the reason.
+- **True numbers only:** rewards and warnings never exaggerate.
+- **Colours:** freedom green `#0D7A5D` / `#2ECC71` (dark), debt red `#D32F2F` / `#F26657`, caution amber `#E67E22` for fills and `#9A5400` / `#F39C12` for text, neutral `#616161` / `#BDC3C7`, card warning background `#FFF5F5` / `#2C1E1E`. All text colours meet readability guidelines.
+- **Fast and offline:** all of this is worked out on the phone from data the app already has, in well under a millisecond per calculation, with no new data stored.
+
+## 16. Regulatory design
 
 - The app does budgeting, debt planning and savings set-asides only.
 - It **never suggests investment products, funds, banks, advisers or risk levels**. It points to SEBI-registered advisers, at the user's own risk.
@@ -253,7 +280,7 @@ Built from your last three salary cycles, with every point in rupees:
 
 *Have a fintech lawyer review this before a public launch.*
 
-## 16. Current limits
+## 17. Current limits
 
 - Loan balances don't go down automatically; update them from each statement. Card bills are tracked automatically.
 - Fixed payments are assumed to be paid on their due date.
