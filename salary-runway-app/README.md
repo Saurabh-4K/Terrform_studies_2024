@@ -47,11 +47,11 @@ npm run android:apk   # APK at android/app/build/outputs/apk/debug/app-debug.apk
 
 | Tab | What it does |
 |---|---|
-| **Runway** | Graph of your balance through the salary cycle, with two projections: *at this pace* and *if you keep to budget*. Shows the date money runs out, a daily "safe to spend" amount, how much is left to spend in each budget, upcoming bills and insights from your spending history. |
-| **Spend** | Add payments by hand, or import bank/UPI SMS (read from the inbox in the Android app, pasted in the browser). Payments are categorised automatically (Swiggy goes to Food, Uber to Travel). When you correct a category, the app remembers it for that shop. |
-| **Plan** | Salary and payday, fixed payments, yearly costs (festivals, insurance), monthly set-asides and flexible budgets. **Set-asides and budgets are worked out automatically** from what is left of the salary; edit any amount and the automatic ones adjust to fit. |
-| **Debts** | Loans and cards with interest rates. Shows the monthly interest each one costs, and compares *minimums only*, *highest interest first* and *smallest balance first*: debt-free date, total interest and savings. |
-| **Grow** | Monthly set-aside check-in, emergency fund progress, yearly costs, **emergency mode** (medical bill, car repair, family function, and so on), Grow budget, and short lessons. |
+| **Runway** | Payday check-in, the **green / careful / red zone**, the balance graph (with the red band for bills and basics), *left to spend today*, "you saved ₹58" prompts, card bill reminders, what's left in each budget, coming bills and insights from your spending. |
+| **Spend** | Payments and money received (by hand, from bank SMS, or from the home-screen widget), **Needs your check** for SMS payments, bills to pay, the "what should this money do?" card, and *Paid from* (account or card). Categories are learned per shop. |
+| **Plan** | Salary, payday and **pay over the year**, fixed payments, **bills that vary**, yearly costs, monthly set-asides and flexible budgets (worked out automatically; edit any amount and the rest adjust), and your data (backup, restore, SMS cleanup). |
+| **Debts** | **Credit cards** (bill, due date, limit used, pay full / minimum / part / EMI with real costs) and **loans** with a payoff plan: *minimums only*, *highest interest first*, *smallest balance first*. |
+| **Grow** | Savings from daily leftovers, monthly set-aside check-in, emergency fund, yearly costs, **emergency mode**, money set aside to invest (with a pointer to SEBI-registered advisers), and short lessons. |
 
 ### Credit cards: staying out of the card trap
 Card spending doesn't leave your bank account today, so it makes a month look better than it is, and the bill lands on next month's salary. The app closes that gap.
@@ -129,14 +129,27 @@ The prototype is deliberately limited to **budgeting and debt planning**:
 
 ```
 index.html        page shell
-capacitor.config.json, android/   Android app (Capacitor) and the SMS plugin
-scripts/build-www.js              prepares the web files for the Android app
 styles.css        styles (light and dark themes)
-core.js           all calculations: cycles, runway, insights, debt payoff, emergency plan, SMS parser
+core.js           all calculations: cycles, runway, zones, pay, bills, cards, debts, insights, SMS reader
 demo.js           example data
 app.js            user interface
 tests/            unit tests for core.js
+scripts/build-www.js              prepares the web files for the Android app
+capacitor.config.json             Android app settings
+android/app/src/main/java/com/salaryrunway/app/
+  MainActivity.java               starts the app and registers the plugins below
+  SmsInboxPlugin.java             reads the SMS inbox; turns new-SMS alerts on and off
+  SmsReceiver.java                catches bank SMS as they arrive and shows the notification
+  SmsParser.java                  reads one SMS (a copy of parseSms() in core.js; keep in step)
+  SmsAlertStore.java              SMS caught while the app is closed, waiting for the app
+  SmsConfirmActivity.java         the "Check this payment" pop-up
+  SpendWidgetProvider.java        the "Spend today" home-screen widget
+  QuickAddActivity.java           the widget's "Add an expense" window
+  SpendWidgetPlugin.java, WidgetStore.java   widget data shared with the app
+.github/workflows/salary-runway-android.yml  weekly APK build (Sunday morning)
 ```
+
+The app ID `com.salaryrunway.app` and the signing key must never change: either change makes Android treat it as a different app, and installing it wouldn't keep anyone's data. The app's visible name and icon can change freely.
 
 Run the tests (Node 18+):
 
@@ -146,11 +159,15 @@ npm test
 
 ## Roadmap to a phone app
 
-1. ~~Android app with automatic bank SMS reading~~ (done; Google Play would review the SMS permission before listing).
+Done: Android app, SMS reading and notifications, home-screen widget, zones, bills that vary, credit cards, payday check-in.
+
+Next:
+1. A new name and icon (in progress; the app ID stays the same).
 2. Encrypted on-device storage, app lock (fingerprint/PIN), and optional encrypted backup.
-3. Parsing rules for more banks' SMS formats; learn from corrections.
-4. Reminders before bills and EMIs are due.
-5. Later, with a licensed partner: Account Aggregator for iPhone users and more accurate data.
+3. More banks' SMS formats, from real samples.
+4. Phone notifications before bills, EMIs and card due dates (today they show inside the app).
+5. Before a Play Store release: Google's review of the SMS permissions, and a private signing key kept out of the repo.
+6. Later, with a licensed partner: Account Aggregator for iPhone users and more accurate data.
 
 ## Known limits of the prototype
 
