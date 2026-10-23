@@ -85,6 +85,23 @@ test('safe to spend never exceeds what the account can cover', () => {
   assert.equal(Math.round(r.dailyAllowance), 200); // 1,400 over 7 days
 });
 
+test('left to spend today goes down as you spend, and tomorrow adjusts', () => {
+  const s = baseState({ settings: { salary: 50000, payday: 1 } });
+  s.balanceCheck = { date: '2026-10-25', amount: 1400 };
+  let r = Core.projectRunway(s, '2026-10-25');
+  assert.equal(Math.round(r.leftToday), 200);
+  s.transactions.push({ id: 'x', date: '2026-10-25', amount: 147, category: 'Food', note: '' });
+  r = Core.projectRunway(s, '2026-10-25');
+  assert.equal(Math.round(r.dailyAllowance), 200); // today's amount stays fixed
+  assert.equal(Math.round(r.leftToday), 53);
+  s.transactions.push({ id: 'y', date: '2026-10-25', amount: 253, category: 'Food', note: '' });
+  r = Core.projectRunway(s, '2026-10-25');
+  assert.equal(r.leftToday, 0);
+  assert.equal(Math.round(r.overToday), 200);
+  // 1,000 left over the 6 remaining days.
+  assert.equal(Math.round(r.tomorrowAllowance), 167);
+});
+
 test('a balance check from an earlier cycle is ignored', () => {
   const s = baseState();
   s.balanceCheck = { date: '2026-09-20', amount: 100 };

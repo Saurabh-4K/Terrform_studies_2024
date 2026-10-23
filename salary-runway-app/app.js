@@ -244,7 +244,10 @@
       (askBalance || ui.balanceOpen ? balanceForm(askBalance && !ui.balanceOpen) : '') +
       (adj ? '<div class="callout warn"><b>Emergency plan active until ' + fmtDate(adj.until, true) + '.</b><span class="hint">Flexible budgets are ' + adj.flexCutPct + '% lower' + (adj.pauseInvest ? ', the Grow budget is paused' : '') + (adj.pauseDebtExtra ? ' and extra debt payments are paused' : '') + '.</span></div>' : '') +
       '<section class="tiles">' +
-      tile('Safe to spend today', inr(r.dailyAllowance), r.spentToday ? 'Spent today: ' + inr(r.spentToday) : 'From your flexible budget', true) +
+      tile('Left to spend today', inr(r.leftToday),
+        r.overToday > 0
+          ? inr(r.overToday) + ' over today’s ' + inr(r.dailyAllowance) + '. Tomorrow: ' + inr(r.tomorrowAllowance)
+          : r.spentToday ? 'Spent ' + inr(r.spentToday) + ' of ' + inr(r.dailyAllowance) + ' today' : 'Today’s share of your budget', true) +
       tile('Balance now', inr(r.balanceToday),
         (r.anchor ? 'From your balance on ' + fmtDate(r.anchor.date) : 'Worked out from your plan') +
         ' · <button class="link" data-action="balance-open">Update</button>') +

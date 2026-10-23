@@ -221,6 +221,12 @@
       ? dailyBudget
       : Math.max(0, plan.flexTotal - (paceSpend - spentToday)) / (remainingDays + 1);
     const dailyAllowance = Math.min(byMoney, byBudget);
+    // What is left of today's amount, and tomorrow's amount once today is counted.
+    const leftToday = Math.max(0, dailyAllowance - spentToday);
+    const overToday = Math.max(0, spentToday - dailyAllowance);
+    const tomorrowAllowance = remainingDays > 0
+      ? Math.min(Math.max(0, bal - billsAhead) / remainingDays, anchor ? dailyBudget : planRate)
+      : 0;
 
     const firstBelowZero = (key) => {
       for (const p of points) {
@@ -233,7 +239,7 @@
     const last = points[points.length - 1];
     return {
       cycle, plan, events, points, idxToday, remainingDays, anchor, anchorIdx: anchor ? aIdx : null,
-      spentToDate, spentToday, flexLeft, paceRate, planRate, dailyAllowance,
+      spentToDate, spentToday, flexLeft, paceRate, planRate, dailyAllowance, leftToday, overToday, tomorrowAllowance,
       balanceToday: points[idxToday].actual,
       zeroPace: firstBelowZero('pace'),
       zeroPlan: firstBelowZero('plan'),
