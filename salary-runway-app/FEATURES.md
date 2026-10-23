@@ -143,7 +143,9 @@ A three-part meter, **Green · Careful · Red**, with a headline that says what 
   - *HDFC card ••1234 (borrows from next paycheck @ 42%)* for cards at 15%+, or *(credit card @ X%)* for low-rate cards
   - Choosing a card shows a red line underneath, for example: *Borrowed money at 42% a year. Counted as spent today; it's on the bill due 25 Nov.*
 - **Money in:** amount, category (Money received, Money returned, From family, Refund, Cashback, Side income, Gift), date and from whom.
-- **Needs your check:** payments recorded from SMS that you haven't confirmed. Change the category or Paid from, then *Looks right* or *Not a payment*. Highlighted until done.
+- **Saved:** money you moved to savings (Jar, a recurring deposit, a SIP, gold). It leaves your account but isn't spending, so it lowers the balance without eating into budgets. *Counts as* emergency fund, savings / investing, or a loan payment, and you get the matching reward message.
+- Changing any payment's category to **Savings** turns it into a saved entry and asks where it counts.
+- **Needs your check:** payments recorded from SMS that you haven't confirmed. Change the category or Paid from, then *Looks right* or *Not a payment*. Transfers to savings apps show **Saved to Jar · where does it count?** with *Emergency fund*, *Savings / investing*, *Paid (loan)*, or *It was spending*. Highlighted until done.
 - **Bills to pay:** bills that vary that are due, with *Paid*, plus bill payments from SMS to link to the right bill.
 - **Bank SMS:** see [Bank SMS reading](#6-bank-sms-reading).
 - **Payments list:** this cycle or all. Shows where entries came from (SMS or widget) and whether they were paid by card. Changing a category makes the app remember it for that shop. *Delete* also undoes what an entry changed: a loan payment goes back on the loan, a fund move comes back out of the fund, a bill's due date returns to what it was, and an EMI is removed.
@@ -156,7 +158,8 @@ A three-part meter, **Green · Careful · Red**, with a headline that says what 
 - Only **named senders** (such as VM-HDFCBK) are read; messages from phone numbers are ignored.
 - **Understands:** amounts (Rs, INR, ₹), debits and credits, dates in common formats, and the shop or person (UPI IDs, "to …", "at …", "Info: UPI/…/SHOP").
 - **Skips:** OTPs, offers and promotional messages.
-- **Automatic categories:** Food & dining (Swiggy, Zomato, …), Groceries (Blinkit, Zepto, DMart, JioMart, …), Travel (Uber, Ola, Rapido, IRCTC, fuel, …), Shopping (Amazon, Flipkart, Myntra, …), Entertainment (Netflix, Spotify, BookMyShow, …), Health (pharmacies, hospitals), Personal care, and **Bills** (recharges, Airtel, Jio, electricity boards, gas, broadband). **Your corrections win** next time.
+- **Automatic categories:** Food & dining (Swiggy, Zomato, …), Groceries (Blinkit, Zepto, DMart, JioMart, …), Travel (Uber, Ola, Rapido, IRCTC, fuel, …), Shopping (Amazon, Flipkart, Myntra, …), Entertainment (Netflix, Spotify, BookMyShow, …), Health (pharmacies, hospitals), Personal care, **Bills** (recharges, Airtel, Jio, electricity boards, gas, broadband), and **Savings** (Jar, Groww, Zerodha, Kuvera, Upstox, mutual funds, SIP, NPS, PPF, RD/FD, digital gold; short words like *jar* and *sip* only as whole words, so *Rajarani Sweets* isn't savings). **Your corrections win** next time.
+- **Savings transfers aren't counted twice:** if "You saved ₹58 → emergency fund" and the Jar SMS for ₹58 both happen (in either order, within two days), they become one entry.
 - **Credit cards:** tells card from account ("Credit Card ending 1234", "Avl Limit" vs "A/c", "Debit Card") and matches the card by its last 4 digits. Card **statements** set the bill, minimum and due date. **Bill payments** are recorded as card payments, not income, and the bank's and the card's SMS for the same payment count once.
 - **Salary SMS** are recognised and used for the payday check-in, not counted as extra money.
 - **No duplicates:** each SMS is identified by its text, so it's never recorded twice, whether it arrives by notification, inbox reading or paste.

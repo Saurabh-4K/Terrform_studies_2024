@@ -620,6 +620,19 @@ test('SMS: a card bill payment is not income or spending', () => {
   assert.equal(Core.parseSms('Payment of Rs 3,200.00 to BAJAJ FINANCE received for loan EMI.', {}, '2026-10-23').type, 'debit');
 });
 
+test('SMS: transfers to savings apps are recognised, look-alike names are not', () => {
+  const t = '2026-10-23';
+  assert.equal(Core.parseSms('Rs.58.00 debited from a/c **1234 on 23-10-26 to VPA jar@axisbank. Ref 991', {}, t).category, 'Savings');
+  assert.equal(Core.parseSms('Rs.5,000 debited from a/c **1234 to VPA groww.sip@hdfcbank on 05-10-26', {}, t).category, 'Savings');
+  assert.equal(Core.parseSms('Rs.320 debited from a/c **1234 to VPA rajaranisweets@ybl on 21-10-26', {}, t).category, 'Misc');
+  // A saved entry leaves the account but isn't spending.
+  const s = baseState();
+  s.transactions.push({ id: 'm', kind: 'move', date: '2026-10-05', amount: 200, category: 'Savings', note: 'Jar', useFor: null });
+  const r = Core.projectRunway(s, '2026-10-05');
+  assert.equal(r.balanceToday, 35000 - 200);
+  assert.equal(r.spentToDate, 0);
+});
+
 test('SMS batch splits on blank lines or one message per line', () => {
   assert.equal(Core.splitSmsBatch('Rs 10 debited\n\nRs 20 debited').length, 2);
   assert.equal(Core.splitSmsBatch('Rs 10 debited to A\nRs 20 debited to B\nRs 30 debited to C').length, 3);

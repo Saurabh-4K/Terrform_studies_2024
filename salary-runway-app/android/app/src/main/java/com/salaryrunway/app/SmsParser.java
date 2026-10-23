@@ -65,7 +65,15 @@ final class SmsParser {
         { "Health", "pharmacy", "apollo", "medplus", "1mg", "pharmeasy", "hospital", "clinic", "diagnostic", "netmeds" },
         { "Personal care", "salon", "urban company", "urbanclap", "spa", "barber" },
         { "Bills", "recharge", "airtel", "jio", "vodafone", "bsnl", "electricity", "bescom", "msedcl", "tata power", "adani electricity", "torrent power", "tneb", "bses", "indane", "hp gas", "bharatgas", "bharat gas", "mahanagar gas", "water bill", "broadband", "fibernet", "hathway" },
+        // Money moved to savings or investments. "=" means a whole word.
+        { "Savings", "=jar", "changejar", "groww", "zerodha", "kuvera", "upstox", "paytm money", "indmoney", "etmoney", "mutual fund", "=sip", "=nps", "=ppf", "recurring deposit", "fixed deposit", "safegold", "digigold", "digital gold", "augmont", "gullak" },
     };
+
+    private static boolean keywordMatches(String lower, String w) {
+        return w.startsWith("=")
+            ? Pattern.compile("\\b" + Pattern.quote(w.substring(1)) + "\\b").matcher(lower).find()
+            : lower.contains(w);
+    }
 
     private SmsParser() {}
 
@@ -175,7 +183,7 @@ final class SmsParser {
         String lower = (text == null ? "" : text).toLowerCase(Locale.ROOT);
         for (String[] group : CATEGORY_KEYWORDS) {
             for (int i = 1; i < group.length; i++) {
-                if (lower.contains(group[i])) return group[0];
+                if (keywordMatches(lower, group[i])) return group[0];
             }
         }
         return "Misc";

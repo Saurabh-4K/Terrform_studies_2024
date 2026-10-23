@@ -1235,14 +1235,20 @@
     ['Health', ['pharmacy', 'apollo', 'medplus', '1mg', 'pharmeasy', 'hospital', 'clinic', 'diagnostic', 'netmeds']],
     ['Personal care', ['salon', 'urban company', 'urbanclap', 'spa', 'barber']],
     ['Bills', ['recharge', 'airtel', 'jio', 'vodafone', 'bsnl', 'electricity', 'bescom', 'msedcl', 'tata power', 'adani electricity', 'torrent power', 'tneb', 'bses', 'indane', 'hp gas', 'bharatgas', 'bharat gas', 'mahanagar gas', 'water bill', 'broadband', 'fibernet', 'hathway']],
+    // Money moved to savings or investments: recorded as saved, not spent. "=" means a whole word.
+    ['Savings', ['=jar', 'changejar', 'groww', 'zerodha', 'kuvera', 'upstox', 'paytm money', 'indmoney', 'etmoney', 'mutual fund', '=sip', '=nps', '=ppf', 'recurring deposit', 'fixed deposit', 'safegold', 'digigold', 'digital gold', 'augmont', 'gullak']],
   ];
+
+  function keywordMatches(lower, w) {
+    return w[0] === '=' ? new RegExp('\\b' + w.slice(1) + '\\b').test(lower) : lower.indexOf(w) !== -1;
+  }
 
   function categorize(text, rules) {
     const key = normalizeMerchant(text);
     if (rules && key && rules[key]) return rules[key];
     const lower = String(text || '').toLowerCase();
     for (const [cat, words] of CATEGORY_KEYWORDS) {
-      if (words.some((w) => lower.indexOf(w) !== -1)) return cat;
+      if (words.some((w) => keywordMatches(lower, w))) return cat;
     }
     return 'Misc';
   }

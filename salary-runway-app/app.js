@@ -188,7 +188,7 @@
 
   function categories() {
     const names = state.budgets.map((b) => b.name).filter(Boolean);
-    ['Bills', 'Misc', 'Emergency'].forEach((n) => { if (names.indexOf(n) === -1) names.push(n); });
+    ['Bills', 'Savings', 'Misc', 'Emergency'].forEach((n) => { if (names.indexOf(n) === -1) names.push(n); });
     return names;
   }
 
@@ -695,8 +695,8 @@
     const list = needsCheck();
     if (!list.length) return '';
     return '<section class="card check-card"><div class="card-head"><h2>Needs your check</h2><span class="chip chip-check">' + list.length + '</span></div>' +
-      '<p class="hint">Recorded from bank SMS. Is the category right?</p>' +
-      '<div class="list">' + list.map((x) =>
+      '<p class="hint">Recorded from bank SMS. Is each one right?</p>' +
+      '<div class="list">' + list.map((x) => Core.isMove(x) ? savedCheckItem(x) :
         '<div class="check-item"><div class="check-top"><div class="grow"><div class="title">' + esc(x.note || 'Bank payment') + '</div>' +
         '<div class="meta">' + fmtDate(x.date) + '</div></div><div class="amt">' + inr(x.amount) + '</div></div>' +
         '<div class="row"><select data-tx-cat="' + esc(x.id) + '" aria-label="Category">' + categoryOptions(x.category) + '</select>' +
@@ -707,6 +707,31 @@
         '<div class="row"><button class="primary" data-action="tx-confirm" data-id="' + esc(x.id) + '">Looks right</button>' +
         '<button class="ghost" data-action="tx-not-payment" data-id="' + esc(x.id) + '">Not a payment</button></div></div>'
       ).join('') + '</div></section>';
+  }
+
+  // Money moved to Jar, an RD, a SIP: leaves the account, but isn't spending.
+  function savedForm() {
+    const t = today();
+    const top = state.debts.filter((d) => d.balance > 0).sort((a, b) => b.rate - a.rate)[0];
+    return '<p class="hint">Money you moved to savings: Jar, a recurring deposit, a SIP, gold. It leaves your account but isn’t spending.</p>' +
+      '<form id="save-tx" class="form-grid" autocomplete="off">' +
+      '<label class="field">Amount (₹)<input id="sv-amount" type="number" inputmode="decimal" min="1" step="1" required placeholder="58"></label>' +
+      '<label class="field">Counts as<select id="sv-use"><option value="emergency">Emergency fund</option><option value="grow">Savings / investing</option>' +
+      (top ? '<option value="debt" data-debt="' + esc(top.id) + '">Paid ' + esc(top.name) + '</option>' : '') + '</select></label>' +
+      '<label class="field">Date<input id="sv-date" type="date" value="' + t + '" max="' + t + '" required></label>' +
+      '<label class="field">Where<input id="sv-note" type="text" placeholder="Jar"></label>' +
+      '<div class="wide"><button class="primary" type="submit">Add money saved</button></div></form>';
+  }
+
+  // A transfer to savings (Jar, a SIP, an RD): where does it count?
+  function savedCheckItem(x) {
+    const top = state.debts.filter((d) => d.balance > 0).sort((a, b) => b.rate - a.rate)[0];
+    const b = (use, label, extra) => '<button data-action="saved-dest" data-id="' + esc(x.id) + '" data-use="' + use + '"' + (extra || '') + '>' + label + '</button>';
+    return '<div class="check-item"><div class="check-top"><div class="grow"><div class="title">Saved to ' + esc(x.note || 'savings') + '</div>' +
+      '<div class="meta">' + fmtDate(x.date) + ' · not spending. Where does it count?</div></div><div class="amt good">' + inr(x.amount) + '</div></div>' +
+      '<div class="row">' + b('emergency', 'Emergency fund') + b('grow', 'Savings / investing') +
+      (top ? b('debt', 'Paid ' + esc(top.name), ' data-debt="' + esc(top.id) + '"') : '') + '</div>' +
+      '<div class="row"><button class="ghost" data-action="saved-was-spend" data-id="' + esc(x.id) + '">It was spending</button></div></div>';
   }
 
   // Money received that still needs a decision, newest first.
@@ -872,14 +897,17 @@
     const received = list.filter(Core.isIncome).reduce((s, x) => s + x.amount, 0);
     const shown = list.slice(0, 200);
     const moneyIn = ui.txKind === 'in';
+    const saving = ui.txKind === 'save';
 
     return (
       needsCheckCard() +
       billsCard() +
       incomeCard() +
-      '<section class="card"><div class="card-head"><h2>' + (moneyIn ? 'Add money received' : 'Add a payment') + '</h2>' +
-      '<div class="seg" role="group" aria-label="Type"><button data-action="tx-kind" data-kind="out" aria-pressed="' + !moneyIn + '">Money out</button>' +
-      '<button data-action="tx-kind" data-kind="in" aria-pressed="' + moneyIn + '">Money in</button></div></div>' +
+      '<section class="card"><div class="card-head"><h2>' + (saving ? 'Add money saved' : moneyIn ? 'Add money received' : 'Add a payment') + '</h2>' +
+      '<div class="seg" role="group" aria-label="Type"><button data-action="tx-kind" data-kind="out" aria-pressed="' + (!moneyIn && !saving) + '">Money out</button>' +
+      '<button data-action="tx-kind" data-kind="in" aria-pressed="' + moneyIn + '">Money in</button>' +
+      '<button data-action="tx-kind" data-kind="save" aria-pressed="' + saving + '">Saved</button></div></div>' +
+      (saving ? savedForm() :
       (moneyIn ? '<p class="hint">Money returned to you, money from home, a refund, cashback or side income. Your salary is already counted.</p>' : '') +
       '<form id="add-tx" class="form-grid" autocomplete="off">' +
       '<label class="field">Amount (₹)<input id="tx-amount" type="number" inputmode="decimal" min="1" step="1" required placeholder="' + (moneyIn ? '2000' : '250') + '"></label>' +
@@ -891,7 +919,7 @@
           '<p id="tx-from-warn" class="borrow-warn wide" hidden></p>'
         : '') +
       '<div class="wide"><button class="primary" type="submit">' + (moneyIn ? 'Add money received' : 'Add payment') + '</button></div>' +
-      '</form></section>' +
+      '</form>') + '</section>' +
 
       (NATIVE
         ? '<section class="card"><div class="card-head"><h2>Bank SMS</h2>' + (state.smsAuto ? modeChip(true) : '') + '</div>' +
@@ -926,7 +954,7 @@
           shown.map((x) => {
             const isIn = Core.isIncome(x);
             if (Core.isMove(x) || Core.isBillPayment(x) || Core.isCardTransfer(x)) {
-              const label = Core.isMove(x) ? INCOME_USE_LABELS[x.useFor] || 'Moved' : x.kind === 'cardpay' ? 'Card bill paid from your account' : x.kind === 'cardconvert' ? 'Moved off the card to your loans' : 'Bill payment';
+              const label = Core.isMove(x) ? INCOME_USE_LABELS[x.useFor] || 'Saved · choose where it counts' : x.kind === 'cardpay' ? 'Card bill paid from your account' : x.kind === 'cardconvert' ? 'Moved off the card to your loans' : 'Bill payment';
               return '<tr><td><div class="cell-title">' + esc(x.note) + '</div><div class="cell-sub">' + fmtDate(x.date) + ' · ' + label + '</div></td>' +
                 '<td>' + (Core.isMove(x) ? 'Saved' : Core.isCardTransfer(x) ? 'Card' : 'Bills') + '</td><td class="amt' + (Core.isMove(x) ? ' good' : '') + '">' + inr(x.amount) + '</td>' +
                 '<td><button class="icon" data-action="tx-delete" data-id="' + esc(x.id) + '" aria-label="Delete">✕</button></td></tr>';
@@ -1035,6 +1063,16 @@
     else if (p.paidFrom === 'card') paidFrom = card ? card.id : 'card:' + (p.last4 || '');
     const tx = { id: uid(), date: p.date, amount: p.amount, category: o.category || p.category, note: o.note || p.merchant, source: 'sms', smsKey: o.key };
     if (paidFrom !== 'account') tx.paidFrom = paidFrom;
+    if (p.type !== 'credit' && tx.category === 'Savings') {
+      // Already recorded as saved (e.g. "You saved ₹58 → emergency fund")? Join them.
+      const twin = savedTwin(p.amount, p.date);
+      if (twin) { twin.smsKey = o.key; twin.note = twin.note || tx.note; return true; }
+      tx.kind = 'move';
+      tx.useFor = null;
+      tx.needsReview = true;
+      state.transactions.push(tx);
+      return true;
+    }
     if (p.type === 'credit') {
       tx.kind = 'in';
       // A refund to a card lowers the card bill, so it stays as this month's money.
@@ -1047,6 +1085,17 @@
     }
     state.transactions.push(tx);
     return true;
+  }
+
+  /*
+   * A saved entry of the same amount within two days that the other side
+   * hasn't matched yet: a manual one without an SMS, or an SMS one without a
+   * decision. Stops one transfer to Jar being counted twice.
+   */
+  function savedTwin(amount, date, fromSms) {
+    return state.transactions.find((x) => Core.isMove(x) && x.amount === amount &&
+      Math.abs(Core.daysBetween(x.date, date)) <= 2 &&
+      (fromSms ? x.smsKey && !x.useFor : !x.smsKey)) || null;
   }
 
   function smsNote(p) {
@@ -1738,6 +1787,22 @@
         state.transactions = state.transactions.filter((x) => x.id !== btn.dataset.id); save(); toast('Deleted'); break;
       }
       case 'tx-kind': ui.txKind = btn.dataset.kind; break;
+      case 'saved-dest': {
+        const tx = state.transactions.find((x) => x.id === btn.dataset.id);
+        if (!tx) return;
+        setIncomeUse(tx, btn.dataset.use, btn.dataset.debt);
+        tx.needsReview = false;
+        save(); celebrate(rewardMessage(btn.dataset.use, tx.amount, btn.dataset.debt, false)); break;
+      }
+      case 'saved-was-spend': {
+        const tx = state.transactions.find((x) => x.id === btn.dataset.id);
+        if (!tx) return;
+        undoIncomeUse(tx);
+        delete tx.kind; delete tx.useFor;
+        tx.category = 'Misc';
+        tx.needsReview = true;
+        save(); toast('Recorded as spending. Pick its category.'); break;
+      }
       case 'payday-save': savePayday(document.getElementById('pay-amount').value); break;
       case 'payday-same': savePayday(state.settings.salary); break;
       case 'payday-open': ui.paydayOpen = true; break;
@@ -1827,8 +1892,14 @@
         save(); toast('Paused until payday'); break;
       }
       case 'save-day': {
-        const tx = { id: uid(), kind: 'move', date: t, amount: Number(btn.dataset.amount) || 0, category: 'Saved', note: 'Unspent on ' + fmtDate(btn.dataset.date), source: 'manual', useFor: null };
-        state.transactions.push(tx);
+        const amount = Number(btn.dataset.amount) || 0;
+        // The Jar (or similar) SMS for this may already be here.
+        let tx = savedTwin(amount, t, true);
+        if (tx) tx.needsReview = false;
+        else {
+          tx = { id: uid(), kind: 'move', date: t, amount, category: 'Savings', note: 'Unspent on ' + fmtDate(btn.dataset.date), source: 'manual', useFor: null };
+          state.transactions.push(tx);
+        }
         setIncomeUse(tx, btn.dataset.use, btn.dataset.debt);
         state.days[btn.dataset.date].prompted = true;
         save(); celebrate(rewardMessage(btn.dataset.use, tx.amount, btn.dataset.debt, true)); break;
@@ -1974,6 +2045,12 @@
       const tx = state.transactions.find((x) => x.id === el.dataset.txCat);
       if (!tx) return;
       tx.category = el.value;
+      if (el.value === 'Savings' && Core.isFlexible(tx)) {
+        tx.kind = 'move';
+        tx.useFor = null;
+        tx.needsReview = true;
+        save(); toast('Marked as saved. Choose where it counts.'); rerenderKeepScroll(); return;
+      }
       if (tx.needsReview) { tx.needsReview = false; rerenderKeepScroll(); }
       if (Core.isIncome(tx)) { save(); return; }
       const key = Core.normalizeMerchant(tx.note);
@@ -2009,6 +2086,27 @@
   }
 
   document.addEventListener('submit', (ev) => {
+    if (ev.target.id === 'save-tx') {
+      ev.preventDefault();
+      const amount = Math.round(Number(document.getElementById('sv-amount').value) || 0);
+      if (amount <= 0) return;
+      const sel = document.getElementById('sv-use');
+      const use = sel.value;
+      const debtId = sel.selectedOptions[0] && sel.selectedOptions[0].dataset.debt;
+      const date = document.getElementById('sv-date').value || today();
+      // If the bank SMS for this transfer is already here, use it instead of adding a second entry.
+      let tx = savedTwin(amount, date, true);
+      if (tx) tx.needsReview = false;
+      else {
+        tx = { id: uid(), kind: 'move', date, amount, category: 'Savings', note: document.getElementById('sv-note').value.trim() || 'Savings', source: 'manual', useFor: null };
+        state.transactions.push(tx);
+      }
+      setIncomeUse(tx, use, debtId);
+      save();
+      celebrate(rewardMessage(use, amount, debtId, false));
+      rerenderKeepScroll();
+      return;
+    }
     if (ev.target.id === 'balance-form') {
       ev.preventDefault();
       setBalance(document.getElementById('balance-amount').value);
