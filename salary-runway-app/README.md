@@ -2,6 +2,8 @@
 
 Shows the date your salary runs out and helps you plan your money with budgets, a debt payoff plan and an emergency mode.
 
+**Complete feature list: [FEATURES.md](FEATURES.md)**
+
 **All data stays on your device.** The app has no server and no account. Everything is saved in your browser's local storage.
 
 ## Try it
