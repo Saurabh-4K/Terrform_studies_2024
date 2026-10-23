@@ -435,6 +435,38 @@ test('suggestion order: this month, a 30-day shield, expensive loans, full fund,
   assert.equal(Core.suggestUse(s, '2026-10-05').use, 'grow');
 });
 
+test('saving today comes off today’s amount in full; a moved leftover does not', () => {
+  const s = baseState({ settings: { salary: 50000, payday: 1 } });
+  s.balanceCheck = { date: '2026-10-25', amount: 1400 };
+  let r = Core.projectRunway(s, '2026-10-25');
+  assert.equal(Math.round(r.leftToday), 200);
+  // ₹58 to Jar today: today's left drops by 58, but it isn't spending.
+  s.transactions.push({ id: 'j', kind: 'move', date: '2026-10-25', amount: 58, category: 'Savings', note: 'Jar', useFor: 'emergency' });
+  r = Core.projectRunway(s, '2026-10-25');
+  assert.equal(Math.round(r.dailyAllowance), 200);
+  assert.equal(Math.round(r.leftToday), 142);
+  assert.equal(r.spentToday, 0);
+  assert.equal(r.savedToday, 58);
+  // Saving more than today's amount shows as over, and lowers tomorrow.
+  s.transactions.push({ id: 'k', kind: 'move', date: '2026-10-25', amount: 300, category: 'Savings', note: 'RD', useFor: 'grow' });
+  r = Core.projectRunway(s, '2026-10-25');
+  assert.equal(r.leftToday, 0);
+  assert.equal(Math.round(r.overToday), 158);
+  assert.equal(Math.round(r.tomorrowAllowance), Math.round((1400 - 358) / 6));
+});
+
+test('yesterday’s leftover moved today belongs to yesterday', () => {
+  const s = baseState({ settings: { salary: 50000, payday: 1 } });
+  s.balanceCheck = { date: '2026-10-24', amount: 1600 };
+  s.transactions.push({ id: 'y', date: '2026-10-24', amount: 142, category: 'Food', note: '' });
+  const before = Core.projectRunway(s, '2026-10-25');
+  s.transactions.push({ id: 'm', kind: 'move', date: '2026-10-25', forDate: '2026-10-24', amount: 58, category: 'Savings', note: 'Unspent on 24 Oct', useFor: 'emergency' });
+  const after = Core.projectRunway(s, '2026-10-25');
+  assert.equal(after.savedToday, 0);
+  // Today's amount loses only the leftover that had rolled into it, not the full 58.
+  assert.ok(after.leftToday < before.leftToday && before.leftToday - after.leftToday < 58);
+});
+
 test('debt plans: extra payments finish sooner and save interest', () => {
   const debts = [
     { name: 'Card', balance: 85000, rate: 42, minPayment: 4250 },

@@ -332,6 +332,12 @@
     });
     // Unspent money moved out counts as used, so later days keep their planned amount.
     const moved = sum(others.filter((t) => isMove(t) && (!anchor || t.date >= anchor.date)), (t) => t.amount);
+    /*
+     * Money saved today can't be spent today, so it comes off today's amount
+     * like spending. A leftover from an earlier day moved today (forDate)
+     * belongs to that day instead, so today isn't cut twice.
+     */
+    const savedToday = sum(others.filter((t) => isMove(t) && (t.forDate || t.date) === todayIso), (t) => t.amount);
     const eventsByDate = {};
     events.forEach((e) => { eventsByDate[e.date] = (eventsByDate[e.date] || 0) + e.amount; });
 
@@ -377,14 +383,16 @@
     // Safe to spend today: the smaller of what the budget allows and what the
     // account can cover after the bills still to come.
     const billsAhead = sum(events.filter((e) => e.date > todayIso), (e) => e.amount);
-    const byMoney = Math.max(0, bal + spentToday - billsAhead) / (remainingDays + 1);
+    // Today's amount is fixed for the day: what spending and saving today don't change.
+    const byMoney = Math.max(0, bal + spentToday + savedToday - billsAhead) / (remainingDays + 1);
     const byBudget = anchor
-      ? dailyBudget
-      : Math.max(0, plan.flexTotal + extraIn - moved - (paceSpend - spentToday)) / (remainingDays + 1);
+      ? plan.flexTotal / N + (extraIn - (moved - savedToday)) / (N - aIdx)
+      : Math.max(0, plan.flexTotal + extraIn - (moved - savedToday) - (paceSpend - spentToday)) / (remainingDays + 1);
     const dailyAllowance = Math.min(byMoney, byBudget);
-    // What is left of today's amount, and tomorrow's amount once today is counted.
-    const leftToday = Math.max(0, dailyAllowance - spentToday);
-    const overToday = Math.max(0, spentToday - dailyAllowance);
+    // What is left of today's amount after spending and saving, and tomorrow's amount once today is counted.
+    const usedToday = spentToday + savedToday;
+    const leftToday = Math.max(0, dailyAllowance - usedToday);
+    const overToday = Math.max(0, usedToday - dailyAllowance);
     const tomorrowAllowance = remainingDays > 0
       ? Math.min(Math.max(0, bal - billsAhead) / remainingDays, anchor ? dailyBudget : planRate)
       : 0;
@@ -400,7 +408,7 @@
     const last = points[points.length - 1];
     return {
       cycle, plan, events, points, idxToday, remainingDays, anchor, anchorIdx: anchor ? aIdx : null,
-      spentToDate, spentToday, flexLeft, extraIn, moved, billsAhead, paceRate, planRate, dailyAllowance, leftToday, overToday, tomorrowAllowance,
+      spentToDate, spentToday, savedToday, flexLeft, extraIn, moved, billsAhead, paceRate, planRate, dailyAllowance, leftToday, overToday, tomorrowAllowance,
       balanceToday: points[idxToday].actual,
       zeroPace: firstBelowZero('pace'),
       zeroPlan: firstBelowZero('plan'),

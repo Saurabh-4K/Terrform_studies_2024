@@ -331,10 +331,7 @@
         [adj.flexCutPct ? 'Flexible budgets are ' + adj.flexCutPct + '% lower' : '', adj.pauseInvest ? 'the Grow budget is paused' : '', adj.pauseDebtExtra ? 'extra debt payments are paused' : '']
           .filter(Boolean).join(', ').replace(/^./, (c) => c.toUpperCase()) + '.</span></div>' : '') +
       '<section class="tiles">' +
-      tile('Left to spend today', inr(r.leftToday),
-        r.overToday > 0
-          ? inr(r.overToday) + ' over today’s ' + inr(r.dailyAllowance) + '. Tomorrow: ' + inr(r.tomorrowAllowance)
-          : r.spentToday ? 'Spent ' + inr(r.spentToday) + ' of ' + inr(r.dailyAllowance) + ' today' : 'Today’s share of your budget', true) +
+      tile('Left to spend today', inr(r.leftToday), todayTileNote(r), true) +
       tile('Balance now', inr(r.balanceToday),
         (r.anchor ? 'From your balance on ' + fmtDate(r.anchor.date) : 'Worked out from your plan') +
         ' · <button class="link" data-action="balance-open">Update</button>') +
@@ -614,9 +611,11 @@
     }
   }
 
+  // Spent and saved on a day: saved money can't be spent either.
   function spentOn(date) {
     return state.transactions
-      .filter((x) => Core.isFlexible(x) && x.date === date && x.category !== 'Emergency')
+      .filter((x) => (Core.isFlexible(x) && x.date === date && x.category !== 'Emergency') ||
+        (Core.isMove(x) && (x.forDate || x.date) === date))
       .reduce((s, x) => s + x.amount, 0);
   }
 
@@ -783,6 +782,17 @@
       delete tx.debtId;
       delete tx.debtPaid;
     }
+  }
+
+  function todayTileNote(r) {
+    const used = [r.spentToday ? 'spent ' + inr(r.spentToday) : '', r.savedToday ? 'saved ' + inr(r.savedToday) : ''].filter(Boolean).join(' + ');
+    if (r.overToday > 0) {
+      // Going over because of saving is good news, said differently.
+      return (r.savedToday >= r.overToday
+        ? 'Saved ' + inr(r.overToday) + ' more than today’s ' + inr(r.dailyAllowance)
+        : inr(r.overToday) + ' over today’s ' + inr(r.dailyAllowance)) + '. Tomorrow: ' + inr(r.tomorrowAllowance);
+    }
+    return used ? used.replace(/^./, (c) => c.toUpperCase()) + ' of ' + inr(r.dailyAllowance) + ' today' : 'Today’s share of your budget';
   }
 
   function tile(label, value, sub, feature) {
@@ -1900,6 +1910,8 @@
           tx = { id: uid(), kind: 'move', date: t, amount, category: 'Savings', note: 'Unspent on ' + fmtDate(btn.dataset.date), source: 'manual', useFor: null };
           state.transactions.push(tx);
         }
+        // It's that day's leftover, so it doesn't come off today's amount.
+        tx.forDate = btn.dataset.date;
         setIncomeUse(tx, btn.dataset.use, btn.dataset.debt);
         state.days[btn.dataset.date].prompted = true;
         save(); celebrate(rewardMessage(btn.dataset.use, tx.amount, btn.dataset.debt, true)); break;
