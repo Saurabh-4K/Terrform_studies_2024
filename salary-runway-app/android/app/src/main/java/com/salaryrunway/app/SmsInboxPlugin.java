@@ -91,7 +91,8 @@ public class SmsInboxPlugin extends Plugin {
         SmsAlertStore.setLists(getContext(),
             call.getArray("categories", new JSArray()),
             call.getArray("incomeCategories", new JSArray()),
-            rules == null ? new JSObject() : rules);
+            rules == null ? new JSObject() : rules,
+            call.getArray("cards", new JSArray()));
         call.resolve();
     }
 

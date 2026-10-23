@@ -16,11 +16,13 @@ import java.util.regex.Pattern;
 final class SmsParser {
 
     static final class Result {
-        String type;      // "debit" or "credit"
-        long amount;
+        String type;      // "debit", "credit", "statement" (card bill) or "cardpayment"
+        long amount;      // for a statement: the total due
         String merchant;
         String category;
         boolean salary;
+        String paidFrom;  // "card" or "account" (debit and credit)
+        String last4;     // card's last 4 digits, when on a card
     }
 
     private static final int CI = Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE;
@@ -32,6 +34,16 @@ final class SmsParser {
     private static final Pattern SALARY = Pattern.compile("\\bsal(ary)?\\b|payroll", CI);
     private static final Pattern NOT_A_NAME = Pattern.compile("^(a/?c|your|ac|account|card)\\b", CI);
     private static final Pattern VPA = Pattern.compile("\\b([a-z0-9._-]+@[a-z]+)\\b", CI);
+
+    // Credit cards, as in core.js.
+    private static final Pattern CARD_HINT = Pattern.compile("credit card|\\bcc\\b|card\\s*(?:no\\.?|number|ending|xx|\\*{2})|avl\\.?\\s*limit|available\\s*limit|avail\\.?\\s*lmt", CI);
+    private static final Pattern DEBIT_CARD = Pattern.compile("debit card", CI);
+    private static final Pattern STATEMENT = Pattern.compile("\\b(?:statement|stmt)\\b", CI);
+    private static final Pattern TOTAL_DUE = Pattern.compile("total\\s*(?:amount|amt\\.?)?\\s*due\\s*(?:is|of|:|-)?\\s*(?:rs\\.?|inr|₹)\\s*([\\d,]+(?:\\.\\d{1,2})?)", CI);
+    private static final Pattern MIN_DUE = Pattern.compile("min(?:imum)?\\.?\\s*(?:amount|amt\\.?)?\\s*due\\s*(?:is|of|:|-)?\\s*(?:rs\\.?|inr|₹)\\s*([\\d,]+(?:\\.\\d{1,2})?)", CI);
+    private static final Pattern CARD_PAYMENT = Pattern.compile("(?:payment|pymt)(?:(?!\\.\\s).){0,50}(?:received|credited|successful|processed)|(?:received|credited)(?:(?!\\.\\s).){0,40}(?:payment|pymt)|thank you for (?:the |your )?payment|towards(?:(?!\\.\\s).){0,40}credit card|credit card(?:(?!\\.\\s).){0,30}(?:bill|payment)", CI);
+    private static final Pattern CARD_LAST4 = Pattern.compile("card[^0-9]{0,25}?(\\d{4})\\b", CI);
+    private static final Pattern HAS_CARD = Pattern.compile("card", CI);
 
     private static final Pattern[] CREDIT_FROM = {
         Pattern.compile("\\bfrom\\s+(?:vpa\\s+)?([A-Za-z0-9@._&'/ -]{2,50}?)(?=\\s+(?:on|via|ref|upi|txn|for|avl|avbl|to|dt|date)\\b|\\s*[.,;(]\\s|\\s*[.,;]?$)", CI),
@@ -70,6 +82,29 @@ final class SmsParser {
             return null;
         }
         if (value <= 0) return null;
+
+        boolean card = HAS_CARD.matcher(t).find();
+        if (card && STATEMENT.matcher(t).find() && (TOTAL_DUE.matcher(t).find() || MIN_DUE.matcher(t).find())) {
+            Result r = new Result();
+            r.type = "statement";
+            Matcher total = TOTAL_DUE.matcher(t);
+            long due = total.find() ? (long) Math.ceil(Double.parseDouble(total.group(1).replace(",", ""))) : 0;
+            r.amount = due > 0 ? due : value;
+            r.merchant = "Card statement";
+            r.category = "Bills";
+            r.last4 = last4(t);
+            return r;
+        }
+        if (card && CARD_PAYMENT.matcher(t).find()) {
+            Result r = new Result();
+            r.type = "cardpayment";
+            r.amount = value;
+            r.merchant = "Card bill payment";
+            r.category = "Bills";
+            r.last4 = last4(t);
+            return r;
+        }
+
         boolean debit = DEBIT.matcher(t).find();
         boolean credit = CREDIT.matcher(t).find();
         if (!debit && !credit) return null;
@@ -77,6 +112,9 @@ final class SmsParser {
         Result r = new Result();
         r.amount = value;
         r.type = debit ? "debit" : "credit";
+        boolean onCard = CARD_HINT.matcher(t).find() && !DEBIT_CARD.matcher(t).find();
+        r.paidFrom = onCard ? "card" : "account";
+        r.last4 = onCard ? last4(t) : null;
         String merchant = findMerchant(t, debit ? DEBIT_TO : CREDIT_FROM);
         if (debit) {
             r.merchant = merchant.isEmpty() ? "Bank payment" : merchant;
@@ -87,6 +125,11 @@ final class SmsParser {
             r.salary = SALARY.matcher(t).find();
         }
         return r;
+    }
+
+    private static String last4(String text) {
+        Matcher m = CARD_LAST4.matcher(text);
+        return m.find() ? m.group(1) : null;
     }
 
     private static String findMerchant(String text, Pattern[] patterns) {

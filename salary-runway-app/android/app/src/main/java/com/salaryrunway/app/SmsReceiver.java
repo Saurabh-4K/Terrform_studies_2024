@@ -41,6 +41,7 @@ public class SmsReceiver extends BroadcastReceiver {
         if (r == null || r.salary) return;
         String key = SmsParser.key(body);
         if (!SmsAlertStore.add(context, key, r, body)) return;
+        if ("cardpayment".equals(r.type)) return; // recorded quietly when the app opens
         if ("debit".equals(r.type)) WidgetStore.adjustLeft(context, -r.amount);
         SpendWidgetProvider.updateAll(context);
         notify(context, key, r);
@@ -60,16 +61,32 @@ public class SmsReceiver extends BroadcastReceiver {
             context.getSystemService(NotificationManager.class).createNotificationChannel(channel);
         }
 
+        boolean statement = "statement".equals(r.type);
         boolean debit = "debit".equals(r.type);
-        String title = context.getString(debit ? R.string.sms_title_paid : R.string.sms_title_received,
-            WidgetStore.rupees(r.amount), r.merchant);
-        String text = debit
-            ? context.getString(R.string.sms_text_paid, r.category)
-            : context.getString(R.string.sms_text_received);
+        org.json.JSONObject card = SmsAlertStore.cardFor(context, r.last4);
+        String cardName = card != null ? card.optString("name") : context.getString(R.string.sms_a_card);
+        String title;
+        String text;
+        if (statement) {
+            title = context.getString(R.string.sms_title_statement, cardName, WidgetStore.rupees(r.amount));
+            text = context.getString(R.string.sms_text_statement);
+        } else if (debit && "card".equals(r.paidFrom)) {
+            title = context.getString(R.string.sms_title_card, WidgetStore.rupees(r.amount), cardName, r.merchant);
+            text = context.getString(R.string.sms_text_card);
+        } else {
+            title = context.getString(debit ? R.string.sms_title_paid : R.string.sms_title_received,
+                WidgetStore.rupees(r.amount), r.merchant);
+            text = debit
+                ? context.getString(R.string.sms_text_paid, r.category)
+                : context.getString(R.string.sms_text_received);
+        }
 
-        Intent open = new Intent(context, SmsConfirmActivity.class)
-            .putExtra(SmsConfirmActivity.EXTRA_KEY, key)
-            .setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+        // A statement opens the app (its card plan); a payment opens the "check this payment" window.
+        Intent open = statement
+            ? new Intent(context, MainActivity.class).setFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            : new Intent(context, SmsConfirmActivity.class)
+                .putExtra(SmsConfirmActivity.EXTRA_KEY, key)
+                .setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
         PendingIntent tap = PendingIntent.getActivity(context, notificationId(key), open,
             PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
 

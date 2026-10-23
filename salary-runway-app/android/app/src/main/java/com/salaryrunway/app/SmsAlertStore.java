@@ -37,12 +37,33 @@ final class SmsAlertStore {
         prefs(context).edit().putBoolean("enabled", on).apply();
     }
 
-    static void setLists(Context context, JSONArray categories, JSONArray incomeCategories, JSONObject rules) {
+    static void setLists(Context context, JSONArray categories, JSONArray incomeCategories, JSONObject rules, JSONArray cards) {
         prefs(context).edit()
             .putString("categories", categories.toString())
             .putString("incomeCategories", incomeCategories.toString())
             .putString("rules", rules.toString())
+            .putString("cards", cards.toString())
             .apply();
+    }
+
+    /** The user's credit cards: id, name, last4. */
+    static JSONArray cards(Context context) {
+        try {
+            return new JSONArray(prefs(context).getString("cards", "[]"));
+        } catch (JSONException e) {
+            return new JSONArray();
+        }
+    }
+
+    /** The card with these last 4 digits, or null. */
+    static JSONObject cardFor(Context context, String last4) {
+        if (last4 == null) return null;
+        JSONArray cards = cards(context);
+        for (int i = 0; i < cards.length(); i++) {
+            JSONObject c = cards.optJSONObject(i);
+            if (c != null && last4.equals(c.optString("last4"))) return c;
+        }
+        return null;
     }
 
     static String[] categories(Context context, boolean income) {
@@ -110,7 +131,11 @@ final class SmsAlertStore {
             item.put("category", r.category);
             item.put("note", r.merchant);
             item.put("body", body);
-            item.put("status", "new");
+            item.put("paidFrom", r.paidFrom == null ? JSONObject.NULL : r.paidFrom);
+            item.put("last4", r.last4 == null ? JSONObject.NULL : r.last4);
+            // Card statements and bill payments need no check: the app records them as they are.
+            boolean cardNotice = "statement".equals(r.type) || "cardpayment".equals(r.type);
+            item.put("status", cardNotice ? "confirmed" : "new");
             items.put(item);
             save(context, items);
             return true;
@@ -119,7 +144,7 @@ final class SmsAlertStore {
         }
     }
 
-    static synchronized void update(Context context, String key, String status, String category, String note) {
+    static synchronized void update(Context context, String key, String status, String category, String note, String cardId) {
         JSONArray items = all(context);
         for (int i = 0; i < items.length(); i++) {
             JSONObject item = items.optJSONObject(i);
@@ -128,6 +153,7 @@ final class SmsAlertStore {
                 item.put("status", status);
                 if (category != null) item.put("category", category);
                 if (note != null) item.put("note", note);
+                if (cardId != null) item.put("cardId", cardId);
             } catch (JSONException ignored) {
                 // Leaves the entry as it was.
             }

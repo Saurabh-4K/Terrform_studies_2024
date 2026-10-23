@@ -55,6 +55,9 @@
     smsMaxDate: 0,
     txKind: 'out',
     payBill: null,
+    cardForm: null,
+    cardPlan: null,
+    cardRemove: null,
     smsBusy: false,
     smsClean: null,
   };
@@ -82,6 +85,7 @@
       balancePromptSkipped: null,
       bills: [],
       days: {},
+      cards: [],
     };
   }
 
@@ -242,7 +246,8 @@
     } else {
       headline = 'You’re in the green';
       sub = 'At this pace you reach payday on ' + fmtDate(cyc.next) + ' with about <b>' + inr(r.endPace) + '</b> left.' +
-        (streak >= 2 ? ' ' + plural(streak, 'day') + ' in a row within your daily amount. Keep it going.' : '');
+        (streak >= 2 ? ' ' + plural(streak, 'day') + ' in a row within your daily amount. Keep it going.' : '') +
+        (Core.cardFreeDays(state, t) >= 3 ? ' ' + plural(Core.cardFreeDays(state, t), 'card-free day') + '.' : '');
     }
 
     // Joined mid-cycle: budgets cover only the days from the balance check.
@@ -273,6 +278,7 @@
       '<span><i class="red-band"></i>Red zone: bills and basics still to pay</span><span><svg width="10" height="10" aria-hidden="true"><circle cx="5" cy="5" r="4" class="c-event"/></svg>Bill or EMI</span></div></div>' +
       '</section>' +
       savedCard() +
+      cardHomeNotes(cyc) +
       (askBalance || ui.balanceOpen ? balanceForm(askBalance && !ui.balanceOpen) : '') +
       (needsCheck().length
         ? '<div class="callout warn"><b>' + plural(needsCheck().length, 'payment') + ' from SMS ' + (needsCheck().length === 1 ? 'needs' : 'need') + ' a quick check</b>' +
@@ -478,7 +484,11 @@
       '<div class="list">' + list.map((x) =>
         '<div class="check-item"><div class="check-top"><div class="grow"><div class="title">' + esc(x.note || 'Bank payment') + '</div>' +
         '<div class="meta">' + fmtDate(x.date) + '</div></div><div class="amt">' + inr(x.amount) + '</div></div>' +
-        '<div class="row"><select data-tx-cat="' + esc(x.id) + '" aria-label="Category">' + categoryOptions(x.category) + '</select></div>' +
+        '<div class="row"><select data-tx-cat="' + esc(x.id) + '" aria-label="Category">' + categoryOptions(x.category) + '</select>' +
+        ((state.cards || []).length || x.paidFrom
+          ? '<select data-tx-from="' + esc(x.id) + '" aria-label="Paid from">' + paidFromOptions(x.paidFrom) +
+            (x.paidFrom && x.paidFrom.indexOf('card:') === 0 ? '<option value="' + esc(x.paidFrom) + '" selected>Card ending ' + esc(x.paidFrom.slice(5)) + ' (not added)</option>' : '') + '</select>'
+          : '') + '</div>' +
         '<div class="row"><button class="primary" data-action="tx-confirm" data-id="' + esc(x.id) + '">Looks right</button>' +
         '<button class="ghost" data-action="tx-not-payment" data-id="' + esc(x.id) + '">Not a payment</button></div></div>'
       ).join('') + '</div></section>';
@@ -660,6 +670,9 @@
       '<label class="field">Category<select id="tx-category">' + (moneyIn ? incomeCategoryOptions('Money received') : categoryOptions('Food & dining')) + '</select></label>' +
       '<label class="field">Date<input id="tx-date" type="date" value="' + t + '" max="' + t + '" required></label>' +
       '<label class="field">' + (moneyIn ? 'From' : 'Where / what') + '<input id="tx-note" type="text" placeholder="' + (moneyIn ? 'Rahul' : 'Swiggy') + '"></label>' +
+      (!moneyIn && (state.cards || []).length
+        ? '<label class="field wide" for="tx-from"><span>Paid from</span><select id="tx-from">' + paidFromOptions('account') + '</select></label>'
+        : '') +
       '<div class="wide"><button class="primary" type="submit">' + (moneyIn ? 'Add money received' : 'Add payment') + '</button></div>' +
       '</form></section>' +
 
@@ -695,13 +708,15 @@
         ? '<div class="table-wrap"><table><thead><tr><th>Payment</th><th>Category</th><th class="amt">Amount</th><th><span class="sr">Delete</span></th></tr></thead><tbody>' +
           shown.map((x) => {
             const isIn = Core.isIncome(x);
-            if (Core.isMove(x) || Core.isBillPayment(x)) {
-              const label = Core.isMove(x) ? INCOME_USE_LABELS[x.useFor] || 'Moved' : 'Bill payment';
+            if (Core.isMove(x) || Core.isBillPayment(x) || Core.isCardTransfer(x)) {
+              const label = Core.isMove(x) ? INCOME_USE_LABELS[x.useFor] || 'Moved' : x.kind === 'cardpay' ? 'Card bill paid from your account' : x.kind === 'cardconvert' ? 'Moved off the card to your loans' : 'Bill payment';
               return '<tr><td><div class="cell-title">' + esc(x.note) + '</div><div class="cell-sub">' + fmtDate(x.date) + ' · ' + label + '</div></td>' +
-                '<td>' + (Core.isMove(x) ? 'Saved' : 'Bills') + '</td><td class="amt' + (Core.isMove(x) ? ' good' : '') + '">' + inr(x.amount) + '</td>' +
+                '<td>' + (Core.isMove(x) ? 'Saved' : Core.isCardTransfer(x) ? 'Card' : 'Bills') + '</td><td class="amt' + (Core.isMove(x) ? ' good' : '') + '">' + inr(x.amount) + '</td>' +
                 '<td><button class="icon" data-action="tx-delete" data-id="' + esc(x.id) + '" aria-label="Delete">✕</button></td></tr>';
             }
+            const onCard = x.paidFrom && x.paidFrom !== 'account' ? (state.cards || []).find((c) => c.id === x.paidFrom) : null;
             const sub = fmtDate(x.date) + (x.source === 'sms' ? ' · from SMS' : x.source === 'widget' ? ' · from widget' : '') +
+              (onCard ? ' · <span class="warn">on ' + cardLabel(onCard) + '</span>' : x.paidFrom && x.paidFrom.indexOf('card:') === 0 ? ' · <span class="warn">on a card</span>' : '') +
               (isIn ? ' · ' + (x.useFor ? INCOME_USE_LABELS[x.useFor] + ' <button class="link" data-action="income-change" data-id="' + esc(x.id) + '">Change</button>' : '<button class="link" data-action="income-change" data-id="' + esc(x.id) + '">Choose what it does</button>') : '');
             return '<tr' + (x.needsReview ? ' class="needs-check"' : '') + '><td><div class="cell-title">' + esc(x.note || (isIn ? 'Money received' : 'Payment')) +
               (x.needsReview ? ' <span class="chip chip-check">Check</span>' : '') + '</div><div class="cell-sub">' + sub + '</div></td>' +
@@ -726,7 +741,13 @@
         }
         const p = r.parsed;
         const isIn = p.type === 'credit';
-        const note = r.duplicate ? 'Already added' : isIn && p.salary ? 'Looks like your salary, which is already counted' : isIn ? 'Money in' : '';
+        const cardRow = p.type === 'statement' || p.type === 'cardpayment';
+        const note = r.duplicate ? 'Already added' : isIn && p.salary ? 'Looks like your salary, which is already counted' : smsNote(p) || (isIn ? 'Money in' : '');
+        if (cardRow) {
+          return '<tr' + (r.duplicate ? ' class="muted"' : '') + '><td><input type="checkbox" data-sms-check="' + i + '" aria-label="Add this"' + (r.checked ? ' checked' : '') + '></td>' +
+            '<td><div class="cell-title">' + (p.type === 'statement' ? 'Card statement' : 'Card bill payment') + '</div><div class="cell-sub">' + fmtDate(p.date) + ' · ' + note + '</div></td>' +
+            '<td>—</td><td class="amt">' + inr(p.amount) + '</td></tr>';
+        }
         return '<tr' + (r.duplicate || (isIn && p.salary) ? ' class="muted"' : '') + '>' +
           '<td><input type="checkbox" data-sms-check="' + i + '" aria-label="Add this"' + (r.checked ? ' checked' : '') + '></td>' +
           '<td><div class="cell-title">' + esc(p.merchant) + '</div><div class="cell-sub">' + fmtDate(p.date) + (note ? ' · ' + note : '') + '</div></td>' +
@@ -746,15 +767,80 @@
   // Rows for the review table. `day` is the date the message arrived; text
   // without a date of its own gets that date.
   function smsRows(messages) {
-    const ignored = new Set(state.smsIgnored || []);
+    const known = knownSmsKeys();
     return messages.map(({ text, day }) => {
       const parsed = Core.parseSms(text, state.merchantRules, day);
       const key = Core.smsKey(text);
-      const duplicate = !!parsed && (ignored.has(key) || state.transactions.some((x) => x.smsKey === key || (
+      const duplicate = !!parsed && (known.has(key) || state.transactions.some((x) => !x.kind && (
         x.date === parsed.date && x.amount === parsed.amount &&
         Core.normalizeMerchant(x.note) === Core.normalizeMerchant(parsed.merchant))));
-      return { text, key, parsed, duplicate, checked: !!parsed && !duplicate && !parsed.salary };
+      const unknownCard = !!parsed && (parsed.type === 'statement' || parsed.type === 'cardpayment') && !findCard(parsed.last4);
+      return { text, key, parsed, duplicate, checked: !!parsed && !duplicate && !parsed.salary && !unknownCard };
     });
+  }
+
+  // SMS keys already recorded: transactions and card statements.
+  function knownSmsKeys() {
+    return new Set(state.transactions.map((x) => x.smsKey)
+      .concat((state.cards || []).map((c) => c.statement && c.statement.smsKey))
+      .concat(state.smsIgnored || []).filter(Boolean));
+  }
+
+  /*
+   * Records one parsed bank SMS. o: key, review (mark "needs your check"),
+   * category and note (chosen by the user), cardId ('account' or a card,
+   * chosen in the pop-up). Returns false if nothing was recorded.
+   */
+  function recordSms(p, o) {
+    const chosen = o.cardId && o.cardId !== 'account' ? (state.cards || []).find((c) => c.id === o.cardId) : null;
+    const card = chosen || findCard(p.last4);
+    if (p.type === 'statement') {
+      if (!card) return false;
+      card.statement = { date: p.date, total: p.amount, min: p.min, due: p.due, smsKey: o.key };
+      return true;
+    }
+    if (p.type === 'cardpayment') {
+      if (!card) return false;
+      // The bank and the card often both send an SMS for one payment.
+      const twin = state.transactions.some((x) => x.kind === 'cardpay' && x.cardId === card.id && x.amount === p.amount &&
+        Math.abs(Core.daysBetween(x.date, p.date)) <= 3);
+      if (twin) return false;
+      Core.recordCardPayment(state, card.id, p.amount, p.date, 'sms').smsKey = o.key;
+      return true;
+    }
+    let paidFrom = 'account';
+    if (o.cardId) paidFrom = o.cardId;
+    else if (p.paidFrom === 'card') paidFrom = card ? card.id : 'card:' + (p.last4 || '');
+    const tx = { id: uid(), date: p.date, amount: p.amount, category: o.category || p.category, note: o.note || p.merchant, source: 'sms', smsKey: o.key };
+    if (paidFrom !== 'account') tx.paidFrom = paidFrom;
+    if (p.type === 'credit') {
+      tx.kind = 'in';
+      // A refund to a card lowers the card bill, so it stays as this month's money.
+      tx.useFor = paidFrom !== 'account' ? 'spend' : null;
+    } else if (o.review || paidFrom.indexOf('card:') === 0) {
+      tx.needsReview = true;
+    } else {
+      const shop = Core.normalizeMerchant(tx.note);
+      if (shop && tx.note !== 'Bank payment') state.merchantRules[shop] = tx.category;
+    }
+    state.transactions.push(tx);
+    return true;
+  }
+
+  function smsNote(p) {
+    if (p.type === 'statement') {
+      const c = findCard(p.last4);
+      return c ? cardLabel(c) + ' statement: ' + inr(p.amount) + (p.due ? ' due ' + fmtDate(p.due) : '') : 'Card statement for a card not added yet (••' + esc(p.last4 || '?') + ')';
+    }
+    if (p.type === 'cardpayment') {
+      const c = findCard(p.last4);
+      return c ? cardLabel(c) + ' bill paid' : 'Card bill paid, for a card not added yet';
+    }
+    if (p.paidFrom === 'card') {
+      const c = findCard(p.last4);
+      return c ? 'On ' + cardLabel(c) : 'On a card ending ' + esc(p.last4 || '?') + ' (add it under Debts)';
+    }
+    return '';
   }
 
   // ---------- plan ----------
@@ -907,6 +993,199 @@
 
   // ---------- debts ----------
 
+  const MAX_CARDS = 10;
+
+  function cardLabel(c) { return esc(c.name) + (c.last4 ? ' ••' + esc(c.last4) : ''); }
+
+  function findCard(last4) {
+    return (state.cards || []).find((c) => last4 && c.last4 === last4) || null;
+  }
+
+  function paidFromOptions(selected) {
+    return '<option value="account"' + (!selected || selected === 'account' ? ' selected' : '') + '>Bank account / UPI / debit card</option>' +
+      (state.cards || []).map((c) => '<option value="' + esc(c.id) + '"' + (selected === c.id ? ' selected' : '') + '>' + cardLabel(c) + ' (credit card)</option>').join('');
+  }
+
+  function cardsSection() {
+    const cards = state.cards || [];
+    let html = '<section class="card"><div class="card-head"><h2>Credit cards</h2><span class="hint">' + cards.length + ' of ' + MAX_CARDS + '</span></div>' +
+      '<p class="hint">Card spending is counted as spent the day it happens, so the money is kept aside for the bill. The app tracks each card’s statement, due date and how much of the limit you’re using.</p>';
+    html += cards.map(cardBlock).join('');
+    if (ui.cardForm) html += cardForm();
+    else if (cards.length < MAX_CARDS) html += '<div><button data-action="card-add">Add credit card</button></div>';
+    return html + '</section>';
+  }
+
+  function cardBlock(c) {
+    const t = today();
+    const st = Core.cardStatus(state, c, t);
+    const pct = st.usedPct === null ? 0 : Math.min(100, st.usedPct);
+    const meter = st.usedPct === null ? '' :
+      '<div class="bar-row"><div class="bar-top"><span>Using ' + inr(st.owed) + ' of ' + inr(c.limit) + '</span><span class="amt' + (st.usedPct > 30 ? ' warn' : '') + '">' + st.usedPct + '%</span></div>' +
+      '<div class="bar"><span class="' + (st.usedPct > 50 ? 'bad' : st.usedPct > 30 ? 'warn' : '') + '" style="width:' + pct + '%"></span></div>' +
+      (st.usedPct > 30 ? '<span class="hint">Keeping this under 30% of the limit helps your credit score.</span>' : '') + '</div>';
+    let html = '<div class="card-item"><div class="check-top"><div class="grow"><div class="title">' + cardLabel(c) + '</div>' +
+      '<div class="meta">Statement on the ' + ordinal(c.statementDay) + ', due on the ' + ordinal(c.dueDay) + ' · ' + (c.rate || 42) + '% a year</div></div>' +
+      '<button class="ghost" data-action="card-edit" data-id="' + esc(c.id) + '">Edit</button></div>' + meter +
+      '<div class="summary">' +
+      '<div class="line"><span>Bill' + (st.statementDate ? ' from ' + fmtDate(st.statementDate) : '') + '</span><span>' + inr(st.total) + '</span></div>' +
+      (st.paidSince ? '<div class="line"><span>Paid so far</span><span class="good">' + inr(st.paidSince) + '</span></div>' : '') +
+      '<div class="line total"><span>' + (st.remaining ? 'To pay by ' + fmtDate(st.due) : 'Bill paid') + '</span><span' + (st.overdue ? ' class="bad"' : '') + '>' + inr(st.remaining) + '</span></div>' +
+      '<div class="line"><span>Spent since (next bill)</span><span>' + inr(st.unbilled) + '</span></div></div>';
+    if (st.overdue) {
+      const interest = Math.round((st.remaining * (Number(c.rate) || 42)) / 1200);
+      html += '<div class="callout bad"><b>' + inr(st.remaining) + ' wasn’t paid by ' + fmtDate(st.due) + '.</b>' +
+        '<span class="hint">It now costs about ' + inr(interest) + ' interest a month, and new spending stops being interest-free. Pay it now, or move it to your loans so the payoff plan tracks it.</span>' +
+        '<div class="row"><button class="primary" data-action="card-plan" data-id="' + esc(c.id) + '">Plan payment</button>' +
+        '<button data-action="card-revolve" data-id="' + esc(c.id) + '">Move to loans</button></div></div>';
+    } else if (st.remaining) {
+      html += '<div class="row"><button class="primary" data-action="card-plan" data-id="' + esc(c.id) + '">' + (ui.cardPlan && ui.cardPlan.cardId === c.id ? 'Hide payment plan' : 'Plan this payment') + '</button></div>';
+    }
+    if (ui.cardPlan && ui.cardPlan.cardId === c.id && st.remaining) html += '<div id="card-plan">' + cardPlanPanel(c) + '</div>';
+    if (ui.cardRemove === c.id) {
+      html += '<div class="callout bad"><b>Remove ' + cardLabel(c) + '?</b><span class="hint">Payments made with it stay in your records.</span>' +
+        '<div class="row"><button class="danger" data-action="card-remove-confirm" data-id="' + esc(c.id) + '">Remove</button><button data-action="card-remove-cancel">Cancel</button></div></div>';
+    }
+    return html + '</div>';
+  }
+
+  function ordinal(n) {
+    n = Number(n) || 1;
+    const s = ['th', 'st', 'nd', 'rd'];
+    const v = n % 100;
+    return n + (s[(v - 20) % 10] || s[v] || s[0]);
+  }
+
+  /*
+   * Full, minimum, part or EMI, each with its cost. The suggestion comes
+   * from Core.cardBillPlan; an EMI is suggested only when clearly cheaper.
+   */
+  function cardPlanPanel(c) {
+    const p = Core.cardBillPlan(state, c.id, today(), ui.cardPlan.emi);
+    const st = p.status;
+    const sug = (k) => (p.suggested === k ? ' <span class="chip chip-auto">Suggested</span>' : '');
+    const minPayoff = p.minPlan.payoff;
+    const emiAmount = ui.cardPlan.emiAmount || p.rest || st.remaining;
+    const q = Core.emiQuote(emiAmount, ui.cardPlan.emi.rate, ui.cardPlan.emi.months, ui.cardPlan.emi.fee);
+    const rq = Core.revolveQuote(emiAmount, p.rate, q.emi);
+    const diff = rq.cost - q.cost;
+    return '<div class="callout' + (p.short ? ' warn' : '') + '"><b>' + (p.suggested === 'full' ? 'Pay this bill in full' : p.suggested === 'emi' ? 'Pay ' + inr(p.payNow) + ' now, EMI for the rest' : 'Pay ' + inr(p.payNow) + ' now') + '</b><span class="hint">' + esc(p.reason) + '</span></div>' +
+      '<div class="choices">' +
+      '<div class="choice' + (p.suggested === 'full' ? ' suggested' : '') + '"><span class="choice-title">Pay in full: ' + inr(st.remaining) + sug('full') + '</span>' +
+      '<span class="choice-detail">No interest, and new spending stays interest-free.</span>' +
+      '<div><button class="primary" data-action="card-pay" data-id="' + esc(c.id) + '" data-amount="' + st.remaining + '">I paid ' + inr(st.remaining) + '</button></div></div>' +
+
+      (st.minLeft > 0 && st.minLeft < st.remaining
+        ? '<div class="choice"><span class="choice-title">Minimum only: ' + inr(st.minLeft) + '</span>' +
+          '<span class="choice-detail bad">' + inr(st.remaining - st.minLeft) + ' stays on the card at ' + p.rate + '% a year: about ' + inr(p.minPlan.interestNextMonth) + ' interest next month, and new spending stops being interest-free.' +
+          (minPayoff && !minPayoff.neverPaysOff ? ' Paying only this much each month, it takes ' + plural(minPayoff.months, 'month') + ' and ' + inr(minPayoff.interest) + ' in interest to clear.' : '') + ' This is how the card trap starts.</span>' +
+          '<div><button data-action="card-pay" data-id="' + esc(c.id) + '" data-amount="' + st.minLeft + '">I paid the minimum</button></div></div>'
+        : '') +
+
+      '<div class="choice' + (p.suggested === 'part' ? ' suggested' : '') + '"><span class="choice-title">Pay part' + sug('part') + '</span>' +
+      '<span class="choice-detail">Pay as much as you can now; the rest costs ' + p.rate + '% a year until it’s paid.</span>' +
+      '<div class="row"><label class="field grow-field" for="card-part-' + esc(c.id) + '"><span>Amount (₹)</span><input id="card-part-' + esc(c.id) + '" type="number" inputmode="numeric" min="1" value="' + p.payNow + '"></label>' +
+      '<button data-action="card-pay-part" data-id="' + esc(c.id) + '">I paid this</button></div></div>' +
+
+      '<div class="choice' + (p.suggested === 'emi' ? ' suggested' : '') + '"><span class="choice-title">Convert to EMI' + sug('emi') + '</span>' +
+      '<span class="choice-detail">Check the bank’s offer: rate, months and processing fee.</span>' +
+      '<div class="form-grid">' +
+      '<label class="field" for="emi-amount"><span>Amount (₹)</span><input id="emi-amount" data-emi="emiAmount" type="number" inputmode="numeric" min="1" value="' + emiAmount + '"></label>' +
+      '<label class="field" for="emi-rate"><span>Interest (% a year)</span><input id="emi-rate" data-emi="rate" type="number" inputmode="decimal" min="0" value="' + ui.cardPlan.emi.rate + '"></label>' +
+      '<label class="field" for="emi-months"><span>Months</span><select id="emi-months" data-emi="months">' + [3, 6, 9, 12, 18, 24].map((m) => '<option' + (Number(ui.cardPlan.emi.months) === m ? ' selected' : '') + '>' + m + '</option>').join('') + '</select></label>' +
+      '<label class="field" for="emi-fee"><span>Processing fee (₹)</span><input id="emi-fee" data-emi="fee" type="number" inputmode="numeric" min="0" value="' + ui.cardPlan.emi.fee + '"></label>' +
+      '</div>' +
+      '<div class="summary">' +
+      '<div class="line"><span>EMI</span><span>' + q.months + ' × ' + inr(q.emi) + '</span></div>' +
+      '<div class="line"><span>Interest + fee</span><span>' + inr(q.cost) + '</span></div>' +
+      '<div class="line"><span>Same payments, left on the card</span><span>' + (rq.neverPaysOff ? 'never cleared' : inr(rq.cost) + ' interest') + '</span></div>' +
+      '<div class="line total"><span>' + (diff >= 0 ? 'EMI saves' : 'EMI costs more by') + '</span><span class="' + (diff >= 0 ? 'good' : 'bad') + '">' + inr(Math.abs(diff)) + '</span></div></div>' +
+      '<span class="choice-detail">An EMI is still a loan: ' + q.months + ' payments of ' + inr(q.emi) + ' are added to every month’s plan until it’s cleared.</span>' +
+      '<div><button data-action="card-emi" data-id="' + esc(c.id) + '">Convert ' + inr(emiAmount) + ' to EMI</button></div></div>' +
+      '</div>';
+  }
+
+  function cardForm() {
+    const c = ui.cardForm.id ? state.cards.find((x) => x.id === ui.cardForm.id) : {};
+    const f = (id, label, type, value, extra) => '<label class="field" for="' + id + '"><span>' + label + '</span><input id="' + id + '" type="' + type + '"' +
+      (type === 'number' ? ' inputmode="numeric" min="0"' : '') + ' value="' + esc(value == null ? '' : value) + '"' + (extra || '') + '></label>';
+    return '<div class="card-form"><h3>' + (c.id ? 'Edit ' + cardLabel(c) : 'Add a credit card') + '</h3>' +
+      '<div class="form-grid">' +
+      f('cf-name', 'Name', 'text', c.name || '', ' placeholder="HDFC card"') +
+      f('cf-last4', 'Last 4 digits', 'text', c.last4 || '', ' inputmode="numeric" maxlength="4" placeholder="1234"') +
+      f('cf-limit', 'Credit limit (₹)', 'number', c.limit || '') +
+      f('cf-rate', 'Interest (% a year)', 'number', c.rate || 42) +
+      f('cf-stmt', 'Statement day', 'number', c.statementDay || '', ' max="31" placeholder="5"') +
+      f('cf-due', 'Due day', 'number', c.dueDay || '', ' max="31" placeholder="25"') +
+      '</div>' +
+      (c.id ? '' :
+        '<p class="hint">What you owe right now, from your card app or last statement:</p><div class="form-grid">' +
+        f('cf-owed', 'Amount due on last statement (₹)', 'number', '') +
+        f('cf-owed-due', 'Its due date', 'date', '') +
+        f('cf-unbilled', 'Spent since that statement (₹)', 'number', '') + '</div>') +
+      (ui.cardForm.error ? '<p class="bad">' + esc(ui.cardForm.error) + '</p>' : '') +
+      '<div class="row"><button class="primary" data-action="card-save">' + (c.id ? 'Save' : 'Add card') + '</button>' +
+      '<button class="ghost" data-action="card-cancel">Cancel</button>' +
+      (c.id ? '<span class="spacer"></span><button class="danger" data-action="card-remove" data-id="' + esc(c.id) + '">Remove card</button>' : '') + '</div></div>';
+  }
+
+  function saveCard() {
+    const v = (id) => (document.getElementById(id) || {}).value || '';
+    const name = v('cf-name').trim();
+    const last4 = v('cf-last4').replace(/\D/g, '');
+    const day = (x) => Math.min(31, Math.max(1, Math.round(Number(x) || 0)));
+    if (!name) { ui.cardForm.error = 'Give the card a name, like “HDFC card”.'; return; }
+    if (last4.length !== 4) { ui.cardForm.error = 'Enter the last 4 digits of the card number, so bank SMS can be matched to it.'; return; }
+    if (!Number(v('cf-stmt')) || !Number(v('cf-due'))) { ui.cardForm.error = 'Enter the statement day and due day from your card statement.'; return; }
+    if ((state.cards || []).some((c) => c.last4 === last4 && c.id !== ui.cardForm.id)) { ui.cardForm.error = 'You already have a card ending ' + last4 + '.'; return; }
+    const fields = { name, last4, limit: Math.max(0, Number(v('cf-limit')) || 0), rate: Number(v('cf-rate')) || 42, statementDay: day(v('cf-stmt')), dueDay: day(v('cf-due')) };
+    state.cards = state.cards || [];
+    let card = ui.cardForm.id ? state.cards.find((c) => c.id === ui.cardForm.id) : null;
+    if (card) Object.assign(card, fields);
+    else {
+      card = Object.assign({ id: uid(), created: today(), setupStatement: Math.max(0, Number(v('cf-owed')) || 0), setupDueDate: v('cf-owed-due') || null, setupUnbilled: Math.max(0, Number(v('cf-unbilled')) || 0) }, fields);
+      state.cards.push(card);
+    }
+    // SMS recorded before the card was added: link them now.
+    state.transactions.forEach((x) => { if (x.paidFrom === 'card:' + last4) { x.paidFrom = card.id; } });
+    ui.cardForm = null;
+    save();
+    toast(card.name + ' saved');
+  }
+
+  // Shown when a card payment is added: it's borrowed money.
+  function cardSpendWarning(tx) {
+    const c = (state.cards || []).find((x) => x.id === tx.paidFrom);
+    if (!c) return inr(tx.amount) + ' added';
+    const st = Core.cardStatus(state, c, today());
+    const z = Core.zoneStatus(state, today());
+    return 'Borrowed ' + inr(tx.amount) + ' on ' + c.name + '. Counted as spent today; next bill so far ' + inr(st.unbilled) + '.' +
+      (z.zone !== 'green' ? ' You’re not in the green: this lands on next month’s salary.' : '');
+  }
+
+  // Card bills due within a week, or overdue, and this cycle's card spending.
+  function cardHomeNotes(cyc) {
+    const t = today();
+    const cards = state.cards || [];
+    if (!cards.length) return '';
+    let html = '';
+    cards.forEach((c) => {
+      const st = Core.cardStatus(state, c, t);
+      if (st.remaining > 0 && (st.overdue || st.daysToDue <= 7)) {
+        html += '<div class="callout ' + (st.overdue ? 'bad' : 'warn') + '"><b>' + cardLabel(c) + ' bill: ' + inr(st.remaining) +
+          (st.overdue ? ' was due ' + fmtDate(st.due) : ' due ' + (st.daysToDue === 0 ? 'today' : st.daysToDue === 1 ? 'tomorrow' : 'in ' + plural(st.daysToDue, 'day'))) + '</b>' +
+          '<span class="hint">Pay it in full to avoid interest. The money was kept aside when you spent it.</span>' +
+          '<div><button class="primary" data-action="tab" data-tab="debts">Plan payment</button></div></div>';
+      }
+    });
+    const onCards = state.transactions.filter((x) => Core.isFlexible(x) && x.paidFrom && x.paidFrom !== 'account' && Core.inCycle(x.date, cyc))
+      .reduce((a, x) => a + x.amount, 0);
+    if (onCards) {
+      html += '<p class="hint card-note">' + inr(onCards) + ' spent on credit cards this month. It’s counted as spent and kept aside for the bills.</p>';
+    }
+    return html;
+  }
+
   function viewDebts() {
     const t = today();
     const debts = state.debts.filter((d) => Number(d.balance) > 0);
@@ -940,13 +1219,14 @@
     }
 
     return (
-      '<section class="card"><div class="card-head"><h2>Loans and credit cards</h2><span class="hint">Update balances from each statement</span></div>' +
-      (state.debts.length ? '' : '<p class="hint">No debts added. If you have a credit card balance or a loan, add it to see what it costs.</p>') +
+      cardsSection() +
+      '<section class="card"><div class="card-head"><h2>Loans</h2><span class="hint">Update balances from each statement</span></div>' +
+      (state.debts.length ? '' : '<p class="hint">No loans added. Add personal loans, EMIs or other debts to see what they cost. Credit cards go in the section above.</p>') +
       '<div class="edit-rows">' + state.debts.map((d) =>
         '<div class="edit-row cols-debt">' + listField('debts', d, 'name', 'Name', 'text') + listField('debts', d, 'balance', 'Balance (₹)', 'number') +
         listField('debts', d, 'rate', 'Interest %/yr', 'number') + listField('debts', d, 'minPayment', 'Monthly min (₹)', 'number') +
         listField('debts', d, 'dueDay', 'Due day', 'number', ' max="31"') + removeButton('debts', d) + '</div>').join('') + '</div>' +
-      '<div><button data-action="list-add" data-list="debts">Add loan or card</button></div>' +
+      '<div><button data-action="list-add" data-list="debts">Add loan</button></div>' +
       (debts.length ? '<div class="list">' + debts.map((d) => {
         const i = (d.balance * d.rate) / 1200;
         return '<div class="list-item"><div class="grow"><div class="title">' + esc(d.name) + '</div><div class="meta">' + d.rate + '% a year</div></div>' +
@@ -1204,9 +1484,52 @@
         if (tx && (Core.isIncome(tx) || Core.isMove(tx))) undoIncomeUse(tx);
         if (tx && Core.isBillPayment(tx)) Core.undoBillPayment(state, tx);
         if (tx && tx.fromFund) state.savings.emergencyBalance = (Number(state.savings.emergencyBalance) || 0) + tx.amount;
+        if (tx && tx.kind === 'cardconvert') Core.undoCardConvert(state, tx);
         state.transactions = state.transactions.filter((x) => x.id !== btn.dataset.id); save(); toast('Deleted'); break;
       }
       case 'tx-kind': ui.txKind = btn.dataset.kind; break;
+      case 'card-add': ui.cardForm = {}; break;
+      case 'card-edit': ui.cardForm = { id: btn.dataset.id }; break;
+      case 'card-cancel': ui.cardForm = null; break;
+      case 'card-save': saveCard(); break;
+      case 'card-remove': ui.cardRemove = btn.dataset.id; ui.cardForm = null; break;
+      case 'card-remove-cancel': ui.cardRemove = null; break;
+      case 'card-remove-confirm':
+        state.cards = state.cards.filter((c) => c.id !== btn.dataset.id);
+        ui.cardRemove = null; save(); toast('Card removed'); break;
+      case 'card-plan':
+        ui.cardPlan = ui.cardPlan && ui.cardPlan.cardId === btn.dataset.id ? null : { cardId: btn.dataset.id, emi: { rate: 22, months: 6, fee: 0 }, emiAmount: 0 };
+        break;
+      case 'card-pay':
+      case 'card-pay-part': {
+        const id = btn.dataset.id;
+        const amount = a === 'card-pay' ? Number(btn.dataset.amount) : Number(document.getElementById('card-part-' + id).value);
+        if (!(amount > 0)) { toast('Enter the amount you paid'); return; }
+        Core.recordCardPayment(state, id, amount, t);
+        const st = Core.cardStatus(state, state.cards.find((c) => c.id === id), t);
+        ui.cardPlan = null; save();
+        toast(st.remaining ? inr(amount) + ' paid. ' + inr(st.remaining) + ' still to pay by ' + fmtDate(st.due) + '.' : 'Bill paid in full. No interest this month.');
+        break;
+      }
+      case 'card-emi': {
+        const id = btn.dataset.id;
+        const c = state.cards.find((x) => x.id === id);
+        const st = Core.cardStatus(state, c, t);
+        const amount = Math.min(st.remaining, ui.cardPlan.emiAmount || Core.cardBillPlan(state, id, t, ui.cardPlan.emi).rest || st.remaining);
+        const res = Core.convertCardBalance(state, id, amount, Object.assign({ kind: 'emi' }, ui.cardPlan.emi), t);
+        if (!res) return;
+        ui.cardPlan = null; save();
+        toast(inr(amount) + ' moved to an EMI: ' + res.debt.months + ' × ' + inr(res.debt.minPayment) + ' a month, in your plan from next month.');
+        break;
+      }
+      case 'card-revolve': {
+        const c = state.cards.find((x) => x.id === btn.dataset.id);
+        const st = Core.cardStatus(state, c, t);
+        const res = Core.convertCardBalance(state, c.id, st.remaining, { kind: 'revolve' }, t);
+        if (!res) return;
+        save(); toast(inr(st.remaining) + ' moved to your loans. See the payoff plan below.');
+        break;
+      }
       case 'bill-pay-open': ui.payBill = btn.dataset.id; break;
       case 'bill-pay-cancel': ui.payBill = null; break;
       case 'bill-pay-save': {
@@ -1299,18 +1622,10 @@
       case 'sms-native': readNativeSms(false); break;
       case 'sms-import': {
         let added = 0;
-        const recorded = new Set(state.transactions.map((x) => x.smsKey).filter(Boolean));
+        const recorded = knownSmsKeys();
         ui.smsRows.forEach((r) => {
           if (!r.checked || !r.parsed || recorded.has(r.key)) return;
-          if (r.parsed.type === 'credit') {
-            state.transactions.push({ id: uid(), kind: 'in', date: r.parsed.date, amount: r.parsed.amount, category: r.parsed.category, note: r.parsed.merchant, source: 'sms', smsKey: r.key, useFor: null });
-            added++;
-            return;
-          }
-          state.transactions.push({ id: uid(), date: r.parsed.date, amount: r.parsed.amount, category: r.parsed.category, note: r.parsed.merchant, source: 'sms', smsKey: r.key });
-          const key = Core.normalizeMerchant(r.parsed.merchant);
-          if (key && r.parsed.merchant !== 'Bank payment') state.merchantRules[key] = r.parsed.category;
-          added++;
+          if (recordSms(r.parsed, { key: r.key, category: r.parsed.category })) added++;
         });
         ui.smsRows = null; ui.smsText = ''; markSmsSeen(); save(); toast(plural(added, 'item') + ' added'); break;
       }
@@ -1376,6 +1691,21 @@
       }
       save(); refreshAfterEdit(); return;
     }
+    if (el.dataset.txFrom) {
+      const tx = state.transactions.find((x) => x.id === el.dataset.txFrom);
+      if (!tx) return;
+      if (el.value === 'account') delete tx.paidFrom; else tx.paidFrom = el.value;
+      save(); rerenderKeepScroll(); return;
+    }
+    if (el.dataset.emi) {
+      ui.cardPlan[el.dataset.emi === 'emiAmount' ? 'emiAmount' : 'emi'] = el.dataset.emi === 'emiAmount'
+        ? Number(el.value) || 0
+        : Object.assign({}, ui.cardPlan.emi, { [el.dataset.emi]: Number(el.value) || 0 });
+      const panel = document.getElementById('card-plan');
+      const c = state.cards.find((x) => x.id === ui.cardPlan.cardId);
+      if (panel && c) panel.innerHTML = cardPlanPanel(c);
+      return;
+    }
     if (el.dataset.txCat) {
       const tx = state.transactions.find((x) => x.id === el.dataset.txCat);
       if (!tx) return;
@@ -1425,9 +1755,11 @@
     const category = document.getElementById('tx-category').value;
     const tx = { id: uid(), date: document.getElementById('tx-date').value || today(), amount, category, note, source: 'manual' };
     if (ui.txKind === 'in') { tx.kind = 'in'; tx.useFor = null; }
+    const from = document.getElementById('tx-from');
+    if (ui.txKind !== 'in' && from && from.value !== 'account') tx.paidFrom = from.value;
     state.transactions.push(tx);
     save();
-    toast(ui.txKind === 'in' ? inr(amount) + ' received. Choose what it should do.' : inr(amount) + ' added to ' + category);
+    toast(ui.txKind === 'in' ? inr(amount) + ' received. Choose what it should do.' : tx.paidFrom ? cardSpendWarning(tx) : inr(amount) + ' added to ' + category);
     if (ui.txKind === 'in') window.scrollTo(0, 0);
     rerenderKeepScroll();
   });
@@ -1566,6 +1898,7 @@
       categories: categories().filter((c) => c !== 'Emergency'),
       incomeCategories: INCOME_CATEGORIES,
       rules: state.merchantRules,
+      cards: (state.cards || []).map((c) => ({ id: c.id, name: c.name, last4: c.last4 || '' })),
     };
     const key = JSON.stringify(payload);
     if (key === alertsSent) return;
@@ -1592,21 +1925,18 @@
           state.smsIgnored = (state.smsIgnored || []).concat(it.key).slice(-500);
           return;
         }
-        const tx = {
-          id: uid(), date: it.date, amount: Math.round(Number(it.amount) || 0), category: it.category,
-          note: it.note || it.merchant, source: 'sms', smsKey: it.key,
-        };
-        if (it.type === 'credit') {
-          tx.kind = 'in';
-          tx.useFor = null;
-        } else if (it.status === 'confirmed') {
-          const shop = Core.normalizeMerchant(it.merchant);
-          if (shop && it.merchant !== 'Bank payment') state.merchantRules[shop] = it.category;
-        } else {
-          tx.needsReview = true;
-        }
-        state.transactions.push(tx);
-        added++;
+        // The app's own reader is the reference: it re-reads the text for card details.
+        const parsed = Core.parseSms(it.body || '', state.merchantRules, it.date) ||
+          { type: it.type, amount: Math.round(Number(it.amount) || 0), merchant: it.merchant, category: it.category, date: it.date, paidFrom: it.paidFrom, last4: it.last4 };
+        parsed.date = it.date;
+        const confirmed = it.status === 'confirmed';
+        if (recordSms(parsed, {
+          key: it.key,
+          review: !confirmed,
+          category: confirmed ? it.category : null,
+          note: it.note || null,
+          cardId: confirmed ? it.cardId || null : null,
+        })) added++;
       });
       save();
       return SmsInbox.removeAlerts({ keys: items.map((it) => it.key) }).then(() => {

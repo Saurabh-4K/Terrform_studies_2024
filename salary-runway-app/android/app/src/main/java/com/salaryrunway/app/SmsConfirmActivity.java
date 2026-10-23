@@ -11,9 +11,12 @@ import android.widget.Toast;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.NotificationManagerCompat;
 
+import org.json.JSONArray;
 import org.json.JSONObject;
 
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 
 /**
  * "Check this payment": opened from a bank SMS notification. The user confirms
@@ -57,14 +60,39 @@ public class SmsConfirmActivity extends AppCompatActivity {
         EditText note = findViewById(R.id.confirm_note);
         note.setText(item.optString("note"));
 
+        // Paid from: bank account or one of the cards; preset from the SMS.
+        Spinner from = findViewById(R.id.confirm_from);
+        JSONArray cards = SmsAlertStore.cards(this);
+        List<String> fromLabels = new ArrayList<>();
+        List<String> fromIds = new ArrayList<>();
+        fromLabels.add(getString(R.string.confirm_from_account));
+        fromIds.add("account");
+        int preset = 0;
+        String last4 = item.optString("last4", "");
+        for (int i = 0; i < cards.length(); i++) {
+            JSONObject c = cards.optJSONObject(i);
+            if (c == null) continue;
+            fromLabels.add(getString(R.string.confirm_from_card, c.optString("name"), c.optString("last4")));
+            fromIds.add(c.optString("id"));
+            if (!last4.isEmpty() && last4.equals(c.optString("last4"))) preset = fromIds.size() - 1;
+        }
+        boolean showFrom = debit && cards.length() > 0;
+        findViewById(R.id.confirm_from_label).setVisibility(showFrom ? android.view.View.VISIBLE : android.view.View.GONE);
+        from.setVisibility(showFrom ? android.view.View.VISIBLE : android.view.View.GONE);
+        ArrayAdapter<String> fromAdapter = new ArrayAdapter<>(this, android.R.layout.simple_spinner_item, fromLabels);
+        fromAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        from.setAdapter(fromAdapter);
+        from.setSelection(preset);
+
         findViewById(R.id.confirm_ignore).setOnClickListener(v -> {
-            SmsAlertStore.update(this, key, "ignored", null, null);
+            SmsAlertStore.update(this, key, "ignored", null, null, null);
             if (debit) WidgetStore.adjustLeft(this, amount);
             SpendWidgetProvider.updateAll(this);
             done(key, R.string.confirm_ignored);
         });
         findViewById(R.id.confirm_save).setOnClickListener(v -> {
-            SmsAlertStore.update(this, key, "confirmed", (String) category.getSelectedItem(), note.getText().toString().trim());
+            String cardId = showFrom ? fromIds.get(from.getSelectedItemPosition()) : null;
+            SmsAlertStore.update(this, key, "confirmed", (String) category.getSelectedItem(), note.getText().toString().trim(), cardId);
             done(key, R.string.confirm_saved);
         });
     }

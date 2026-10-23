@@ -44,6 +44,20 @@
         android:layout_height="wrap_content"
         android:minHeight="48dp" />
 
+    <TextView
+        android:id="@+id/confirm_from_label"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:text="@string/confirm_from"
+        android:textAppearance="?android:attr/textAppearanceSmall" />
+
+    <Spinner
+        android:id="@+id/confirm_from"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:minHeight="48dp" />
+
     <EditText
         android:id="@+id/confirm_note"
         android:layout_width="match_parent"

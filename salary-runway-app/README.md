@@ -53,6 +53,21 @@ npm run android:apk   # APK at android/app/build/outputs/apk/debug/app-debug.apk
 | **Debts** | Loans and cards with interest rates. Shows the monthly interest each one costs, and compares *minimums only*, *highest interest first* and *smallest balance first*: debt-free date, total interest and savings. |
 | **Grow** | Monthly set-aside check-in, emergency fund progress, yearly costs, **emergency mode** (medical bill, car repair, family function, and so on), Grow budget, and short lessons. |
 
+### Credit cards: staying out of the card trap
+Card spending doesn't leave your bank account today, so it makes a month look better than it is, and the bill lands on next month's salary. The app closes that gap.
+
+- **Up to 10 cards** (Debts tab): name, last 4 digits, limit, statement day, due day, interest rate, and what you owe right now.
+- **Card spending counts as spent the day it happens**, so budgets, safe-to-spend and zones stay honest. The money is treated as kept aside for the bill; paying the bill only moves it to the card.
+- **Card or account?** Read from the SMS ("Credit Card ending 1234", "Avl Limit" vs "A/c", "Debit Card"); the last 4 digits pick the card. When unsure, the check pop-up and "Needs your check" ask **Paid from**. Statement SMS update the bill (total, minimum, due date); bill payments are recorded as card payments, not income, and the bank's and the card's SMS for one payment count once.
+- **Each card shows** the bill, what's paid, what's left by the due date, spending since the statement, and how much of the limit is used (with a note above 30%). The Runway tab reminds you a week before the due date.
+- **Paying the bill is your choice**, with each option's real cost:
+  - *Full*: suggested whenever you're not in the red (the money was kept aside).
+  - *Minimum*: shows next month's interest and how long and how much it takes to clear at the minimum.
+  - *Part*: pay what you can.
+  - *Convert to EMI*: enter the bank's rate, months and fee; the app compares it with carrying the same amount on the card. Suggested only when you can't pay in full **and** it's clearly cheaper. It's added to Debts and every month's plan, starting with the next bill; the fee is charged on the card.
+- An unpaid bill past its due date shows the interest it now costs and can be moved to Debts for a payoff plan.
+- **Card-free days** are counted alongside the within-budget streak, and each card payment shows "Borrowed ₹1,000 on HDFC card".
+
 ### Zones: never touch ₹0 before payday
 The Runway tab shows which zone you're in, and the graph shades a red band for what bills and basics still need:
 

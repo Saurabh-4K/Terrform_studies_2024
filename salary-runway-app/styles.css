@@ -370,3 +370,11 @@ tr.needs-check td { background: var(--warn-soft); }
   .edit-row.cols-bill > button { grid-column: 1 / -1; justify-self: end; width: auto; height: 34px; padding-inline: 10px; display: inline-flex; align-items: center; gap: 4px; }
   .edit-row.cols-bill > button::after { content: " Remove"; font-size: 0.82rem; }
 }
+
+/* ---------- credit cards ---------- */
+.card-item { display: grid; gap: 10px; padding: 14px 0; border-top: 1px solid var(--line); }
+.card-item:first-of-type { border-top: 0; padding-top: 0; }
+.card-form { display: grid; gap: 10px; padding: 14px; border-radius: 12px; background: var(--bg); }
+.choice .form-grid, .choice .summary, .choice .row { margin-top: 6px; }
+div.choice { cursor: default; }
+.card-note { padding-inline: 4px; }

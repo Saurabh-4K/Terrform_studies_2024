@@ -233,6 +233,119 @@ test('zones: green, amber and red', () => {
   assert.notEqual(Core.zoneStatus(s, '2026-10-10').zone, 'red');
 });
 
+function cardState(extra) {
+  return baseState(Object.assign({
+    cards: [{ id: 'hd', name: 'HDFC card', last4: '1234', limit: 50000, statementDay: 5, dueDay: 25, rate: 42, created: '2026-09-01', setupStatement: 0, setupUnbilled: 0 }],
+  }, extra));
+}
+
+test('card spending counts the day it happens; paying the bill changes nothing', () => {
+  const s = cardState();
+  const before = Core.projectRunway(s, '2026-10-12').balanceToday;
+  s.transactions.push({ id: 'c1', date: '2026-10-10', amount: 1000, category: 'Food', note: 'Dinner', paidFrom: 'hd' });
+  const spent = Core.projectRunway(s, '2026-10-12');
+  assert.equal(spent.balanceToday, before - 1000);
+  assert.equal(spent.spentToDate, 1000);
+  Core.recordCardPayment(s, 'hd', 1000, '2026-10-12');
+  assert.equal(Core.projectRunway(s, '2026-10-12').balanceToday, before - 1000);
+});
+
+test('card statement: amount, due date, what is left to pay, and spending since', () => {
+  const s = cardState();
+  s.transactions.push({ id: 'a', date: '2026-09-10', amount: 3000, category: 'Food', note: '', paidFrom: 'hd' });
+  s.transactions.push({ id: 'b', date: '2026-09-20', amount: 2000, category: 'Food', note: '', paidFrom: 'hd' });
+  s.transactions.push({ id: 'c', date: '2026-10-08', amount: 700, category: 'Food', note: '', paidFrom: 'hd' });
+  let st = Core.cardStatus(s, s.cards[0], '2026-10-12');
+  assert.deepEqual([st.statementDate, st.total, st.min, st.due, st.remaining, st.unbilled, st.owed, st.usedPct],
+    ['2026-10-05', 5000, 250, '2026-10-25', 5000, 700, 5700, 11]);
+  Core.recordCardPayment(s, 'hd', 2000, '2026-10-15');
+  st = Core.cardStatus(s, s.cards[0], '2026-10-16');
+  assert.equal(st.remaining, 3000);
+  assert.equal(st.minLeft, 0);
+  assert.equal(Core.cardStatus(s, s.cards[0], '2026-10-26').overdue, true);
+});
+
+test('the statement SMS amount wins over the worked-out one', () => {
+  const s = cardState();
+  s.cards[0].statement = { date: '2026-10-05', total: 5400, min: 270, due: '2026-10-24' };
+  const st = Core.cardStatus(s, s.cards[0], '2026-10-12');
+  assert.deepEqual([st.total, st.min, st.due], [5400, 270, '2026-10-24']);
+});
+
+test('what was owed when the card was added shows as a bill on its due date', () => {
+  const s = cardState({ cards: [{ id: 'hd', name: 'HDFC card', last4: '1234', limit: 50000, statementDay: 5, dueDay: 25, rate: 42,
+    created: '2026-10-12', setupStatement: 8000, setupDueDate: '2026-10-25', setupUnbilled: 1500 }] });
+  let r = Core.projectRunway(s, '2026-10-12');
+  const e = r.events.filter((x) => x.kind === 'card');
+  assert.deepEqual(e.map((x) => [x.date, x.amount]), [['2026-10-25', 8000]]);
+  // The 1,500 spent before adding is billed on 5 Nov, due 25 Nov.
+  r = Core.projectRunway(s, '2026-11-12');
+  assert.deepEqual(r.events.filter((x) => x.kind === 'card').map((x) => [x.date, x.amount]), [['2026-11-12', 8000], ['2026-11-25', 1500]]);
+  Core.recordCardPayment(s, 'hd', 3000, '2026-10-12');
+  r = Core.projectRunway(s, '2026-10-12');
+  // Added on the 12th: the 5 Oct statement is the one owed, not a new one.
+  assert.equal(Core.cardStatus(s, s.cards[0], '2026-10-12').total, 8000);
+  assert.equal(r.events.find((x) => x.kind === 'card').amount, 5000);
+  assert.equal(Core.cardStatus(s, s.cards[0], '2026-10-12').remaining, 5000);
+});
+
+test('a balance check subtracts card spending not yet paid', () => {
+  const s = cardState();
+  s.transactions.push({ id: 'a', date: '2026-10-08', amount: 1200, category: 'Food', note: '', paidFrom: 'hd' });
+  s.balanceCheck = { date: '2026-10-10', amount: 9000 };
+  assert.equal(Core.projectRunway(s, '2026-10-10').balanceToday, 7800);
+  Core.recordCardPayment(s, 'hd', 1200, '2026-10-09');
+  assert.equal(Core.projectRunway(s, '2026-10-10').balanceToday, 9000);
+});
+
+test('EMI maths: 40,000 at 22% for 6 months', () => {
+  const q = Core.emiQuote(40000, 22, 6, 0);
+  // 40,000 x 0.01833 x 1.0183^6 / (1.0183^6 - 1) = 7,100.92
+  assert.equal(q.emi, 7101);
+  assert.equal(q.interest, 2606);
+});
+
+test('bill plan: full when the money is there, EMI only when clearly cheaper', () => {
+  const s = cardState({ settings: { salary: 50000, payday: 1 } });
+  s.transactions.push({ id: 'a', date: '2026-09-20', amount: 40000, category: 'Food', note: 'Phone', paidFrom: 'hd' });
+  let p = Core.cardBillPlan(s, 'hd', '2026-10-12');
+  assert.equal(p.due, 40000);
+  assert.equal(p.suggested, 'full');
+  assert.ok(p.minPlan.interestNextMonth > 1000);
+  // Red: only 3,000 left this morning with groceries still to buy.
+  s.budgets = [{ id: 'g', name: 'Groceries', amount: 15500 }];
+  s.balanceCheck = { date: '2026-10-12', amount: 3000 };
+  p = Core.cardBillPlan(s, 'hd', '2026-10-12', { rate: 22, months: 6, fee: 400 });
+  assert.ok(p.short > 0);
+  assert.equal(p.suggested, 'emi');
+  assert.ok(p.compare.emiSaves > 0);
+  assert.equal(p.payNow + p.rest, 40000);
+});
+
+test('converting to an EMI moves the amount to Debts', () => {
+  const s = cardState();
+  s.transactions.push({ id: 'a', date: '2026-09-20', amount: 40000, category: 'Food', note: '', paidFrom: 'hd' });
+  const { tx, debt } = Core.convertCardBalance(s, 'hd', 30000, { kind: 'emi', rate: 22, months: 6, fee: 500 }, '2026-10-20');
+  assert.equal(debt.minPayment, Core.emiQuote(30000, 22, 6, 0).emi);
+  assert.equal(Core.cardStatus(s, s.cards[0], '2026-10-21').remaining, 10000);
+  assert.equal(Core.simulateDebts([debt], 0, 'avalanche', false).months, 6);
+  // The fee is charged on the card, and the first EMI comes with the next bill (statement 5 Nov, due 25 Nov).
+  assert.ok(s.transactions.some((t) => t.paidFrom === 'hd' && t.amount === 500));
+  assert.equal(debt.starts, '2026-11-25');
+  assert.ok(!Core.projectRunway(s, '2026-10-21').events.some((e) => e.name === 'HDFC card EMI'));
+  assert.ok(Core.projectRunway(s, '2026-11-21').events.some((e) => e.name === 'HDFC card EMI' && e.date === '2026-11-25'));
+  Core.undoCardConvert(s, tx);
+  assert.equal(s.debts.length, 0);
+  assert.ok(!s.transactions.some((t) => t.amount === 500));
+});
+
+test('card-free days count back from yesterday', () => {
+  const s = cardState();
+  s.transactions.push({ id: 'a', date: '2026-10-07', amount: 100, category: 'Food', note: '', paidFrom: 'hd' });
+  s.transactions.push({ id: 'b', date: '2026-10-09', amount: 100, category: 'Food', note: '', paidFrom: 'account' });
+  assert.equal(Core.cardFreeDays(s, '2026-10-12'), 4);
+});
+
 test('debt plans: extra payments finish sooner and save interest', () => {
   const debts = [
     { name: 'Card', balance: 85000, rate: 42, minPayment: 4250 },
@@ -389,6 +502,33 @@ test('SMS key matches the Android app (SmsParser.key)', () => {
   assert.equal(Core.smsKey('Rs 55,000 credited to your a/c XX1234 on 01-10-26 by NEFT SALARY'), 'sd45634e8');
   // Line breaks and spacing don't change the key.
   assert.equal(Core.smsKey('Rs 55,000 credited to your a/c\nXX1234 on 01-10-26 by NEFT  SALARY'), 'sd45634e8');
+});
+
+test('SMS: card or account, and which card', () => {
+  const t = '2026-10-23';
+  let p = Core.parseSms('Spent Rs 1,299 on your SBI Credit Card ending 1234 at AMAZON on 21/10/26.', {}, t);
+  assert.deepEqual([p.type, p.paidFrom, p.last4], ['debit', 'card', '1234']);
+  p = Core.parseSms('INR 649.00 spent on ICICI Bank Card XX5566 on 21-Oct-26 on NETFLIX. Avl Limit: INR 50,000', {}, t);
+  assert.deepEqual([p.paidFrom, p.last4], ['card', '5566']);
+  p = Core.parseSms('Rs 500 spent on your Debit Card XX9876 at DMART on 21-10-26. Avl Bal Rs 2,000', {}, t);
+  assert.deepEqual([p.paidFrom, p.last4], ['account', null]);
+  p = Core.parseSms('Rs.450.00 debited from a/c **1234 on 21-10-26 to VPA swiggy@icici.', {}, t);
+  assert.equal(p.paidFrom, 'account');
+});
+
+test('SMS: card statement with total, minimum and due date', () => {
+  const p = Core.parseSms('Your HDFC Bank Credit Card XX1234 statement is ready. Total Amount Due: Rs 8,400.50, Minimum Amount Due: Rs 420. Due date: 05-Nov-26.', {}, '2026-10-23');
+  // 8,400.50 rounds up to 8,401: paying that clears the bill.
+  assert.deepEqual([p.type, p.amount, p.min, p.due, p.last4], ['statement', 8401, 420, '2026-11-05', '1234']);
+});
+
+test('SMS: a card bill payment is not income or spending', () => {
+  let p = Core.parseSms('Payment of Rs 8,400.00 received on your HDFC Credit Card XX1234 on 23-10-26. Thank you.', {}, '2026-10-23');
+  assert.deepEqual([p.type, p.amount, p.last4], ['cardpayment', 8400, '1234']);
+  p = Core.parseSms('Rs 8,400 debited from A/c XX5678 on 23-10-26 towards HDFC Credit Card XX1234 bill payment.', {}, '2026-10-23');
+  assert.deepEqual([p.type, p.last4], ['cardpayment', '1234']);
+  // A loan EMI "payment received" without a card stays as before.
+  assert.equal(Core.parseSms('Payment of Rs 3,200.00 to BAJAJ FINANCE received for loan EMI.', {}, '2026-10-23').type, 'debit');
 });
 
 test('SMS batch splits on blank lines or one message per line', () => {

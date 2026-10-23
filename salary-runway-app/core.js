@@ -192,6 +192,13 @@
    */
   function cycleEvents(state, cycle, todayIso) {
     const events = [];
+    (state.cards || []).forEach((c) => {
+      cardLegacyEvents(state, c, todayIso || cycle.start).forEach((e) => {
+        let date = e.date < cycle.start ? cycle.start : e.date;
+        if (todayIso && date < todayIso) date = todayIso;
+        if (date < cycle.next) events.push(Object.assign({}, e, { date }));
+      });
+    });
     (state.bills || []).forEach((b) => {
       if (billPaidIn(state, b, cycle)) return;
       if (billDue(b, cycle)) {
@@ -208,7 +215,8 @@
     });
     state.debts.filter((d) => d.balance > 0).forEach((d) => {
       const date = occurrenceInCycle(Number(d.dueDay) || 1, cycle);
-      if (date) events.push({ date, name: d.name, amount: Number(d.minPayment) || 0, kind: 'debt' });
+      // A card EMI starts with the card's next bill.
+      if (date && (!d.starts || date >= d.starts)) events.push({ date, name: d.name, amount: Number(d.minPayment) || 0, kind: 'debt' });
     });
     return events.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
   }
@@ -221,7 +229,10 @@
   function isIncome(t) { return t.kind === 'in'; }
   function isMove(t) { return t.kind === 'move'; }
   function isBillPayment(t) { return !!t.billId; }
-  function isFlexible(t) { return !isIncome(t) && !isMove(t) && !isBillPayment(t); }
+  // Paying a card bill, or moving a card balance to a loan, only moves money
+  // between your account and the card: the spending was counted when it happened.
+  function isCardTransfer(t) { return t.kind === 'cardpay' || t.kind === 'cardconvert'; }
+  function isFlexible(t) { return !isIncome(t) && !isMove(t) && !isBillPayment(t) && !isCardTransfer(t); }
 
   function spendInRange(transactions, cycle) {
     return transactions.filter((t) => isFlexible(t) && inCycle(t.date, cycle));
@@ -314,7 +325,7 @@
       const date = addDays(cycle.start, i);
       const out = eventsByDate[date] || 0;
       if (i <= idxToday) {
-        if (anchor && i === aIdx) bal = Number(anchor.amount) || 0;
+        if (anchor && i === aIdx) bal = (Number(anchor.amount) || 0) - cardReserve(state, anchor.date);
         bal -= out + (spendByDate[date] || 0);
         pace = planned = bal;
         points.push({
@@ -402,6 +413,267 @@
       out.options.push({ kind: 'basics', amount: Math.round(essentialPerDay) });
     }
     return out;
+  }
+
+  // ---------- credit cards ----------
+
+  /*
+   * Card spending counts as spending the day it happens, so the money is
+   * treated as kept aside for the bill. Paying the bill only moves that money
+   * to the card. What the app didn't see (the amount owed when the card was
+   * added) shows up as a bill on its due date.
+   *
+   * A card: name, last4, limit, statementDay, dueDay, rate (% a year),
+   * created, setupStatement (amount due on the last statement when added),
+   * setupDueDate, setupUnbilled (spent since that statement), and optionally
+   * statement: { date, total, min, due } from the bank's statement SMS.
+   */
+  function statementOn(card, iso) {
+    const d = parseISO(iso);
+    let st = clampedDate(d.getFullYear(), d.getMonth(), Number(card.statementDay) || 1);
+    if (st > d) st = clampedDate(d.getFullYear(), d.getMonth() - 1, Number(card.statementDay) || 1);
+    return toISO(st);
+  }
+
+  // The first statement date strictly after `iso`.
+  function nextStatementAfter(card, iso) {
+    const s = parseISO(statementOn(card, iso));
+    return toISO(clampedDate(s.getFullYear(), s.getMonth() + 1, Number(card.statementDay) || 1));
+  }
+
+  function dueAfter(card, statementIso) {
+    const s = parseISO(statementIso);
+    let due = clampedDate(s.getFullYear(), s.getMonth(), Number(card.dueDay) || 1);
+    if (due <= s) due = clampedDate(s.getFullYear(), s.getMonth() + 1, Number(card.dueDay) || 1);
+    return toISO(due);
+  }
+
+  function cardSpends(state, card) {
+    return state.transactions.filter((t) => isFlexible(t) && t.paidFrom === card.id);
+  }
+
+  // Refunds or cashback to the card.
+  function cardRefunds(state, card) {
+    return state.transactions.filter((t) => isIncome(t) && t.paidFrom === card.id);
+  }
+
+  function cardPayments(state, card) {
+    return state.transactions.filter((t) => isCardTransfer(t) && t.cardId === card.id);
+  }
+
+  function setupOwed(card) {
+    return (Number(card.setupStatement) || 0) + (Number(card.setupUnbilled) || 0);
+  }
+
+  // What the card owes the bank at the end of a date.
+  function cardOwedAt(state, card, iso) {
+    return setupOwed(card) +
+      sum(cardSpends(state, card).filter((t) => t.date <= iso), (t) => t.amount) -
+      sum(cardRefunds(state, card).filter((t) => t.date <= iso), (t) => t.amount) -
+      sum(cardPayments(state, card).filter((t) => t.date <= iso), (t) => t.amount);
+  }
+
+  /*
+   * Card spending before a date that hasn't been paid yet. That money is
+   * still in the bank, so a balance check subtracts it. Payments clear the
+   * amount owed from before the card was added first.
+   */
+  function cardReserve(state, iso) {
+    return sum(state.cards || [], (c) => {
+      const spent = sum(cardSpends(state, c).filter((t) => t.date < iso), (t) => t.amount) -
+        sum(cardRefunds(state, c).filter((t) => t.date < iso), (t) => t.amount);
+      const paid = sum(cardPayments(state, c).filter((t) => t.date < iso), (t) => t.amount);
+      return Math.max(0, spent - Math.max(0, paid - setupOwed(c)));
+    });
+  }
+
+  // Bills for what was owed before the card was added, until paid.
+  function cardLegacyEvents(state, card, todayIso) {
+    const paid = sum(cardPayments(state, card).filter((t) => t.date <= todayIso), (t) => t.amount);
+    const statementLeft = Math.max(0, (Number(card.setupStatement) || 0) - paid);
+    const unbilledLeft = Math.max(0, setupOwed(card) - paid) - statementLeft;
+    const out = [];
+    if (statementLeft > 0 && card.setupDueDate) {
+      out.push({ date: card.setupDueDate, name: card.name + ' bill', amount: statementLeft, kind: 'card', cardId: card.id });
+    }
+    if (unbilledLeft > 0) {
+      // Spent before the card was added but after its last statement: billed on the next one.
+      const firstStatement = nextStatementAfter(card, card.created || todayIso);
+      out.push({ date: dueAfter(card, firstStatement), name: card.name + ' bill', amount: unbilledLeft, kind: 'card', cardId: card.id });
+    }
+    return out;
+  }
+
+  /*
+   * The card's position today: the last statement (amount, minimum, due date,
+   * how much of it is still to pay), spending since then, total owed and how
+   * much of the limit is used.
+   */
+  function cardStatus(state, card, todayIso) {
+    const created = card.created || todayIso;
+    const lastSt = statementOn(card, todayIso);
+    const pays = cardPayments(state, card);
+    let statementDate, total, due, paidSince;
+    if (lastSt < created) {
+      statementDate = null;
+      total = Number(card.setupStatement) || 0;
+      due = card.setupDueDate || dueAfter(card, lastSt);
+      paidSince = sum(pays.filter((t) => t.date >= created), (t) => t.amount);
+    } else {
+      statementDate = lastSt;
+      total = Math.max(0, cardOwedAt(state, card, lastSt));
+      due = dueAfter(card, lastSt);
+      paidSince = sum(pays.filter((t) => t.date > lastSt), (t) => t.amount);
+    }
+    let min = null;
+    const sms = card.statement;
+    if (sms && sms.date >= addDays(lastSt, -3) && sms.date >= addDays(created, -3)) {
+      total = Number(sms.total) || total;
+      min = Number(sms.min) || null;
+      due = sms.due || due;
+    }
+    total = Math.round(total);
+    const remaining = Math.max(0, total - paidSince);
+    const owed = Math.max(0, Math.round(cardOwedAt(state, card, todayIso)));
+    if (min === null) min = total > 0 ? Math.min(total, Math.max(200, Math.round(total * 0.05))) : 0;
+    const limit = Number(card.limit) || 0;
+    return {
+      card, statementDate, total, min, due, paidSince, remaining,
+      minLeft: Math.max(0, min - paidSince),
+      unbilled: Math.max(0, owed - remaining),
+      owed,
+      usedPct: limit > 0 ? Math.round((owed / limit) * 100) : null,
+      overdue: remaining > 0 && due < todayIso,
+      daysToDue: daysBetween(todayIso, due),
+    };
+  }
+
+  // Monthly payment for a loan of P at `rate` % a year over `months`.
+  function emiQuote(P, rate, months, fee) {
+    const i = (Number(rate) || 0) / 1200;
+    const n = Math.max(1, Number(months) || 1);
+    const emi = i > 0 ? (P * i * Math.pow(1 + i, n)) / (Math.pow(1 + i, n) - 1) : P / n;
+    const interest = emi * n - P;
+    return { emi: Math.round(emi), months: n, interest: Math.round(interest), fee: Math.round(Number(fee) || 0), cost: Math.round(interest + (Number(fee) || 0)) };
+  }
+
+  // Leaving P on the card and paying `monthly` each month at the card's rate.
+  function revolveQuote(P, rate, monthly) {
+    const r = simulateDebts([{ name: 'card', balance: P, rate: Number(rate) || 0, minPayment: monthly }], 0, 'avalanche', false);
+    return { months: r.months, interest: r.totalInterest, cost: r.totalInterest, neverPaysOff: r.neverPaysOff };
+  }
+
+  /*
+   * How to pay this card's bill. Full is suggested whenever the money is there
+   * (card spending was already kept aside, so that's whenever you're not in
+   * the red). Otherwise: pay what you can, and for the rest compare carrying
+   * it on the card with an EMI. The EMI is suggested only when it's clearly
+   * cheaper; it is still a loan.
+   */
+  function cardBillPlan(state, cardId, todayIso, emi) {
+    const card = (state.cards || []).find((c) => c.id === cardId);
+    if (!card) return null;
+    const st = cardStatus(state, card, todayIso);
+    const z = zoneStatus(state, todayIso);
+    const rate = Number(card.rate) || 42;
+    const due = st.remaining;
+    const short = z.zone === 'red' ? Math.min(due, Math.ceil(z.shortBy / 100) * 100) : 0;
+    const payNow = Math.max(st.minLeft, due - short);
+    const rest = due - payNow;
+
+    // Minimum only: next month's interest and the time to clear at this minimum.
+    const afterMin = due - st.minLeft;
+    const minPlan = {
+      amount: st.minLeft,
+      interestNextMonth: Math.round((afterMin * rate) / 1200),
+      payoff: afterMin > 0 ? revolveQuote(afterMin, rate, Math.max(200, Math.round(st.min || afterMin * 0.05))) : null,
+    };
+
+    const e = Object.assign({ rate: 22, months: 6, fee: 0 }, emi || {});
+    let compare = null;
+    if (rest > 0) {
+      const emiQ = emiQuote(rest, e.rate, e.months, e.fee);
+      const revolveQ = revolveQuote(rest, rate, emiQ.emi);
+      compare = { amount: rest, emi: emiQ, revolve: revolveQ, emiSaves: revolveQ.cost - emiQ.cost };
+    }
+
+    let suggested, reason;
+    if (due === 0) {
+      suggested = null;
+      reason = 'Nothing to pay on this bill.';
+    } else if (!short) {
+      suggested = 'full';
+      reason = 'You’ve already kept this money aside: card spending was counted when it happened. Paying in full costs no interest.';
+    } else if (compare && compare.emiSaves >= Math.max(200, compare.revolve.cost * 0.1)) {
+      suggested = 'emi';
+      reason = 'You’re ' + rupees(short) + ' short this month. Pay ' + rupees(payNow) + ' now and convert ' + rupees(rest) +
+        ' to an EMI: it costs about ' + rupees(compare.emiSaves) + ' less than carrying it on the card. It’s still a loan, so clear it as early as you can.';
+    } else {
+      suggested = 'part';
+      reason = 'You’re ' + rupees(short) + ' short this month. Pay ' + rupees(payNow) + ' now and the rest as soon as you can; an EMI wouldn’t save much here.';
+    }
+    return { card, status: st, rate, due, payNow, rest, short, minPlan, compare, emi: e, suggested, reason };
+  }
+
+  function newId(prefix) {
+    return prefix + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  }
+
+  // A card bill payment from the bank account.
+  function recordCardPayment(state, cardId, amount, dateIso, source) {
+    const card = (state.cards || []).find((c) => c.id === cardId);
+    if (!card) return null;
+    const tx = { id: newId('cp'), kind: 'cardpay', cardId, date: dateIso, amount: Math.round(Number(amount) || 0), note: card.name + ' bill payment', source: source || 'manual' };
+    state.transactions.push(tx);
+    return tx;
+  }
+
+  /*
+   * Moves part of the bill off the card into the Debts tab, either as an EMI
+   * (with its rate, months and fee) or as a carried balance at the card's
+   * rate with a 5% minimum. The Debts tab then plans its payoff and the
+   * monthly payment is counted in every month's plan. Payments start with the
+   * card's next bill; an EMI processing fee is charged on the card, as banks do.
+   */
+  function convertCardBalance(state, cardId, amount, opts, dateIso) {
+    const card = (state.cards || []).find((c) => c.id === cardId);
+    if (!card || !(amount > 0)) return null;
+    amount = Math.round(amount);
+    const isEmi = opts && opts.kind === 'emi';
+    const starts = dueAfter(card, nextStatementAfter(card, dateIso));
+    let debt;
+    if (isEmi) {
+      const q = emiQuote(amount, opts.rate, opts.months, 0);
+      debt = { id: newId('d'), name: card.name + ' EMI', balance: amount, rate: Number(opts.rate) || 0, minPayment: q.emi, dueDay: card.dueDay, fromCard: card.id, months: q.months, starts };
+    } else {
+      debt = { id: newId('d'), name: card.name + ' carried balance', balance: amount, rate: Number(card.rate) || 42, minPayment: Math.max(200, Math.round(amount * 0.05)), dueDay: card.dueDay, fromCard: card.id, starts };
+    }
+    state.debts.push(debt);
+    const tx = { id: newId('cc'), kind: 'cardconvert', cardId, date: dateIso, amount, note: debt.name, debtId: debt.id, source: 'manual' };
+    state.transactions.push(tx);
+    const fee = isEmi ? Math.round(Number(opts.fee) || 0) : 0;
+    if (fee > 0) {
+      tx.feeTx = newId('f');
+      state.transactions.push({ id: tx.feeTx, date: dateIso, amount: fee, category: 'Bills', note: debt.name + ' processing fee', paidFrom: card.id, source: 'manual' });
+    }
+    return { tx, debt };
+  }
+
+  function undoCardConvert(state, tx) {
+    state.debts = state.debts.filter((d) => d.id !== tx.debtId);
+    if (tx.feeTx) state.transactions = state.transactions.filter((t) => t.id !== tx.feeTx);
+  }
+
+  // Days in a row, ending yesterday, with no card spending (since the first card was added).
+  function cardFreeDays(state, todayIso) {
+    const cards = state.cards || [];
+    if (!cards.length) return 0;
+    const since = cards.map((c) => c.created || todayIso).sort()[0];
+    const used = new Set(state.transactions.filter((t) => isFlexible(t) && t.paidFrom && t.paidFrom !== 'account').map((t) => t.date));
+    let n = 0;
+    let d = addDays(todayIso, -1);
+    while (d >= since && !used.has(d)) { n++; d = addDays(d, -1); }
+    return n;
   }
 
   // ---------- suggestions ----------
@@ -857,7 +1129,8 @@
 
   const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
 
-  function parseSmsDate(text, todayIso) {
+  // `future` allows dates after today (a card's due date); otherwise they become today.
+  function parseSmsDate(text, todayIso, future) {
     let m = text.match(/\b(\d{4})-(\d{2})-(\d{2})\b/);
     let y, mo, d;
     if (m) { y = +m[1]; mo = +m[2]; d = +m[3]; }
@@ -873,7 +1146,7 @@
     if (y < 100) y += 2000;
     if (mo < 1 || mo > 12 || d < 1 || d > 31) return todayIso;
     const iso = y + '-' + pad(mo) + '-' + pad(d);
-    return iso > todayIso ? todayIso : iso;
+    return iso > todayIso && !future ? todayIso : iso;
   }
 
   function cleanMerchant(raw) {
@@ -915,6 +1188,32 @@
    * Reads one bank transaction SMS. Returns null for messages that are not
    * transactions (OTPs, offers) or have no amount.
    */
+  // Credit card SMS. Kept in step with SmsParser.java.
+  const CARD_HINT = /credit card|\bcc\b|card\s*(?:no\.?|number|ending|xx|\*{2})|avl\.?\s*limit|available\s*limit|avail\.?\s*lmt/i;
+  const DEBIT_CARD = /debit card/i;
+  const STATEMENT = /\b(?:statement|stmt)\b/i;
+  const TOTAL_DUE = /total\s*(?:amount|amt\.?)?\s*due\s*(?:is|of|:|-)?\s*(?:rs\.?|inr|₹)\s*([\d,]+(?:\.\d{1,2})?)/i;
+  const MIN_DUE = /min(?:imum)?\.?\s*(?:amount|amt\.?)?\s*due\s*(?:is|of|:|-)?\s*(?:rs\.?|inr|₹)\s*([\d,]+(?:\.\d{1,2})?)/i;
+  const DUE_DATE = /due\s*(?:date|by|on)\s*(?:is|:|-)?\s*(\d{1,2}[-\/ ]?(?:[a-z]{3,9}|\d{1,2})[-\/ ,]*\d{2,4})/i;
+  // `(?:(?!\.\s).)` is any character within the same sentence (amounts like 8,400.00 have dots).
+  const CARD_PAYMENT = /(?:payment|pymt)(?:(?!\.\s).){0,50}(?:received|credited|successful|processed)|(?:received|credited)(?:(?!\.\s).){0,40}(?:payment|pymt)|thank you for (?:the |your )?payment|towards(?:(?!\.\s).){0,40}credit card|credit card(?:(?!\.\s).){0,30}(?:bill|payment)/i;
+
+  // Bill amounts round up, so paying them clears the bill.
+  function money(m) { return m ? Math.ceil(parseFloat(m[1].replace(/,/g, ''))) : 0; }
+
+  function cardLast4(t) {
+    const m = t.match(/card[^0-9]{0,25}?(\d{4})\b/i);
+    return m ? m[1] : null;
+  }
+
+  /*
+   * Reads one bank SMS. Types:
+   *   debit / credit  payment out or money in, with paidFrom 'card' (and the
+   *                   card's last 4 digits) or 'account'
+   *   statement       a card's monthly statement: total, minimum, due date
+   *   cardpayment     a card bill payment (from either side), not income
+   * Returns null for messages that aren't payments (OTPs, offers).
+   */
   function parseSms(text, rules, todayIso) {
     const t = String(text || '').replace(/\s+/g, ' ').trim();
     if (!t || /\botp\b|one time password|verification code/i.test(t)) return null;
@@ -922,11 +1221,32 @@
     if (!amt) return null;
     const amount = Math.round(parseFloat(amt[1].replace(/,/g, '')));
     if (!amount) return null;
+    const card = /card/i.test(t);
+    if (card && STATEMENT.test(t) && (TOTAL_DUE.test(t) || MIN_DUE.test(t))) {
+      const due = t.match(DUE_DATE);
+      return {
+        type: 'statement',
+        amount: money(t.match(TOTAL_DUE)) || amount,
+        min: money(t.match(MIN_DUE)) || null,
+        due: due ? parseSmsDate(due[1], todayIso, true) : null,
+        last4: cardLast4(t),
+        merchant: 'Card statement',
+        category: 'Bills',
+        date: todayIso,
+        raw: t,
+      };
+    }
+    if (card && CARD_PAYMENT.test(t)) {
+      return { type: 'cardpayment', amount, last4: cardLast4(t), merchant: 'Card bill payment', category: 'Bills', date: parseSmsDate(t, todayIso), raw: t };
+    }
     const isDebit = /\b(debited|spent|paid|sent|withdrawn|purchase|debit|payment of)\b/i.test(t);
     const isCredit = /\b(credited|received|deposited|refund(?:ed)?)\b/i.test(t);
     if (!isDebit && !isCredit) return null;
     const type = isDebit ? 'debit' : 'credit';
     const merchant = findMerchant(t, type);
+    const onCard = CARD_HINT.test(t) && !DEBIT_CARD.test(t);
+    const paidFrom = onCard ? 'card' : 'account';
+    const last4 = onCard ? cardLast4(t) : null;
     if (type === 'credit') {
       return {
         type,
@@ -935,6 +1255,7 @@
         date: parseSmsDate(t, todayIso),
         category: /refund|reversal|reversed|cashback/i.test(t) ? 'Refund' : 'Money received',
         salary: /\bsal(ary)?\b|payroll/i.test(t),
+        paidFrom, last4,
         raw: t,
       };
     }
@@ -944,6 +1265,7 @@
       merchant: merchant || 'Bank payment',
       date: parseSmsDate(t, todayIso),
       category: categorize(merchant || t, rules),
+      paidFrom, last4,
       raw: t,
     };
   }
@@ -974,7 +1296,9 @@
     insights, simulateDebts, compareDebtPlans, emergencyPlan, parseSms,
     splitSmsBatch, smsKey, categorize, normalizeMerchant, sinkingMonthly, inCycle,
     spendInRange, incomeInRange, incomeKept, isIncome, isMove, isBillPayment, isFlexible, incomeOptions,
-    billShare, billPot, billsMonthly, billPaidIn, billDue, payBill, undoBillPayment, zoneStatus, ESSENTIAL_CATEGORIES, byCategory, DEFAULT_SPLIT,
+    billShare, billPot, billsMonthly, billPaidIn, billDue, payBill, undoBillPayment, zoneStatus, ESSENTIAL_CATEGORIES,
+    isCardTransfer, statementOn, dueAfter, cardOwedAt, cardReserve, cardStatus, emiQuote, revolveQuote, cardBillPlan,
+    recordCardPayment, convertCardBalance, undoCardConvert, cardFreeDays, byCategory, DEFAULT_SPLIT,
   };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = Core;
