@@ -347,3 +347,26 @@ td.amt.good { color: var(--good); }
 .chip-check { background: var(--warn-soft); color: var(--warn); }
 tr.needs-check td { background: var(--warn-soft); }
 .check-top .grow { flex: 1; min-width: 0; }
+
+/* ---------- zones ---------- */
+.zone-meter { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; max-width: 360px; }
+.zone-seg { font-size: 0.72rem; font-weight: 650; text-align: center; padding: 5px 0; border-radius: 99px; background: var(--surface-2); color: var(--muted); letter-spacing: 0.02em; }
+.zone-seg.on.zone-green { background: var(--good); color: var(--surface); }
+.zone-seg.on.zone-amber { background: var(--warn); color: var(--surface); }
+.zone-seg.on.zone-red { background: var(--bad); color: var(--surface); }
+.red-options { margin: 0; padding-left: 20px; display: grid; gap: 6px; background: var(--bad-soft); border-radius: 12px; padding-block: 12px; padding-right: 14px; }
+.c-red-band { fill: var(--bad-soft); stroke: var(--bad); stroke-width: 1; stroke-opacity: 0.35; }
+.legend i.red-band { height: 10px; border: 0; background: var(--bad-soft); border-top: 1px solid var(--bad); }
+.saved-card { border-color: var(--good); }
+.bills-card { border-color: var(--marigold); }
+.bill-item { display: grid; gap: 8px; padding: 10px 0; border-top: 1px solid var(--line); }
+.bill-item:first-of-type { border-top: 0; }
+.bill-item .check-top { align-items: center; }
+.edit-row.cols-bill { grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr) minmax(0, 1.1fr) minmax(0, 1.3fr) 36px; }
+@media (max-width: 560px) {
+  .edit-row.cols-bill { grid-template-columns: repeat(2, minmax(0, 1fr)); padding-top: 10px; border-top: 1px solid var(--line); }
+  .edit-row.cols-bill:first-child { border-top: 0; padding-top: 0; }
+  .edit-row.cols-bill > :first-child { grid-column: 1 / -1; }
+  .edit-row.cols-bill > button { grid-column: 1 / -1; justify-self: end; width: auto; height: 34px; padding-inline: 10px; display: inline-flex; align-items: center; gap: 4px; }
+  .edit-row.cols-bill > button::after { content: " Remove"; font-size: 0.82rem; }
+}

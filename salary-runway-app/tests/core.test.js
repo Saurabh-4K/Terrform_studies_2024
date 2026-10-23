@@ -10,6 +10,7 @@ function baseState(overrides) {
     fixed: [{ id: 'f1', name: 'Rent', amount: 15000, dueDay: 5 }],
     debts: [],
     budgets: [{ id: 'b1', name: 'Food', amount: 15500 }],
+    bills: [],
     savings: { emergencyMonthly: 0, investMonthly: 0, debtExtra: 0, emergencyBalance: 0, emergencyTargetMonths: 3, investSaved: 0 },
     sinking: [],
     transactions: [],
@@ -153,6 +154,83 @@ test('when money would run out before payday, the suggestion is to keep it', () 
   const o = Core.incomeOptions(s, 'in1', '2026-10-10');
   assert.equal(o.recommended, 'spend');
   assert.match(o.reason, /run out on 11 Oct/);
+});
+
+test('a monthly bill that varies shows on its due date for its estimate', () => {
+  const s = baseState({ bills: [{ id: 'el', name: 'Electricity', estimate: 1300, everyMonths: 1, nextDue: '2026-10-15' }] });
+  const r = Core.projectRunway(s, '2026-10-05');
+  const e = r.events.find((x) => x.billId === 'el');
+  assert.equal(e.date, '2026-10-15');
+  assert.equal(e.amount, 1300);
+  assert.equal(Core.monthlyPlan(s, '2026-10-05').variableBills, 1300);
+});
+
+test('a 3-month recharge costs one share each month', () => {
+  const s = baseState({ bills: [{ id: 'mob', name: 'Mobile', estimate: 900, everyMonths: 3, nextDue: '2026-12-10' }] });
+  // Not due in October: 300 goes to the pot on payday.
+  let r = Core.projectRunway(s, '2026-10-05');
+  let e = r.events.find((x) => x.billId === 'mob');
+  assert.deepEqual([e.kind, e.date, e.amount], ['billpot', '2026-10-01', 300]);
+  // Due in December: the pot (600) covers the rest, so this month pays 300.
+  r = Core.projectRunway(s, '2026-12-05');
+  e = r.events.find((x) => x.billId === 'mob');
+  assert.deepEqual([e.kind, e.date, e.amount], ['bill', '2026-12-10', 300]);
+  assert.equal(Core.monthlyPlan(s, '2026-10-05').variableBills, 300);
+});
+
+test('paying a bill learns its amount, period and next due date, and can be undone', () => {
+  const s = baseState({ bills: [{ id: 'mob', name: 'Mobile', estimate: 299, everyMonths: 1, nextDue: '2026-10-10' }] });
+  const before = Core.projectRunway(s, '2026-10-12').balanceToday;
+  const tx = Core.payBill(s, 'mob', 899, 3, '2026-10-12');
+  const b = s.bills[0];
+  assert.equal(b.everyMonths, 3);
+  assert.equal(b.estimate, 899);
+  assert.equal(b.nextDue, '2027-01-10');
+  // Paid this cycle: no estimate event; the payment itself leaves the account.
+  const r = Core.projectRunway(s, '2026-10-12');
+  assert.ok(!r.events.some((x) => x.billId === 'mob'));
+  assert.equal(r.balanceToday, before + 299 - 899);
+  assert.equal(r.spentToDate, 0, 'bill payments are not flexible spending');
+  Core.undoBillPayment(s, tx);
+  assert.deepEqual([b.estimate, b.everyMonths, b.nextDue], [299, 1, '2026-10-10']);
+});
+
+test('an overdue unpaid bill is counted today', () => {
+  const s = baseState({ bills: [{ id: 'gas', name: 'Gas', estimate: 1100, everyMonths: 1, nextDue: '2026-10-03' }] });
+  const e = Core.projectRunway(s, '2026-10-08').events.find((x) => x.billId === 'gas');
+  assert.equal(e.date, '2026-10-08');
+});
+
+test('money moved to savings leaves the account but keeps later days on plan', () => {
+  const s = baseState();
+  s.transactions.push({ id: 'f', date: '2026-10-05', amount: 300, category: 'Food', note: '' });
+  const before = Core.projectRunway(s, '2026-10-06');
+  s.transactions.push({ id: 'm', kind: 'move', date: '2026-10-06', amount: 200, useFor: 'emergency', note: 'Unspent on 5 Oct' });
+  const after = Core.projectRunway(s, '2026-10-06');
+  assert.equal(after.balanceToday, before.balanceToday - 200);
+  assert.equal(after.spentToDate, before.spentToDate, 'a move is not spending');
+  assert.equal(Math.round(after.paceRate), Math.round(before.paceRate));
+});
+
+test('zones: green, amber and red', () => {
+  const s = baseState({ settings: { salary: 30000, payday: 1 }, budgets: [{ id: 'g', name: 'Groceries', amount: 6200 }, { id: 'f', name: 'Food', amount: 6200 }] });
+  // No spending: plenty left.
+  assert.equal(Core.zoneStatus(s, '2026-10-10').zone, 'green');
+  // Heavy spending: bills and basics still covered, but this pace runs out.
+  for (let d = 1; d <= 10; d++) s.transactions.push({ id: 't' + d, date: '2026-10-' + String(d).padStart(2, '0'), amount: 700, category: 'Food', note: '' });
+  let z = Core.zoneStatus(s, '2026-10-10');
+  assert.equal(z.zone, 'amber');
+  assert.ok(z.safeDaily > 0);
+  // 3,000 this morning less 700 spent today leaves 2,300; groceries need 200/day x 21 days = 4,200.
+  s.balanceCheck = { date: '2026-10-10', amount: 3000 };
+  z = Core.zoneStatus(s, '2026-10-10');
+  assert.equal(z.zone, 'red');
+  assert.equal(Math.round(z.shortBy), 1900);
+  // Moving the suggested amount from the emergency fund gets out of the red.
+  s.savings.emergencyBalance = 5000;
+  const fund = Core.zoneStatus(s, '2026-10-10').options.find((o) => o.kind === 'fund');
+  s.transactions.push({ id: 'ef', kind: 'in', date: '2026-10-10', amount: fund.amount, category: 'From emergency fund', note: '', useFor: 'spend', fromFund: true });
+  assert.notEqual(Core.zoneStatus(s, '2026-10-10').zone, 'red');
 });
 
 test('debt plans: extra payments finish sooner and save interest', () => {

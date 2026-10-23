@@ -68,9 +68,8 @@
       fixed: [
         { id: id('f'), name: 'Rent', amount: 15000, dueDay: 5 },
         { id: id('f'), name: 'Bike EMI', amount: 3200, dueDay: 10 },
-        { id: id('f'), name: 'Mobile + WiFi', amount: 900, dueDay: 12 },
-        { id: id('f'), name: 'Electricity', amount: 1300, dueDay: 15 },
       ],
+      bills: [],
       debts: [
         { id: id('d'), name: 'Credit card', balance: 85000, rate: 42, minPayment: 4250, dueDay: 20 },
         { id: id('d'), name: 'Personal loan', balance: 120000, rate: 14, minPayment: 4100, dueDay: 7 },
@@ -106,6 +105,13 @@
     };
 
     const current = Core.cycleFor(todayIso, state.settings.payday);
+    // Bills that vary: electricity monthly, a 3-month mobile recharge due next cycle.
+    state.bills.push(
+      { id: id('v'), name: 'Electricity', estimate: 1300, everyMonths: 1, nextDue: Core.addDays(current.start, 14), history: [1240, 1410, 1250] },
+      { id: id('v'), name: 'Mobile recharge', estimate: 899, everyMonths: 3, nextDue: Core.addDays(current.next, 11), history: [300, 300] }
+    );
+    const electricityDue = state.bills[0].nextDue;
+    if (electricityDue <= todayIso) Core.payBill(state, state.bills[0].id, 1342, 1, electricityDue);
     let c = current;
     const cycles = [];
     for (let k = 0; k < 4; k++) { c = Core.previousCycle(c, state.settings.payday); cycles.unshift(c); }

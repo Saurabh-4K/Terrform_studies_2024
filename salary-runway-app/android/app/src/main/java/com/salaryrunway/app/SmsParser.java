@@ -52,6 +52,7 @@ final class SmsParser {
         { "Entertainment", "netflix", "spotify", "hotstar", "prime video", "bookmyshow", "pvr", "inox", "youtube", "sonyliv" },
         { "Health", "pharmacy", "apollo", "medplus", "1mg", "pharmeasy", "hospital", "clinic", "diagnostic", "netmeds" },
         { "Personal care", "salon", "urban company", "urbanclap", "spa", "barber" },
+        { "Bills", "recharge", "airtel", "jio", "vodafone", "bsnl", "electricity", "bescom", "msedcl", "tata power", "adani electricity", "torrent power", "tneb", "bses", "indane", "hp gas", "bharatgas", "bharat gas", "mahanagar gas", "water bill", "broadband", "fibernet", "hathway" },
     };
 
     private SmsParser() {}

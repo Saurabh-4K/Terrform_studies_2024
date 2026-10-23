@@ -53,6 +53,19 @@ npm run android:apk   # APK at android/app/build/outputs/apk/debug/app-debug.apk
 | **Debts** | Loans and cards with interest rates. Shows the monthly interest each one costs, and compares *minimums only*, *highest interest first* and *smallest balance first*: debt-free date, total interest and savings. |
 | **Grow** | Monthly set-aside check-in, emergency fund progress, yearly costs, **emergency mode** (medical bill, car repair, family function, and so on), Grow budget, and short lessons. |
 
+### Zones: never touch ₹0 before payday
+The Runway tab shows which zone you're in, and the graph shades a red band for what bills and basics still need:
+
+- **Green:** at your current pace, money lasts until payday. It also counts your days in a row within the daily amount.
+- **Careful (amber):** bills and basics are covered, but this pace runs out before payday. It shows the daily amount that keeps you safe.
+- **Red:** the money left doesn't cover the bills still to pay plus groceries and health until payday. It shows how short you are and the ways out: use the emergency fund (one tap moves it in), pause this month's Grow and extra debt payments, spend only on basics, avoid the credit card.
+
+### You saved ₹58 today
+When a day ends under its amount, the app asks (the next morning, or after 8 PM) what the leftover should do: emergency fund, pay off the costliest loan, set aside to invest, or keep it for this month. Moved money leaves this month's spending money without lowering the days ahead.
+
+### Bills that vary
+Electricity, gas, water and recharges get an estimate, how many months one payment covers, and a next due date. A share is set aside every month, so a 3-month recharge costs the same each month. When you pay, you enter the real amount and how long it covers (a recharge can be 1 month one time and 3 the next); the app learns the usual amount from the last three payments. Bill payments from SMS can be linked to the right bill.
+
 ### Automatic budgets
 1. **Set-asides** come out first: about 20% of salary (less when money is tight). The emergency fund gets a share until it holds 3 or 6 months of needs. Debts at 15%+ interest get the rest before the Grow budget does.
 2. **Flexible budgets** share everything left by default weights: Groceries 30%, Food & dining 15%, Travel 15%, Shopping 10%, Entertainment 10%, Health 5%, Personal care 5%, Misc 10%. Categories you add get 5%.

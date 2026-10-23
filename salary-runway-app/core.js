@@ -91,6 +91,67 @@
 
   function sinkingMonthly(fund) { return Math.round((Number(fund.amount) || 0) / 12); }
 
+  /*
+   * Bills that vary (electricity, gas, water, recharges). Each has an
+   * estimate, how many months one payment covers (everyMonths) and the next
+   * due date. A share is set aside every month so a 3-month recharge costs
+   * the same each month: in months it isn't due the share goes to a pot on
+   * payday, and in the month it's due the pot pays the rest.
+   */
+  function billShare(b) {
+    return Math.round((Number(b.estimate) || 0) / Math.max(1, Number(b.everyMonths) || 1));
+  }
+
+  function billPot(b) {
+    return billShare(b) * (Math.max(1, Number(b.everyMonths) || 1) - 1);
+  }
+
+  function billsMonthly(state) {
+    return sum(state.bills || [], billShare);
+  }
+
+  function billPaidIn(state, b, cycle) {
+    return state.transactions.find((t) => t.billId === b.id && inCycle(t.date, cycle)) || null;
+  }
+
+  // A bill is due this cycle if its next due date is before the next payday (overdue included).
+  function billDue(b, cycle) {
+    return !!b.nextDue && b.nextDue < cycle.next;
+  }
+
+  /*
+   * Records a bill payment. `months` is how long it covers (a recharge can be
+   * 1 month one time and 3 the next). The bill learns its typical monthly
+   * cost from the last three payments, and the next due date moves on from
+   * the due date (or from the payment date if paid far from it). Returns the
+   * transaction, which keeps what it changed so a delete can undo it.
+   */
+  function payBill(state, billId, amount, months, dateIso) {
+    const b = (state.bills || []).find((x) => x.id === billId);
+    if (!b) return null;
+    months = Math.max(1, Number(months) || 1);
+    amount = Math.round(Number(amount) || 0);
+    const tx = {
+      id: 'b' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+      date: dateIso, amount, category: 'Bills', note: b.name, billId: b.id, source: 'manual',
+      fromPot: Math.min(amount, billPot(b)),
+      undo: { estimate: b.estimate, everyMonths: b.everyMonths, nextDue: b.nextDue, history: (b.history || []).slice() },
+    };
+    const perMonth = amount / months;
+    b.history = (b.history || []).concat(perMonth).slice(-3);
+    b.everyMonths = months;
+    b.estimate = Math.round((sum(b.history) / b.history.length) * months);
+    const near = b.nextDue && Math.abs(daysBetween(b.nextDue, dateIso)) <= 15;
+    b.nextDue = addMonths(near ? b.nextDue : dateIso, months);
+    state.transactions.push(tx);
+    return tx;
+  }
+
+  function undoBillPayment(state, tx) {
+    const b = (state.bills || []).find((x) => x.id === tx.billId);
+    if (b && tx.undo) Object.assign(b, tx.undo);
+  }
+
   // The month's money, line by line, with any emergency adjustments applied.
   function monthlyPlan(state, todayIso) {
     const adj = activeAdjustment(state, todayIso);
@@ -103,6 +164,7 @@
     const invest = adj && adj.pauseInvest ? 0 : sv.investMonthly;
     const debtExtra = adj && adj.pauseDebtExtra ? 0 : sv.debtExtra;
     const sinking = sum(state.sinking, sinkingMonthly);
+    const variableBills = billsMonthly(state);
     const cut = adj ? adj.flexCutPct : 0;
     const budgets = alloc.budgets.map((b) => ({
       name: b.name,
@@ -112,9 +174,9 @@
     }));
     const flexTotal = sum(budgets, (b) => b.amount);
     const savingsTotal = emergency + invest + debtExtra + sinking;
-    const allocated = fixedTotal + debtMin + savingsTotal + flexTotal;
+    const allocated = fixedTotal + debtMin + variableBills + savingsTotal + flexTotal;
     return {
-      salary, fixedTotal, debtMin, emergency, invest, debtExtra, sinking,
+      salary, fixedTotal, debtMin, variableBills, emergency, invest, debtExtra, sinking,
       budgets, flexTotal, savingsTotal, allocated,
       unallocated: salary - allocated,
       adjustment: adj,
@@ -122,9 +184,24 @@
     };
   }
 
-  // Payments (fixed bills and debt minimums) that fall inside the cycle, by date.
-  function cycleEvents(state, cycle) {
+  /*
+   * Money leaving on set dates inside the cycle: fixed payments, debt
+   * minimums and bills that vary. An unpaid bill that is due shows on its due
+   * date (or today if overdue) for its estimate less the pot; a bill not due
+   * this cycle puts its monthly share in the pot on payday.
+   */
+  function cycleEvents(state, cycle, todayIso) {
     const events = [];
+    (state.bills || []).forEach((b) => {
+      if (billPaidIn(state, b, cycle)) return;
+      if (billDue(b, cycle)) {
+        let date = b.nextDue < cycle.start ? cycle.start : b.nextDue;
+        if (todayIso && date < todayIso) date = todayIso;
+        events.push({ date, name: b.name, amount: Math.max(0, (Number(b.estimate) || 0) - billPot(b)), kind: 'bill', billId: b.id });
+      } else if (billShare(b) > 0) {
+        events.push({ date: cycle.start, name: 'Set aside for ' + b.name, amount: billShare(b), kind: 'billpot', billId: b.id });
+      }
+    });
     state.fixed.forEach((f) => {
       const date = occurrenceInCycle(Number(f.dueDay) || 1, cycle);
       if (date) events.push({ date, name: f.name, amount: Number(f.amount) || 0, kind: 'fixed' });
@@ -136,11 +213,18 @@
     return events.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
   }
 
-  // Transactions are spending unless kind is 'in' (money received).
+  /*
+   * Transaction kinds: spending (no kind), 'in' (money received), 'move'
+   * (unspent money moved to savings or a loan), and bill payments (billId).
+   * Flexible spending, the kind budgets and the pace are about, is only the first.
+   */
   function isIncome(t) { return t.kind === 'in'; }
+  function isMove(t) { return t.kind === 'move'; }
+  function isBillPayment(t) { return !!t.billId; }
+  function isFlexible(t) { return !isIncome(t) && !isMove(t) && !isBillPayment(t); }
 
   function spendInRange(transactions, cycle) {
-    return transactions.filter((t) => !isIncome(t) && inCycle(t.date, cycle));
+    return transactions.filter((t) => isFlexible(t) && inCycle(t.date, cycle));
   }
 
   function incomeInRange(transactions, cycle) {
@@ -183,7 +267,7 @@
   function projectRunway(state, todayIso) {
     const cycle = cycleFor(todayIso, Number(state.settings.payday) || 1);
     const plan = monthlyPlan(state, todayIso);
-    const events = cycleEvents(state, cycle);
+    const events = cycleEvents(state, cycle, todayIso);
     const txns = spendInRange(state.transactions, cycle);
     const idxToday = daysBetween(cycle.start, todayIso);
     const N = cycle.days;
@@ -196,6 +280,14 @@
     const incomes = incomeInRange(state.transactions, cycle).filter((t) => t.date <= todayIso);
     incomes.forEach((t) => { spendByDate[t.date] = (spendByDate[t.date] || 0) - incomeKept(t); });
     const extraIn = sum(incomes.filter((t) => !anchor || t.date >= anchor.date), incomeKept);
+    // Bill payments leave the account (less what the pot covers); moves to savings leave too.
+    const others = state.transactions.filter((t) => (isBillPayment(t) || isMove(t)) && inCycle(t.date, cycle) && t.date <= todayIso);
+    others.forEach((t) => {
+      const out = isBillPayment(t) ? t.amount - (Number(t.fromPot) || 0) : t.amount;
+      spendByDate[t.date] = (spendByDate[t.date] || 0) + out;
+    });
+    // Unspent money moved out counts as used, so later days keep their planned amount.
+    const moved = sum(others.filter((t) => isMove(t) && (!anchor || t.date >= anchor.date)), (t) => t.amount);
     const eventsByDate = {};
     events.forEach((e) => { eventsByDate[e.date] = (eventsByDate[e.date] || 0) + e.amount; });
 
@@ -209,9 +301,9 @@
     const daysElapsed = idxToday - aIdx + 1;
     const remainingDays = N - 1 - idxToday;
     // With a balance check, extra money is shared over the days from that check.
-    const dailyBudget = plan.flexTotal / N + (anchor ? extraIn / (N - aIdx) : 0);
+    const dailyBudget = plan.flexTotal / N + (anchor ? (extraIn - moved) / (N - aIdx) : 0);
     const paceRate = daysElapsed >= 3 && paceSpend > 0 ? paceSpend / daysElapsed : plan.flexTotal / N;
-    const flexLeft = Math.max(0, plan.flexTotal + extraIn - paceSpend);
+    const flexLeft = Math.max(0, plan.flexTotal + extraIn - paceSpend - moved);
     const planRate = anchor ? dailyBudget : remainingDays > 0 ? flexLeft / remainingDays : 0;
 
     const points = [];
@@ -244,7 +336,7 @@
     const byMoney = Math.max(0, bal + spentToday - billsAhead) / (remainingDays + 1);
     const byBudget = anchor
       ? dailyBudget
-      : Math.max(0, plan.flexTotal + extraIn - (paceSpend - spentToday)) / (remainingDays + 1);
+      : Math.max(0, plan.flexTotal + extraIn - moved - (paceSpend - spentToday)) / (remainingDays + 1);
     const dailyAllowance = Math.min(byMoney, byBudget);
     // What is left of today's amount, and tomorrow's amount once today is counted.
     const leftToday = Math.max(0, dailyAllowance - spentToday);
@@ -264,13 +356,52 @@
     const last = points[points.length - 1];
     return {
       cycle, plan, events, points, idxToday, remainingDays, anchor, anchorIdx: anchor ? aIdx : null,
-      spentToDate, spentToday, flexLeft, extraIn, paceRate, planRate, dailyAllowance, leftToday, overToday, tomorrowAllowance,
+      spentToDate, spentToday, flexLeft, extraIn, moved, billsAhead, paceRate, planRate, dailyAllowance, leftToday, overToday, tomorrowAllowance,
       balanceToday: points[idxToday].actual,
       zeroPace: firstBelowZero('pace'),
       zeroPlan: firstBelowZero('plan'),
       endPace: last.actual !== null ? last.actual : last.pace,
       endPlan: last.actual !== null ? last.actual : last.plan,
     };
+  }
+
+  // ---------- zones ----------
+
+  // Spending that can't wait: used to judge whether basics are covered.
+  const ESSENTIAL_CATEGORIES = ['Groceries', 'Health'];
+
+  /*
+   * Green: at this pace, money lasts until payday.
+   * Amber: bills and basics are covered, but this pace runs out before payday.
+   * Red: the money left doesn't cover bills still to come plus basics
+   *      (groceries, health) for the days to payday.
+   * needsLine gives, for each day from today, what bills and basics still need:
+   * the red band on the graph.
+   */
+  function zoneStatus(state, todayIso, runway) {
+    const r = runway || projectRunway(state, todayIso);
+    const N = r.cycle.days;
+    const essentialPerDay = sum(r.plan.budgets.filter((b) => ESSENTIAL_CATEGORIES.indexOf(b.name) !== -1), (b) => b.amount) / N;
+    const billsAfter = (iso) => sum(r.events.filter((e) => e.date > iso), (e) => e.amount);
+    const money = r.balanceToday;
+    const needs = r.billsAhead + essentialPerDay * r.remainingDays;
+    const needsLine = r.points.map((p, i) => (i < r.idxToday ? null : billsAfter(p.date) + essentialPerDay * (N - 1 - i)));
+    const safeDaily = r.remainingDays > 0 ? Math.max(0, money - r.billsAhead) / r.remainingDays : 0;
+
+    let zone = 'green';
+    if (money < needs) zone = 'red';
+    else if (r.zeroPace || r.endPace < 0) zone = 'amber';
+
+    const out = { zone, money, needs, shortBy: Math.max(0, needs - money), safeDaily, essentialPerDay, needsLine, options: [] };
+    if (zone === 'red') {
+      const fund = Number(state.savings.emergencyBalance) || 0;
+      // Rounded up to ₹10 so moving it really clears the gap.
+      if (fund > 0) out.options.push({ kind: 'fund', amount: Math.min(fund, Math.ceil(out.shortBy / 10) * 10) });
+      const setAsides = r.plan.invest + r.plan.debtExtra;
+      if (setAsides > 0 && !r.plan.adjustment) out.options.push({ kind: 'pause', amount: setAsides });
+      out.options.push({ kind: 'basics', amount: Math.round(essentialPerDay) });
+    }
+    return out;
   }
 
   // ---------- suggestions ----------
@@ -297,7 +428,7 @@
     const salary = Number(state.settings.salary) || 0;
     const fixed = sum(state.fixed, (f) => Number(f.amount) || 0);
     const mins = sum(state.debts.filter((d) => d.balance > 0), (d) => Number(d.minPayment) || 0);
-    const sinking = sum(state.sinking, sinkingMonthly);
+    const sinking = sum(state.sinking, sinkingMonthly) + billsMonthly(state);
     const available = salary - fixed - mins - sinking;
     const notes = [];
     if (available <= 0) {
@@ -348,7 +479,7 @@
     const salary = Number(state.settings.salary) || 0;
     const fixed = sum(state.fixed, (f) => Number(f.amount) || 0);
     const mins = sum(state.debts.filter((d) => d.balance > 0), (d) => Number(d.minPayment) || 0);
-    const sinking = sum(state.sinking, sinkingMonthly);
+    const sinking = sum(state.sinking, sinkingMonthly) + billsMonthly(state);
     const pool = salary - fixed - mins - sinking - savings.emergencyMonthly - savings.investMonthly - savings.debtExtra;
     const customTotal = sum(state.budgets.filter((b) => !b.auto), (b) => Number(b.amount) || 0);
     const autoPool = Math.max(0, pool - customTotal);
@@ -459,7 +590,7 @@
     const recentCycles = [current].concat(cycles.map((x) => x.cycle));
     const groups = {};
     state.transactions.forEach((t) => {
-      if (isIncome(t)) return;
+      if (!isFlexible(t)) return;
       const key = normalizeMerchant(t.note);
       if (!key) return;
       const idx = recentCycles.findIndex((cy) => inCycle(t.date, cy));
@@ -711,6 +842,7 @@
     ['Entertainment', ['netflix', 'spotify', 'hotstar', 'prime video', 'bookmyshow', 'pvr', 'inox', 'youtube', 'sonyliv']],
     ['Health', ['pharmacy', 'apollo', 'medplus', '1mg', 'pharmeasy', 'hospital', 'clinic', 'diagnostic', 'netmeds']],
     ['Personal care', ['salon', 'urban company', 'urbanclap', 'spa', 'barber']],
+    ['Bills', ['recharge', 'airtel', 'jio', 'vodafone', 'bsnl', 'electricity', 'bescom', 'msedcl', 'tata power', 'adani electricity', 'torrent power', 'tneb', 'bses', 'indane', 'hp gas', 'bharatgas', 'bharat gas', 'mahanagar gas', 'water bill', 'broadband', 'fibernet', 'hathway']],
   ];
 
   function categorize(text, rules) {
@@ -841,7 +973,8 @@
     occurrenceInCycle, monthlyPlan, cycleEvents, projectRunway, autoSavings, allocate,
     insights, simulateDebts, compareDebtPlans, emergencyPlan, parseSms,
     splitSmsBatch, smsKey, categorize, normalizeMerchant, sinkingMonthly, inCycle,
-    spendInRange, incomeInRange, incomeKept, isIncome, incomeOptions, byCategory, DEFAULT_SPLIT,
+    spendInRange, incomeInRange, incomeKept, isIncome, isMove, isBillPayment, isFlexible, incomeOptions,
+    billShare, billPot, billsMonthly, billPaidIn, billDue, payBill, undoBillPayment, zoneStatus, ESSENTIAL_CATEGORIES, byCategory, DEFAULT_SPLIT,
   };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = Core;

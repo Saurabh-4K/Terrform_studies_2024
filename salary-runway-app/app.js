@@ -20,6 +20,11 @@
     grow: 'Set aside to invest',
     debt: 'Used to pay off a loan',
   };
+  const MOVE_LABELS = {
+    emergency: 'moved to your emergency fund',
+    grow: 'set aside to invest',
+    debt: 'paid off your loan',
+  };
   const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   const SAMPLE_SMS = [
     'Rs.450.00 debited from a/c **1234 on {d1} to VPA swiggy@icici. Not you? Call 18001234.',
@@ -49,6 +54,7 @@
     balanceOpen: false,
     smsMaxDate: 0,
     txKind: 'out',
+    payBill: null,
     smsBusy: false,
     smsClean: null,
   };
@@ -74,6 +80,8 @@
       savingsRecorded: [],
       balanceCheck: null,
       balancePromptSkipped: null,
+      bills: [],
+      days: {},
     };
   }
 
@@ -136,7 +144,7 @@
 
   function categories() {
     const names = state.budgets.map((b) => b.name).filter(Boolean);
-    ['Misc', 'Emergency'].forEach((n) => { if (names.indexOf(n) === -1) names.push(n); });
+    ['Bills', 'Misc', 'Emergency'].forEach((n) => { if (names.indexOf(n) === -1) names.push(n); });
     return names;
   }
 
@@ -221,17 +229,20 @@
     const cyc = r.cycle;
     const lastDay = Core.addDays(cyc.next, -1);
     const daysToPay = Core.daysBetween(t, cyc.next);
+    const z = Core.zoneStatus(state, t, r);
+    recordToday(r);
+    const streak = withinStreak();
     let headline, sub;
-    if (r.zeroPace) {
-      const short = Core.daysBetween(r.zeroPace, cyc.next);
-      headline = 'At this pace, your money runs out on <span class="date bad">' + fmtDate(r.zeroPace) + '</span>';
-      sub = plural(short, 'day') + ' before your next salary on ' + fmtDate(cyc.next) + '. ' +
-        (r.zeroPlan
-          ? 'Even the budget can’t stretch this month: fixed payments and savings need more than what is left.'
-          : 'Keeping to ' + inr(r.planRate) + ' a day from tomorrow gets you to payday with ' + inr(r.endPlan) + ' left.');
+    if (z.zone === 'red') {
+      headline = 'Red zone: <span class="date bad">' + inr(z.shortBy) + ' short</span> for bills and basics';
+      sub = 'The money left doesn’t cover the bills still to pay and groceries and health until ' + fmtDate(cyc.next) + '. Here’s how to stay above ₹0:';
+    } else if (z.zone === 'amber') {
+      headline = 'Careful: at this pace, money runs out on <span class="date warn">' + fmtDate(r.zeroPace || Core.addDays(cyc.next, -1)) + '</span>';
+      sub = 'You’re spending about ' + inr(r.paceRate) + ' a day. Keep to <b>' + inr(z.safeDaily) + ' a day</b> until payday and you’ll stay out of the red.';
     } else {
-      headline = 'Your salary lasts until payday';
-      sub = 'At this pace you reach ' + fmtDate(cyc.next) + ' with about <b>' + inr(r.endPace) + '</b> left.';
+      headline = 'You’re in the green';
+      sub = 'At this pace you reach payday on ' + fmtDate(cyc.next) + ' with about <b>' + inr(r.endPace) + '</b> left.' +
+        (streak >= 2 ? ' ' + plural(streak, 'day') + ' in a row within your daily amount. Keep it going.' : '');
     }
 
     // Joined mid-cycle: budgets cover only the days from the balance check.
@@ -254,10 +265,14 @@
     return (
       '<section class="hero">' +
       '<p class="eyebrow">Salary cycle · ' + fmtDate(cyc.start) + ' – ' + fmtDate(lastDay) + ' · day ' + (r.idxToday + 1) + ' of ' + cyc.days + '</p>' +
+      zoneMeter(z.zone) +
       '<h1>' + headline + '</h1><p class="sub">' + sub + '</p>' +
+      (z.zone === 'red' ? redOptions(z, r) : '') +
       '<div class="chart-wrap"><div id="runway-chart" role="img" aria-label="Balance through this salary cycle"></div>' +
-      '<div class="legend"><span><i></i>Balance so far</span><span><i class="pace"></i>If you keep this pace</span><span><i class="plan"></i>If you keep to budget</span><span><svg width="10" height="10" aria-hidden="true"><circle cx="5" cy="5" r="4" class="c-event"/></svg>Bill or EMI</span></div></div>' +
+      '<div class="legend"><span><i></i>Balance so far</span><span><i class="pace"></i>If you keep this pace</span><span><i class="plan"></i>If you keep to budget</span>' +
+      '<span><i class="red-band"></i>Red zone: bills and basics still to pay</span><span><svg width="10" height="10" aria-hidden="true"><circle cx="5" cy="5" r="4" class="c-event"/></svg>Bill or EMI</span></div></div>' +
       '</section>' +
+      savedCard() +
       (askBalance || ui.balanceOpen ? balanceForm(askBalance && !ui.balanceOpen) : '') +
       (needsCheck().length
         ? '<div class="callout warn"><b>' + plural(needsCheck().length, 'payment') + ' from SMS ' + (needsCheck().length === 1 ? 'needs' : 'need') + ' a quick check</b>' +
@@ -265,7 +280,9 @@
           '<div><button class="primary" data-action="tab" data-tab="spend">Check now</button></div></div>'
         : '') +
       incomeCard() +
-      (adj ? '<div class="callout warn"><b>Emergency plan active until ' + fmtDate(adj.until, true) + '.</b><span class="hint">Flexible budgets are ' + adj.flexCutPct + '% lower' + (adj.pauseInvest ? ', the Grow budget is paused' : '') + (adj.pauseDebtExtra ? ' and extra debt payments are paused' : '') + '.</span></div>' : '') +
+      (adj ? '<div class="callout warn"><b>Recovery plan active until ' + fmtDate(adj.until, true) + '.</b><span class="hint">' +
+        [adj.flexCutPct ? 'Flexible budgets are ' + adj.flexCutPct + '% lower' : '', adj.pauseInvest ? 'the Grow budget is paused' : '', adj.pauseDebtExtra ? 'extra debt payments are paused' : '']
+          .filter(Boolean).join(', ').replace(/^./, (c) => c.toUpperCase()) + '.</span></div>' : '') +
       '<section class="tiles">' +
       tile('Left to spend today', inr(r.leftToday),
         r.overToday > 0
@@ -279,11 +296,12 @@
       '</section>' +
       '<section class="card"><div class="card-head"><h2>' + (r.anchor && r.anchorIdx > 0 ? 'You can spend until payday' : 'You can spend this cycle') + '</h2><button class="ghost" data-action="tab" data-tab="plan">Adjust</button></div>' +
       '<div class="bars">' + bars.join('') + '</div></section>' +
+      billsCard() +
       '<section class="card"><div class="card-head"><h2>Coming up before payday</h2><span class="hint">' + inr(upcoming.reduce((s, e) => s + e.amount, 0)) + '</span></div>' +
       (upcoming.length
         ? '<div class="list">' + upcoming.map((e) =>
           '<div class="list-item"><div class="date-badge"><b>' + Core.parseISO(e.date).getDate() + '</b>' + MONTH_NAMES[Core.parseISO(e.date).getMonth()] + '</div>' +
-          '<div class="grow"><div class="title">' + esc(e.name) + '</div><div class="meta">' + (e.kind === 'debt' ? 'Minimum payment' : 'Fixed payment') + '</div></div>' +
+          '<div class="grow"><div class="title">' + esc(e.name) + '</div><div class="meta">' + (e.kind === 'debt' ? 'Minimum payment' : e.kind === 'bill' ? 'Estimate · amount varies' : 'Fixed payment') + '</div></div>' +
           '<div class="amt">' + inr(e.amount) + '</div></div>').join('') + '</div>'
         : '<p class="hint">No more fixed payments this cycle.</p>') +
       '</section>' +
@@ -291,6 +309,147 @@
       ins.map((i) => '<div class="insight lvl-' + i.level + '"><div><h3>' + esc(i.title) + '</h3><p>' + esc(i.body) + '</p></div></div>').join('') +
       '</div></section>'
     );
+  }
+
+  const BILL_PERIODS = [1, 2, 3, 6, 12];
+
+  function periodOptions(selected) {
+    return BILL_PERIODS.map((m) => '<option value="' + m + '"' + (Number(selected) === m ? ' selected' : '') + '>' +
+      (m === 1 ? '1 month' : m + ' months') + '</option>').join('');
+  }
+
+  /*
+   * Bills that vary and are due before payday, with a "Paid" form, plus bill
+   * payments from SMS that aren't linked to a bill yet.
+   */
+  function billsCard() {
+    const t = today();
+    const cyc = Core.cycleFor(t, Number(state.settings.payday) || 1);
+    const bills = state.bills || [];
+    const due = bills.filter((b) => Core.billDue(b, cyc) && !Core.billPaidIn(state, b, cyc));
+    const unlinked = bills.length
+      ? state.transactions.filter((x) => Core.isFlexible(x) && x.category === 'Bills' && Core.inCycle(x.date, cyc))
+      : [];
+    if (!due.length && !unlinked.length) return '';
+    const rows = due.map((b) => {
+      const late = b.nextDue < t;
+      let html = '<div class="bill-item"><div class="check-top"><div class="grow"><div class="title">' + esc(b.name) + '</div>' +
+        '<div class="meta' + (late ? ' bad' : '') + '">' + (late ? 'Was due ' : 'Due ') + fmtDate(b.nextDue) + ' · about ' + inr(b.estimate) +
+        (b.everyMonths > 1 ? ' for ' + b.everyMonths + ' months' : '') + '</div></div>';
+      if (ui.payBill === b.id) {
+        html += '</div><div class="form-grid">' +
+          '<label class="field" for="bill-amt-' + esc(b.id) + '"><span>Amount paid (₹)</span><input id="bill-amt-' + esc(b.id) + '" type="number" inputmode="numeric" min="1" value="' + esc(b.estimate) + '"></label>' +
+          '<label class="field" for="bill-months-' + esc(b.id) + '"><span>Covers</span><select id="bill-months-' + esc(b.id) + '">' + periodOptions(b.everyMonths) + '</select></label>' +
+          '</div><div class="row"><button class="primary" data-action="bill-pay-save" data-id="' + esc(b.id) + '">Save payment</button>' +
+          '<button class="ghost" data-action="bill-pay-cancel">Cancel</button></div></div>';
+      } else {
+        html += '<button data-action="bill-pay-open" data-id="' + esc(b.id) + '">Paid</button></div></div>';
+      }
+      return html;
+    });
+    const links = unlinked.map((x) =>
+      '<div class="bill-item"><div class="check-top"><div class="grow"><div class="title">' + esc(x.note || 'Bill payment') + '</div>' +
+      '<div class="meta">' + fmtDate(x.date) + ' · ' + inr(x.amount) + ' · which bill is this?</div></div></div>' +
+      '<div class="row"><select id="bill-link-' + esc(x.id) + '" aria-label="Bill">' + bills.map((b) => '<option value="' + esc(b.id) + '">' + esc(b.name) + '</option>').join('') + '</select>' +
+      '<button data-action="bill-link" data-id="' + esc(x.id) + '">Link</button></div></div>');
+    return '<section class="card bills-card"><div class="card-head"><h2>Bills to pay</h2><span class="hint">Amounts vary</span></div>' +
+      rows.join('') + links.join('') +
+      '<p class="hint">Enter what you actually paid and how long it covers. The app learns the usual amount from your last three payments.</p></section>';
+  }
+
+  function zoneMeter(zone) {
+    const seg = (key, label) => '<span class="zone-seg zone-' + key + (zone === key ? ' on' : '') + '">' + label + '</span>';
+    return '<div class="zone-meter" role="img" aria-label="Zone: ' + zone + '">' +
+      seg('green', 'Green') + seg('amber', 'Careful') + seg('red', 'Red') + '</div>';
+  }
+
+  // Ways out of the red, each with its amount.
+  function redOptions(z, r) {
+    const items = z.options.map((o) => {
+      if (o.kind === 'fund') {
+        return '<li><b>Use ' + inr(o.amount) + ' from your emergency fund.</b> That’s what it’s for. ' +
+          '<button class="link" data-action="zone-fund" data-amount="' + Math.round(o.amount) + '">Move it to this month</button></li>';
+      }
+      if (o.kind === 'pause') {
+        return '<li><b>Pause this month’s Grow and extra debt payments</b> (' + inr(o.amount) + '), if you haven’t moved that money yet. ' +
+          '<button class="link" data-action="zone-pause">Pause until payday</button></li>';
+      }
+      return '<li><b>Spend only on basics</b>, about ' + inr(o.amount) + ' a day for groceries and health, until ' + fmtDate(r.cycle.next) + '.</li>';
+    });
+    items.push('<li><b>Avoid the credit card for daily spending.</b> It turns this month’s gap into next month’s debt.</li>');
+    return '<ol class="red-options">' + items.join('') + '</ol>';
+  }
+
+  // Remembers today's amount so tomorrow the app can say what was saved.
+  function recordToday(r) {
+    const t = today();
+    state.days = state.days || {};
+    const day = state.days[t] || {};
+    const allowance = Math.round(r.dailyAllowance);
+    if (day.allowance !== allowance && !day.prompted) {
+      state.days[t] = Object.assign(day, { allowance });
+      // Keep two weeks of days.
+      Object.keys(state.days).filter((d) => d < Core.addDays(t, -14)).forEach((d) => { delete state.days[d]; });
+      save();
+    }
+  }
+
+  function spentOn(date) {
+    return state.transactions
+      .filter((x) => Core.isFlexible(x) && x.date === date && x.category !== 'Emergency')
+      .reduce((s, x) => s + x.amount, 0);
+  }
+
+  // Days in a row, up to yesterday, spent within the daily amount.
+  function withinStreak() {
+    let n = 0;
+    let d = Core.addDays(today(), -1);
+    while (state.days && state.days[d] && spentOn(d) <= state.days[d].allowance) { n++; d = Core.addDays(d, -1); }
+    return n;
+  }
+
+  /*
+   * A day that ended under its amount, waiting for "what should the
+   * leftover do?": the latest of the last three days, or today after 8 PM.
+   */
+  function savedDay() {
+    const t = today();
+    const days = state.days || {};
+    const candidates = [];
+    if (new Date().getHours() >= 20) candidates.push(t);
+    for (let i = 1; i <= 3; i++) candidates.push(Core.addDays(t, -i));
+    for (const d of candidates) {
+      const rec = days[d];
+      if (!rec || rec.prompted) continue;
+      const left = rec.allowance - spentOn(d);
+      if (left >= 10) return { date: d, allowance: rec.allowance, spent: spentOn(d), left: Math.round(left) };
+    }
+    return null;
+  }
+
+  function savedCard() {
+    const day = savedDay();
+    if (!day) return '';
+    const isToday = day.date === today();
+    const when = isToday ? 'today' : day.date === Core.addDays(today(), -1) ? 'yesterday' : 'on ' + fmtDate(day.date);
+    const p = Core.monthlyPlan(Object.assign({}, state, { adjustment: null }), today());
+    const fund = Number(state.savings.emergencyBalance) || 0;
+    const needs = p.fixedTotal + p.debtMin + p.variableBills + p.flexTotal;
+    const top = state.debts.filter((d) => d.balance > 0).sort((a, b) => b.rate - a.rate)[0];
+    const suggested = fund < needs ? 'emergency' : top && top.rate >= 15 ? 'debt' : 'emergency';
+    const opt = (use, title, detail, extra) =>
+      '<button class="choice' + (use === suggested ? ' suggested' : '') + '" data-action="save-day" data-date="' + day.date + '" data-amount="' + day.left + '" data-use="' + use + '"' + (extra || '') + '>' +
+      '<span class="choice-title">' + title + (use === suggested ? ' <span class="chip chip-auto">Suggested</span>' : '') + '</span>' +
+      '<span class="choice-detail">' + detail + '</span></button>';
+    return '<section class="card saved-card"><div class="card-head"><h2>You saved ' + inr(day.left) + ' ' + when + '</h2></div>' +
+      '<p class="hint">You spent ' + inr(day.spent) + ' of your ' + inr(day.allowance) + '. Saving that much every day adds up to ' + inr(day.left * 30) + ' a month. Put it to work:</p>' +
+      '<div class="choices">' +
+      opt('emergency', 'Add to emergency fund', 'Fund goes from ' + inr(fund) + ' to ' + inr(fund + day.left) + '.') +
+      (top ? opt('debt', 'Pay off ' + esc(top.name), 'At ' + top.rate + '% a year, that saves about ' + inr((day.left * top.rate) / 100) + ' a year in interest.', ' data-debt="' + esc(top.id) + '"') : '') +
+      opt('grow', 'Set aside to invest', 'Adds to the money you’ve set aside to invest.') +
+      '<button class="choice" data-action="save-day-keep" data-date="' + day.date + '"><span class="choice-title">Keep it for this month</span>' +
+      '<span class="choice-detail">It stays in this month’s money and slightly raises the days ahead.</span></button>' +
+      '</div></section>';
   }
 
   function balanceForm(firstTime) {
@@ -410,6 +569,7 @@
     const N = pts.length;
     const vals = [];
     pts.forEach((p) => ['actual', 'pace', 'plan'].forEach((k) => { if (p[k] !== null) vals.push(p[k]); }));
+    Core.zoneStatus(state, today(), r).needsLine.forEach((v) => { if (v !== null) vals.push(v); });
     const start = state.settings.salary - r.plan.savingsTotal;
     if (!r.anchor) vals.push(start);
     vals.push(0);
@@ -441,6 +601,12 @@
     if (actual) {
       const first = r.anchorIdx || 0;
       svg += '<path class="c-area" d="' + actual + 'L' + x(ti).toFixed(1) + ' ' + y(Math.max(0, yMin)).toFixed(1) + 'L' + x(first).toFixed(1) + ' ' + y(Math.max(0, yMin)).toFixed(1) + 'Z"/>';
+    }
+    const z = Core.zoneStatus(state, today(), r);
+    let band = '';
+    z.needsLine.forEach((v, i) => { if (v !== null) band += (band ? 'L' : 'M') + x(i).toFixed(1) + ' ' + y(Math.max(v, yMin)).toFixed(1); });
+    if (band) {
+      svg += '<path class="c-red-band" d="' + band + 'L' + x(N - 1).toFixed(1) + ' ' + y(0).toFixed(1) + 'L' + x(ti).toFixed(1) + ' ' + y(0).toFixed(1) + 'Z"/>';
     }
     svg += '<path class="c-plan" d="' + path('plan', ti) + '"/>';
     svg += '<path class="c-pace" d="' + path('pace', ti) + '"/>';
@@ -476,13 +642,14 @@
     const cyc = Core.cycleFor(t, Number(state.settings.payday) || 1);
     const list = (ui.txFilter === 'cycle' ? state.transactions.filter((x) => Core.inCycle(x.date, cyc)) : state.transactions.slice())
       .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
-    const spent = list.filter((x) => !Core.isIncome(x)).reduce((s, x) => s + x.amount, 0);
+    const spent = list.filter((x) => Core.isFlexible(x) || Core.isBillPayment(x)).reduce((s, x) => s + x.amount, 0);
     const received = list.filter(Core.isIncome).reduce((s, x) => s + x.amount, 0);
     const shown = list.slice(0, 200);
     const moneyIn = ui.txKind === 'in';
 
     return (
       needsCheckCard() +
+      billsCard() +
       incomeCard() +
       '<section class="card"><div class="card-head"><h2>' + (moneyIn ? 'Add money received' : 'Add a payment') + '</h2>' +
       '<div class="seg" role="group" aria-label="Type"><button data-action="tx-kind" data-kind="out" aria-pressed="' + !moneyIn + '">Money out</button>' +
@@ -528,6 +695,12 @@
         ? '<div class="table-wrap"><table><thead><tr><th>Payment</th><th>Category</th><th class="amt">Amount</th><th><span class="sr">Delete</span></th></tr></thead><tbody>' +
           shown.map((x) => {
             const isIn = Core.isIncome(x);
+            if (Core.isMove(x) || Core.isBillPayment(x)) {
+              const label = Core.isMove(x) ? INCOME_USE_LABELS[x.useFor] || 'Moved' : 'Bill payment';
+              return '<tr><td><div class="cell-title">' + esc(x.note) + '</div><div class="cell-sub">' + fmtDate(x.date) + ' · ' + label + '</div></td>' +
+                '<td>' + (Core.isMove(x) ? 'Saved' : 'Bills') + '</td><td class="amt' + (Core.isMove(x) ? ' good' : '') + '">' + inr(x.amount) + '</td>' +
+                '<td><button class="icon" data-action="tx-delete" data-id="' + esc(x.id) + '" aria-label="Delete">✕</button></td></tr>';
+            }
             const sub = fmtDate(x.date) + (x.source === 'sms' ? ' · from SMS' : x.source === 'widget' ? ' · from widget' : '') +
               (isIn ? ' · ' + (x.useFor ? INCOME_USE_LABELS[x.useFor] + ' <button class="link" data-action="income-change" data-id="' + esc(x.id) + '">Change</button>' : '<button class="link" data-action="income-change" data-id="' + esc(x.id) + '">Choose what it does</button>') : '');
             return '<tr' + (x.needsReview ? ' class="needs-check"' : '') + '><td><div class="cell-title">' + esc(x.note || (isIn ? 'Money received' : 'Payment')) +
@@ -624,6 +797,18 @@
       '<div><button data-action="list-add" data-list="fixed">Add fixed payment</button></div>' +
       '<p class="hint">Credit cards and loans with a balance go in the Debts tab. Their minimum payments are counted automatically.</p></section>' +
 
+      '<section class="card"><div class="card-head"><h2>Bills that vary</h2><span class="hint">Electricity, gas, water, recharges</span></div>' +
+      '<p class="hint">For bills whose amount changes, or that you sometimes pay for several months at once. A share is set aside every month, so a 3-month recharge doesn’t hit one month hard.</p>' +
+      '<div class="edit-rows">' + (state.bills || []).map((b) =>
+        '<div class="edit-row cols-bill">' + listField('bills', b, 'name', 'Name', 'text') + listField('bills', b, 'estimate', 'About (₹)', 'number') +
+        '<label class="field" for="bills-' + esc(b.id) + '-every"><span>Paid every</span><select id="bills-' + esc(b.id) + '-every" data-list="bills" data-id="' + esc(b.id) + '" data-field="everyMonths">' + periodOptions(b.everyMonths) + '</select></label>' +
+        listField('bills', b, 'nextDue', 'Next due', 'date') + removeButton('bills', b) + '</div>').join('') + '</div>' +
+      '<div class="row"><button data-action="list-add" data-list="bills">Add bill</button>' +
+      (state.fixed.length
+        ? '<select id="fixed-to-bill" aria-label="Fixed payment to move">' + state.fixed.map((f) => '<option value="' + esc(f.id) + '">' + esc(f.name || 'Unnamed') + '</option>').join('') + '</select>' +
+          '<button class="ghost" data-action="fixed-to-bill">Move from fixed payments</button>'
+        : '') + '</div></section>' +
+
       '<section class="card"><div class="card-head"><h2>Set aside each month</h2>' + modeChip(state.savings.auto) + '</div>' +
       '<div class="form-grid">' +
       numInput('emergency-monthly', 'savings.emergencyMonthly', sv.emergencyMonthly, 'Emergency fund (₹)') +
@@ -708,6 +893,7 @@
       line('Salary', inr(p.salary)) +
       line('Fixed payments', minus(p.fixedTotal)) +
       line('Debt minimums', minus(p.debtMin)) +
+      line('Bills that vary (monthly share)', minus(p.variableBills)) +
       line('Emergency fund', minus(p.emergency)) +
       line('Extra toward debts', minus(p.debtExtra)) +
       line('Grow budget', minus(p.invest)) +
@@ -792,11 +978,13 @@
     else if (monthsToTarget) fundNote = 'One month of needs is covered. At ' + inr(p.emergency) + ' a month you reach the full target in ' + plural(monthsToTarget, 'month') + '.';
     else fundNote = 'Set a monthly amount in the Plan tab to start building it.';
 
+    const movedThisCycle = state.transactions.filter((x) => Core.isMove(x) && Core.inCycle(x.date, cyc)).reduce((a, x) => a + x.amount, 0);
     const setAside = [
       ['Emergency fund', p.emergency], ['Extra toward debts', p.debtExtra], ['Grow budget', p.invest], ['Yearly costs', p.sinking],
     ].filter((x) => x[1] > 0);
 
     return (
+      (movedThisCycle ? '<div class="callout good"><b>' + inr(movedThisCycle) + ' saved from daily leftovers this month</b><span class="hint">Every unspent day you move to savings or a loan gets you closer to a loan-free life.</span></div>' : '') +
       '<section class="card"><div class="card-head"><h2>This month’s set-aside</h2><span class="hint">Cycle starting ' + fmtDate(cyc.start) + '</span></div>' +
       (setAside.length
         ? '<div class="summary">' + setAside.map((x) => '<div class="line"><span>' + x[0] + '</span><span>' + inr(x[1]) + '</span></div>').join('') + '</div>' +
@@ -937,6 +1125,7 @@
       case 'fixed': return { id: uid(), name: '', amount: 0, dueDay: 1 };
       case 'debts': return { id: uid(), name: '', balance: 0, rate: 0, minPayment: 0, dueDay: 1 };
       case 'sinking': return { id: uid(), name: '', amount: 0, month: 1, saved: 0 };
+      case 'bills': return { id: uid(), name: '', estimate: 0, everyMonths: 1, nextDue: today() };
       default: return { id: uid(), name: '', amount: 0, auto: true };
     }
   }
@@ -1004,16 +1193,70 @@
       }
       case 'budgets-auto': state.budgets.forEach((b) => { b.auto = true; }); save(); toast('Budgets shared out automatically'); break;
       case 'savings-auto': state.savings.auto = true; save(); toast('Set-asides worked out from your numbers'); break;
-      case 'list-add': state[btn.dataset.list].push(listDefaults(btn.dataset.list)); save(); break;
+      case 'list-add':
+        state[btn.dataset.list] = state[btn.dataset.list] || [];
+        state[btn.dataset.list].push(listDefaults(btn.dataset.list)); save(); break;
       case 'list-remove':
         state[btn.dataset.list] = state[btn.dataset.list].filter((x) => x.id !== btn.dataset.id); save(); break;
       case 'tx-filter': ui.txFilter = btn.dataset.filter; break;
       case 'tx-delete': {
         const tx = state.transactions.find((x) => x.id === btn.dataset.id);
-        if (tx && Core.isIncome(tx)) undoIncomeUse(tx);
+        if (tx && (Core.isIncome(tx) || Core.isMove(tx))) undoIncomeUse(tx);
+        if (tx && Core.isBillPayment(tx)) Core.undoBillPayment(state, tx);
+        if (tx && tx.fromFund) state.savings.emergencyBalance = (Number(state.savings.emergencyBalance) || 0) + tx.amount;
         state.transactions = state.transactions.filter((x) => x.id !== btn.dataset.id); save(); toast('Deleted'); break;
       }
       case 'tx-kind': ui.txKind = btn.dataset.kind; break;
+      case 'bill-pay-open': ui.payBill = btn.dataset.id; break;
+      case 'bill-pay-cancel': ui.payBill = null; break;
+      case 'bill-pay-save': {
+        const id = btn.dataset.id;
+        const amount = Number(document.getElementById('bill-amt-' + id).value) || 0;
+        const months = Number(document.getElementById('bill-months-' + id).value) || 1;
+        if (amount <= 0) { toast('Enter the amount you paid'); return; }
+        if (!Core.payBill(state, id, amount, months, t)) return;
+        ui.payBill = null; save();
+        toast(inr(amount) + ' paid. Next due ' + fmtDate(state.bills.find((x) => x.id === id).nextDue, true));
+        break;
+      }
+      case 'bill-link': {
+        const tx = state.transactions.find((x) => x.id === btn.dataset.id);
+        const billId = document.getElementById('bill-link-' + btn.dataset.id).value;
+        const b = (state.bills || []).find((x) => x.id === billId);
+        if (!tx || !b) return;
+        state.transactions = state.transactions.filter((x) => x !== tx);
+        const paid = Core.payBill(state, billId, tx.amount, b.everyMonths, tx.date);
+        Object.assign(paid, { note: tx.note || b.name, source: tx.source, smsKey: tx.smsKey });
+        save(); toast('Linked to ' + b.name); break;
+      }
+      case 'fixed-to-bill': {
+        const f = state.fixed.find((x) => x.id === document.getElementById('fixed-to-bill').value);
+        if (!f) return;
+        const cyc = Core.cycleFor(t, Number(state.settings.payday) || 1);
+        state.bills = state.bills || [];
+        state.bills.push({ id: uid(), name: f.name, estimate: Number(f.amount) || 0, everyMonths: 1, nextDue: Core.occurrenceInCycle(Number(f.dueDay) || 1, cyc) || t });
+        state.fixed = state.fixed.filter((x) => x !== f);
+        save(); toast(f.name + ' moved to bills that vary'); break;
+      }
+      case 'zone-fund': {
+        const amount = Number(btn.dataset.amount) || 0;
+        state.transactions.push({ id: uid(), kind: 'in', date: t, amount, category: 'From emergency fund', note: 'Emergency fund', source: 'manual', useFor: 'spend', fromFund: true });
+        state.savings.emergencyBalance = Math.max(0, (Number(state.savings.emergencyBalance) || 0) - amount);
+        save(); toast(inr(amount) + ' moved from your emergency fund'); break;
+      }
+      case 'zone-pause': {
+        const cyc = Core.cycleFor(t, Number(state.settings.payday) || 1);
+        state.adjustment = { until: cyc.next, flexCutPct: 0, pauseInvest: true, pauseDebtExtra: true, reason: 'Short this month' };
+        save(); toast('Paused until payday'); break;
+      }
+      case 'save-day': {
+        const tx = { id: uid(), kind: 'move', date: t, amount: Number(btn.dataset.amount) || 0, category: 'Saved', note: 'Unspent on ' + fmtDate(btn.dataset.date), source: 'manual', useFor: null };
+        state.transactions.push(tx);
+        setIncomeUse(tx, btn.dataset.use, btn.dataset.debt);
+        state.days[btn.dataset.date].prompted = true;
+        save(); toast(inr(tx.amount) + ' ' + MOVE_LABELS[btn.dataset.use]); break;
+      }
+      case 'save-day-keep': state.days[btn.dataset.date].prompted = true; save(); break;
       case 'tx-confirm': {
         const tx = state.transactions.find((x) => x.id === btn.dataset.id);
         if (tx) {
@@ -1124,6 +1367,7 @@
       if (!item) return;
       const f = el.dataset.field;
       if (f === 'name') item.name = el.value.trim();
+      else if (f === 'nextDue') item.nextDue = el.value || today();
       else {
         let v = Math.max(0, Number(el.value) || 0);
         if (f === 'dueDay') v = Math.min(31, Math.max(1, Math.round(v) || 1));
