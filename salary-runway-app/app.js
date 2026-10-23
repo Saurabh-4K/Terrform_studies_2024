@@ -33,7 +33,6 @@
   // Inside the Android app, Capacitor provides a bridge to the SMS inbox.
   const NATIVE = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
   const SmsInbox = NATIVE ? window.Capacitor.registerPlugin('SmsInbox') : null;
-  const SMS_FIRST_READ_DAYS = 45;
 
   let state;
   let tab = 'home';
@@ -50,6 +49,7 @@
     smsMaxDate: 0,
     txKind: 'out',
     smsBusy: false,
+    smsClean: null,
   };
 
   // ---------- storage ----------
@@ -131,7 +131,7 @@
     return Core.parseISO(iso).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' });
   }
 
-  function plural(n, word) { return n + ' ' + word + (n === 1 ? '' : 's'); }
+  function plural(n, word, many) { return n + ' ' + (n === 1 ? word : many || word + 's'); }
 
   function categories() {
     const names = state.budgets.map((b) => b.name).filter(Boolean);
@@ -630,8 +630,27 @@
       (ui.restoreOpen ? '<label class="field" for="restore-text">Paste a backup<textarea id="restore-text"></textarea></label>' +
         (ui.restoreError ? '<p class="bad">' + esc(ui.restoreError) + '</p>' : '') +
         '<div><button class="primary" data-action="restore">Restore</button></div>' : '') +
-      '</section>'
+      '</section>' +
+      smsCleanup()
     );
+  }
+
+  // Removes payments imported from SMS before a date, for clearing out a
+  // large first import. Payments added by hand are kept.
+  function smsCleanup() {
+    if (!state.transactions.some((x) => x.source === 'sms')) return '';
+    const c = ui.smsClean;
+    return '<section class="card"><h2>Clean up SMS imports</h2>' +
+      '<p class="hint">Removes payments and money received that were added from SMS before the date you pick. Anything you added by hand stays.</p>' +
+      '<div class="row"><label class="field grow-field" for="sms-clean-date"><span>Remove SMS imports dated before</span><input id="sms-clean-date" type="date" value="' + (c ? c.date : today()) + '" max="' + today() + '"></label></div>' +
+      (c
+        ? (c.count
+          ? '<div class="callout bad"><b>Remove ' + plural(c.count, 'entry', 'entries') + ' imported from SMS before ' + fmtDate(c.date, true) + '?</b>' +
+            '<span class="hint">This can’t be undone. Copy a backup first if you might want them back.</span>' +
+            '<div class="row"><button class="danger" data-action="sms-clean-confirm">Yes, remove them</button><button data-action="sms-clean-cancel">Cancel</button></div></div>'
+          : '<p class="hint">No SMS imports before ' + fmtDate(c.date, true) + '.</p>')
+        : '') +
+      '<div><button data-action="sms-clean">Find SMS imports</button></div></section>';
   }
 
   function modeChip(auto) {
@@ -903,6 +922,19 @@
       case 'load-demo':
         state = Demo.demoState(t); save(); setTab('home'); return;
       case 'wipe': ui.confirmWipe = true; break;
+      case 'sms-clean': {
+        const date = document.getElementById('sms-clean-date').value || t;
+        ui.smsClean = { date, count: state.transactions.filter((x) => x.source === 'sms' && x.date < date).length };
+        break;
+      }
+      case 'sms-clean-cancel': ui.smsClean = null; break;
+      case 'sms-clean-confirm': {
+        const date = ui.smsClean.date;
+        const removed = state.transactions.filter((x) => x.source === 'sms' && x.date < date);
+        removed.forEach((x) => { if (Core.isIncome(x)) undoIncomeUse(x); });
+        state.transactions = state.transactions.filter((x) => !(x.source === 'sms' && x.date < date));
+        ui.smsClean = null; save(); toast(plural(removed.length, 'entry', 'entries') + ' removed'); break;
+      }
       case 'wipe-cancel': ui.confirmWipe = false; break;
       case 'wipe-confirm':
         try { localStorage.removeItem(KEY); } catch (e) { /* ignore */ }
@@ -1117,7 +1149,8 @@
   }
 
   /*
-   * Reads messages newer than the last review. Bank and UPI alerts come from
+   * Reads messages newer than the last review (on first use, from the start
+   * of today). Bank and UPI alerts come from
    * named senders (VM-HDFCBK, JD-SBIUPI), so messages from phone numbers are
    * skipped. `quiet` is the check on opening the app: no messages, no fuss.
    */
@@ -1125,7 +1158,9 @@
     if (!SmsInbox || ui.smsBusy) return;
     ui.smsBusy = true;
     if (!quiet) rerenderKeepScroll();
-    const since = state.smsReadUntil || Date.now() - SMS_FIRST_READ_DAYS * 86400000;
+    // The first read starts at midnight today, so only messages from the day
+    // SMS access was given are offered, while they're easy to categorise.
+    const since = state.smsReadUntil || Core.parseISO(today()).getTime();
     SmsInbox.read({ since, limit: 500 }).then((res) => {
       const msgs = (res.messages || []).filter((m) => /[A-Za-z]/.test(m.address || ''));
       ui.smsMaxDate = (res.messages || []).reduce((mx, m) => Math.max(mx, m.date), since);

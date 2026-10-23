@@ -31,7 +31,7 @@ Uninstalling the app deletes its data. Copy a backup from the Plan tab first.
 
 ### Android app details
 - Built with [Capacitor](https://capacitorjs.com/): the same web app in an Android shell, plus a small native plugin (`SmsInboxPlugin.java`) that reads the SMS inbox.
-- Only messages from named senders (such as `VM-HDFCBK`) are read for payments. On the first read, the app looks back 45 days. After that it checks for new messages each time you open it, and you review each payment before it is added.
+- Only messages from named senders (such as `VM-HDFCBK`) are read for payments. Reading starts from the day you allow SMS access, so you can categorise payments the same day. After that it checks for new messages each time you open it, and you review each payment before it is added.
 - Fonts are bundled. The app makes no network requests, and Android cloud backup is turned off for its data.
 
 To build locally (needs the Android SDK and JDK 21):
