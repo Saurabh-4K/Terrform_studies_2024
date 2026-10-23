@@ -1,0 +1,10 @@
+{
+  "name": "salary-runway",
+  "version": "0.1.0",
+  "private": true,
+  "description": "See the date your salary runs out. Budgets, debt payoff and emergency planning, with all data kept on the device.",
+  "scripts": {
+    "test": "node --test",
+    "start": "python3 -m http.server 8080"
+  }
+}
