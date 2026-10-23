@@ -29,7 +29,6 @@
     txFilter: 'cycle',
     smsText: '',
     smsRows: null,
-    suggestion: null,
     confirmWipe: false,
     backup: null,
     restoreOpen: false,
@@ -48,8 +47,8 @@
       settings: { salary: 0, payday: 1, name: '' },
       fixed: [],
       debts: [],
-      budgets: Core.DEFAULT_SPLIT.map(([name]) => ({ id: uid(), name, amount: 0 })),
-      savings: { emergencyMonthly: 0, investMonthly: 0, debtExtra: 0, emergencyBalance: 0, emergencyTargetMonths: 3, investSaved: 0 },
+      budgets: Core.DEFAULT_SPLIT.map(([name]) => ({ id: uid(), name, amount: 0, auto: true })),
+      savings: { auto: true, emergencyMonthly: 0, investMonthly: 0, debtExtra: 0, emergencyBalance: 0, emergencyTargetMonths: 3, investSaved: 0 },
       sinking: [],
       transactions: [],
       merchantRules: {},
@@ -64,10 +63,19 @@
       const raw = localStorage.getItem(KEY);
       if (raw) {
         const parsed = JSON.parse(raw);
-        if (parsed && parsed.settings) return Object.assign(emptyState(), parsed);
+        if (parsed && parsed.settings) return migrate(Object.assign(emptyState(), parsed));
       }
     } catch (e) { /* storage unavailable: fall through to example data */ }
     return Demo.demoState(today());
+  }
+
+  // Older saves had no automatic budgets: budgets left at ₹0 become automatic.
+  function migrate(s) {
+    s.budgets.forEach((b) => { if (b.auto === undefined) b.auto = !(Number(b.amount) > 0); });
+    if (s.savings.auto === undefined) {
+      s.savings.auto = !(s.savings.emergencyMonthly || s.savings.investMonthly || s.savings.debtExtra);
+    }
+    return s;
   }
 
   function save() {
@@ -225,7 +233,7 @@
       tile('Next salary', plural(daysToPay, 'day'), fmtDate(cyc.next)) +
       tile('Flexible spending', inr(r.spentToDate), 'of ' + inr(r.plan.flexTotal) + ' budget') +
       '</section>' +
-      '<section class="card"><div class="card-head"><h2>Budgets this cycle</h2><button class="ghost" data-action="tab" data-tab="plan">Adjust</button></div>' +
+      '<section class="card"><div class="card-head"><h2>You can spend this cycle</h2><button class="ghost" data-action="tab" data-tab="plan">Adjust</button></div>' +
       '<div class="bars">' + bars.join('') + '</div></section>' +
       '<section class="card"><div class="card-head"><h2>Coming up before payday</h2><span class="hint">' + inr(upcoming.reduce((s, e) => s + e.amount, 0)) + '</span></div>' +
       (upcoming.length
@@ -249,11 +257,13 @@
   function barRow(name, spent, budget) {
     const pct = budget > 0 ? Math.min(100, (spent / budget) * 100) : spent > 0 ? 100 : 0;
     const cls = budget === 0 ? 'marigold' : spent > budget ? 'bad' : spent > budget * 0.85 ? 'warn' : '';
+    const left = budget - spent;
     const right = budget > 0
-      ? inr(spent) + ' of ' + inr(budget) + (spent > budget ? ' · <span class="bad">' + inr(spent - budget) + ' over</span>' : '')
+      ? (left >= 0 ? '<b>' + inr(left) + '</b> left' : '<b class="bad">' + inr(-left) + ' over</b>')
       : inr(spent);
     return '<div class="bar-row"><div class="bar-top"><span>' + esc(name) + '</span><span class="amt">' + right + '</span></div>' +
-      '<div class="bar"><span class="' + cls + '" style="width:' + pct.toFixed(1) + '%"></span></div></div>';
+      '<div class="bar"><span class="' + cls + '" style="width:' + pct.toFixed(1) + '%"></span></div>' +
+      (budget > 0 ? '<div class="bar-sub">Spent ' + inr(spent) + ' of ' + inr(budget) + '</div>' : '') + '</div>';
   }
 
   function niceStep(range, count) {
@@ -429,7 +439,10 @@
 
   function viewPlan() {
     const s = state.settings;
-    const sv = state.savings;
+    const plan = Core.monthlyPlan(state, today());
+    const alloc = Core.allocate(state);
+    const sv = alloc.savings;
+    const edited = alloc.budgets.some((b) => !b.auto);
     return (
       (s.salary ? '' : '<div class="callout"><b>Start here.</b><span class="hint">Enter your salary and payday, then your fixed payments. Everything else can come later.</span></div>') +
       '<section class="card"><h2>Salary</h2><div class="form-grid">' +
@@ -444,12 +457,16 @@
       '<div><button data-action="list-add" data-list="fixed">Add fixed payment</button></div>' +
       '<p class="hint">Credit cards and loans with a balance go in the Debts tab. Their minimum payments are counted automatically.</p></section>' +
 
-      '<section class="card"><div class="card-head"><h2>Set aside each month</h2><span class="hint">Taken out on payday</span></div>' +
+      '<section class="card"><div class="card-head"><h2>Set aside each month</h2>' + modeChip(state.savings.auto) + '</div>' +
       '<div class="form-grid">' +
       numInput('emergency-monthly', 'savings.emergencyMonthly', sv.emergencyMonthly, 'Emergency fund (₹)') +
       numInput('debt-extra', 'savings.debtExtra', sv.debtExtra, 'Extra toward debts (₹)') +
       numInput('invest-monthly', 'savings.investMonthly', sv.investMonthly, 'Grow budget (₹)') +
-      '</div><p class="hint">The Grow budget is money you plan to invest. Talk to a SEBI-registered investment adviser about where. This app only helps you set the amount aside.</p></section>' +
+      '</div>' +
+      (state.savings.auto
+        ? sv.notes.map((n) => '<p class="hint">' + esc(n) + '</p>').join('')
+        : '<div class="row"><span class="hint">You set these amounts.</span><button class="ghost" data-action="savings-auto">Work them out for me</button></div>') +
+      '<p class="hint">Taken out on payday. The Grow budget is money you plan to invest; talk to a SEBI-registered investment adviser about where. This app only helps you set the amount aside.</p></section>' +
 
       '<section class="card"><div class="card-head"><h2>Yearly costs</h2><span class="hint">Festivals, insurance, servicing, school fees</span></div>' +
       '<p class="hint">Costs you know are coming. Saving a little each month means they don’t become emergencies.</p>' +
@@ -460,10 +477,18 @@
         removeButton('sinking', f) + '</div>').join('') + '</div>' +
       '<div><button data-action="list-add" data-list="sinking">Add yearly cost</button></div></section>' +
 
-      '<section class="card"><div class="card-head"><h2>Flexible budgets</h2><span class="hint">Change these any time</span></div>' +
-      '<div class="edit-rows">' + state.budgets.map((b) =>
-        '<div class="edit-row cols-2">' + listField('budgets', b, 'name', 'Category', 'text') + listField('budgets', b, 'amount', 'Per month (₹)', 'number') + removeButton('budgets', b) + '</div>').join('') + '</div>' +
-      '<div><button data-action="list-add" data-list="budgets">Add category</button></div></section>' +
+      '<section class="card"><div class="card-head"><h2>Flexible budgets</h2><span class="hint">' + inr(Math.max(0, alloc.pool)) + ' to spend this month</span></div>' +
+      '<p class="hint">What is left of your salary is shared out across these automatically. Change any amount and the automatic ones adjust to fit.</p>' +
+      '<div class="edit-rows">' + alloc.budgets.map((b) => {
+        const item = state.budgets.find((x) => x.id === b.id);
+        return '<div class="edit-row cols-2">' + listField('budgets', item, 'name', 'Category', 'text') +
+          listField('budgets', Object.assign({}, item, { amount: b.amount }), 'amount', b.auto ? 'Auto · ' + b.share + '%' : 'Set by you', 'number', b.auto ? ' class="auto"' : '') +
+          removeButton('budgets', item) + '</div>';
+      }).join('') + '</div>' +
+      (alloc.budgets.length && alloc.autoPool === 0 && alloc.budgets.some((b) => b.auto) && alloc.pool > 0
+        ? '<p class="hint warn">Your own amounts use all of the money left, so the automatic budgets are at ₹0.</p>' : '') +
+      '<div class="row"><button data-action="list-add" data-list="budgets">Add category</button>' +
+      (edited ? '<button class="ghost" data-action="budgets-auto">Share everything out automatically</button>' : '') + '</div></section>' +
 
       '<section class="card" id="plan-summary">' + planSummary() + '</section>' +
 
@@ -482,13 +507,17 @@
     );
   }
 
+  function modeChip(auto) {
+    return '<span class="chip' + (auto ? ' chip-auto' : '') + '">' + (auto ? 'Automatic' : 'Set by you') + '</span>';
+  }
+
   function minus(n) { return n ? '−' + inr(n) : inr(0); }
 
   function planSummary() {
     const p = Core.monthlyPlan(state, today());
     const line = (label, v, cls) => '<div class="line' + (cls ? ' ' + cls : '') + '"><span>' + label + '</span><span>' + v + '</span></div>';
     const left = p.unallocated;
-    let html = '<div class="card-head"><h2>Where the salary goes</h2><button data-action="suggest">Suggest a starting plan</button></div>' +
+    let html = '<div class="card-head"><h2>Where the salary goes</h2></div>' +
       '<div class="summary">' +
       line('Salary', inr(p.salary)) +
       line('Fixed payments', minus(p.fixedTotal)) +
@@ -501,19 +530,6 @@
       line(left >= 0 ? 'Not yet assigned' : 'Over-planned by', '<span class="' + (left >= 0 ? 'good' : 'bad') + '">' + inr(Math.abs(left)) + '</span>', 'total') +
       '</div>';
     if (left < 0) html += '<p class="hint bad">Your plan uses more than your salary. Lower a flexible budget or the amounts set aside.</p>';
-    if (ui.suggestion) {
-      const sg = ui.suggestion;
-      html += '<div class="callout"><b>Suggested starting plan</b>';
-      if (!sg.ok) {
-        html += sg.notes.map((n) => '<span class="hint">' + esc(n) + '</span>').join('') + '<div><button data-action="suggest-dismiss">Close</button></div></div>';
-      } else {
-        html += '<div class="summary">' +
-          line('Emergency fund', inr(sg.emergencyMonthly)) + line('Extra toward debts', inr(sg.debtExtra)) + line('Grow budget', inr(sg.investMonthly)) +
-          sg.budgets.map((b) => line(esc(b.name), inr(b.amount))).join('') + '</div>' +
-          sg.notes.map((n) => '<span class="hint">' + esc(n) + '</span>').join('') +
-          '<div class="row"><button class="primary" data-action="suggest-apply">Use these numbers</button><button data-action="suggest-dismiss">Keep mine</button></div></div>';
-      }
-    }
     return html;
   }
 
@@ -522,7 +538,7 @@
   function viewDebts() {
     const t = today();
     const debts = state.debts.filter((d) => Number(d.balance) > 0);
-    const extra = Number(state.savings.debtExtra) || 0;
+    const extra = Core.allocate(state).savings.debtExtra;
     let compare = '';
     if (debts.length) {
       const c = Core.compareDebtPlans(debts, extra);
@@ -735,21 +751,17 @@
       case 'fixed': return { id: uid(), name: '', amount: 0, dueDay: 1 };
       case 'debts': return { id: uid(), name: '', balance: 0, rate: 0, minPayment: 0, dueDay: 1 };
       case 'sinking': return { id: uid(), name: '', amount: 0, month: 1, saved: 0 };
-      default: return { id: uid(), name: '', amount: 0 };
+      default: return { id: uid(), name: '', amount: 0, auto: true };
     }
   }
 
   function refreshAfterEdit() {
-    const summary = document.getElementById('plan-summary');
-    if (summary) summary.innerHTML = planSummary();
-    if (tab === 'debts' || tab === 'grow') {
-      const y = window.scrollY;
-      const active = document.activeElement && document.activeElement.id;
-      render();
-      window.scrollTo(0, y);
-      const el = active && document.getElementById(active);
-      if (el) el.focus();
-    }
+    const y = window.scrollY;
+    const active = document.activeElement && document.activeElement.id;
+    render();
+    window.scrollTo(0, y);
+    const el = active && document.getElementById(active);
+    if (el) el.focus();
   }
 
   document.addEventListener('click', (ev) => {
@@ -760,7 +772,7 @@
     switch (a) {
       case 'tab': setTab(btn.dataset.tab); return;
       case 'start-own':
-        state = emptyState(); save(); ui.suggestion = null; setTab('plan'); toast('Example data cleared. Add your salary to begin.'); return;
+        state = emptyState(); save(); setTab('plan'); toast('Example data cleared. Add your salary to begin.'); return;
       case 'load-demo':
         state = Demo.demoState(t); save(); setTab('home'); return;
       case 'wipe': ui.confirmWipe = true; break;
@@ -783,7 +795,7 @@
         try {
           const parsed = JSON.parse(text);
           if (!parsed || !parsed.settings || !Array.isArray(parsed.transactions)) throw new Error('shape');
-          state = Object.assign(emptyState(), parsed);
+          state = migrate(Object.assign(emptyState(), parsed));
           ui.restoreOpen = false; ui.restoreError = '';
           save(); toast('Backup restored');
         } catch (e) {
@@ -791,19 +803,8 @@
         }
         break;
       }
-      case 'suggest': ui.suggestion = Core.suggestPlan(state); document.getElementById('plan-summary').innerHTML = planSummary(); return;
-      case 'suggest-dismiss': ui.suggestion = null; document.getElementById('plan-summary').innerHTML = planSummary(); return;
-      case 'suggest-apply': {
-        const sg = ui.suggestion;
-        state.savings.emergencyMonthly = sg.emergencyMonthly;
-        state.savings.investMonthly = sg.investMonthly;
-        state.savings.debtExtra = sg.debtExtra;
-        state.budgets = sg.budgets.map((b) => {
-          const existing = state.budgets.find((x) => x.name === b.name);
-          return { id: existing ? existing.id : uid(), name: b.name, amount: b.amount };
-        });
-        ui.suggestion = null; save(); toast('Plan updated'); break;
-      }
+      case 'budgets-auto': state.budgets.forEach((b) => { b.auto = true; }); save(); toast('Budgets shared out automatically'); break;
+      case 'savings-auto': state.savings.auto = true; save(); toast('Set-asides worked out from your numbers'); break;
       case 'list-add': state[btn.dataset.list].push(listDefaults(btn.dataset.list)); save(); break;
       case 'list-remove':
         state[btn.dataset.list] = state[btn.dataset.list].filter((x) => x.id !== btn.dataset.id); save(); break;
@@ -854,6 +855,14 @@
       const v = Number(el.value);
       let val = isFinite(v) && v >= 0 ? v : 0;
       if (el.dataset.bind === 'settings.payday') val = Math.min(31, Math.max(1, Math.round(val) || 1));
+      if (state.savings.auto && /^savings\.(emergencyMonthly|investMonthly|debtExtra)$/.test(el.dataset.bind)) {
+        // Keep the other two at their worked-out amounts.
+        const sv = Core.allocate(state).savings;
+        state.savings.emergencyMonthly = sv.emergencyMonthly;
+        state.savings.investMonthly = sv.investMonthly;
+        state.savings.debtExtra = sv.debtExtra;
+        state.savings.auto = false;
+      }
       setPath(el.dataset.bind, val);
       save(); refreshAfterEdit(); return;
     }
@@ -866,6 +875,7 @@
         let v = Math.max(0, Number(el.value) || 0);
         if (f === 'dueDay') v = Math.min(31, Math.max(1, Math.round(v) || 1));
         item[f] = v;
+        if (el.dataset.list === 'budgets' && f === 'amount') item.auto = false;
       }
       save(); refreshAfterEdit(); return;
     }

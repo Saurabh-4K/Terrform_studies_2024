@@ -19,11 +19,16 @@ It opens with **example numbers** (₹55,000 salary, rent, a bike EMI, a credit 
 
 | Tab | What it does |
 |---|---|
-| **Runway** | Graph of your balance through the salary cycle, with two projections: *at this pace* and *if you keep to budget*. Shows the date money runs out, a daily "safe to spend" amount, budget bars, upcoming bills and insights from your spending history. |
+| **Runway** | Graph of your balance through the salary cycle, with two projections: *at this pace* and *if you keep to budget*. Shows the date money runs out, a daily "safe to spend" amount, how much is left to spend in each budget, upcoming bills and insights from your spending history. |
 | **Spend** | Add payments by hand, or **paste bank/UPI SMS** to import them. Payments are categorised automatically (Swiggy goes to Food, Uber to Travel). When you correct a category, the app remembers it for that shop. |
-| **Plan** | Salary and payday, fixed payments, amounts set aside each month (emergency fund, extra toward debts, Grow budget), yearly costs (festivals, insurance) and flexible budgets. **Suggest a starting plan** fills these in from your own numbers. |
+| **Plan** | Salary and payday, fixed payments, yearly costs (festivals, insurance), monthly set-asides and flexible budgets. **Set-asides and budgets are worked out automatically** from what is left of the salary; edit any amount and the automatic ones adjust to fit. |
 | **Debts** | Loans and cards with interest rates. Shows the monthly interest each one costs, and compares *minimums only*, *highest interest first* and *smallest balance first*: debt-free date, total interest and savings. |
 | **Grow** | Monthly set-aside check-in, emergency fund progress, yearly costs, **emergency mode** (medical bill, car repair, family function, and so on), Grow budget, and short lessons. |
+
+### Automatic budgets
+1. **Set-asides** come out first: about 20% of salary (less when money is tight). The emergency fund gets a share until it holds 3 or 6 months of needs. Debts at 15%+ interest get the rest before the Grow budget does.
+2. **Flexible budgets** share everything left by default weights: Groceries 30%, Food & dining 15%, Travel 15%, Shopping 10%, Entertainment 10%, Health 5%, Personal care 5%, Misc 10%. Categories you add get 5%.
+3. Type in your own amount and that category is marked *Set by you*; the automatic ones are re-shared from what remains. **Share everything out automatically** undoes your edits.
 
 ### Emergency mode
 Enter what happened and what it costs. The app:

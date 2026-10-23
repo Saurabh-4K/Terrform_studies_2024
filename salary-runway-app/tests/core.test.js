@@ -110,13 +110,65 @@ test('active adjustment lowers budgets and pauses Grow', () => {
   assert.equal(Core.monthlyPlan(s, '2026-12-01').invest, 3000);
 });
 
-test('suggested plan sends extra money to expensive debt, never to Grow', () => {
+test('set-asides send extra money to expensive debt, never to Grow', () => {
   const s = baseState({ debts: [{ name: 'Credit card', balance: 50000, rate: 40, minPayment: 2500, dueDay: 20 }] });
-  const sg = Core.suggestPlan(s);
-  assert.equal(sg.ok, true);
-  assert.equal(sg.investMonthly, 0);
-  assert.ok(sg.debtExtra > 0);
-  assert.ok(sg.emergencyMonthly > 0);
+  const sv = Core.autoSavings(s);
+  assert.equal(sv.investMonthly, 0);
+  assert.ok(sv.debtExtra > 0);
+  assert.ok(sv.emergencyMonthly > 0);
+  assert.equal(Core.autoSavings(baseState()).debtExtra, 0);
+  assert.ok(Core.autoSavings(baseState()).investMonthly > 0);
+});
+
+function autoState(extra) {
+  return baseState(Object.assign({
+    budgets: [
+      { id: 'g', name: 'Groceries', amount: 0, auto: true },
+      { id: 't', name: 'Travel', amount: 0, auto: true },
+      { id: 'h', name: 'Health', amount: 0, auto: true },
+    ],
+  }, extra));
+}
+
+test('automatic budgets share out everything left of the salary', () => {
+  // 50,000 - 15,000 rent = 35,000, split 30 : 15 : 5.
+  const a = Core.allocate(autoState());
+  const by = Object.fromEntries(a.budgets.map((b) => [b.id, b.amount]));
+  assert.equal(a.pool, 35000);
+  assert.equal(by.g + by.t + by.h, 35000);
+  assert.equal(by.t, 10500);
+  assert.equal(by.h, 3500);
+  assert.equal(by.g, 21000);
+  assert.equal(Core.monthlyPlan(autoState(), '2026-10-23').unallocated, 0);
+});
+
+test('editing one budget makes the automatic ones adjust', () => {
+  const s = autoState();
+  s.budgets[0].auto = false;
+  s.budgets[0].amount = 5000;
+  const by = Object.fromEntries(Core.allocate(s).budgets.map((b) => [b.id, b.amount]));
+  assert.equal(by.g, 5000);
+  assert.equal(by.t + by.h, 30000);
+  assert.equal(by.t, 22500);
+});
+
+test('automatic set-asides come out before budgets are shared', () => {
+  const s = autoState({ savings: { auto: true, emergencyBalance: 0, emergencyTargetMonths: 3 } });
+  const a = Core.allocate(s);
+  const set = a.savings.emergencyMonthly + a.savings.investMonthly + a.savings.debtExtra;
+  assert.ok(set > 0);
+  assert.equal(a.pool, 35000 - set);
+  assert.equal(a.budgets.reduce((t, b) => t + b.amount, 0), a.pool);
+});
+
+test('when own amounts use everything, automatic budgets drop to zero', () => {
+  const s = autoState();
+  s.budgets[0].auto = false;
+  s.budgets[0].amount = 40000;
+  const a = Core.allocate(s);
+  assert.equal(a.autoPool, 0);
+  assert.ok(a.budgets.filter((b) => b.auto).every((b) => b.amount === 0));
+  assert.equal(Core.monthlyPlan(s, '2026-10-23').unallocated, -5000);
 });
 
 test('SMS: reads common bank and UPI formats', () => {

@@ -321,3 +321,10 @@ details.lesson p { color: var(--muted); margin-top: 6px; font-size: 0.9rem; max-
 }
 
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+.bar-sub { font-size: 0.76rem; color: var(--muted); }
+.bar-top .amt b { color: var(--ink); font-weight: 650; }
+.bar-top .amt b.bad { color: var(--bad); }
+.chip { font-size: 0.72rem; font-weight: 650; padding: 3px 9px; border-radius: 99px; background: var(--surface-2); color: var(--muted); white-space: nowrap; }
+.chip-auto { background: var(--accent-soft); color: var(--accent); }
+input.auto { border-style: dashed; }

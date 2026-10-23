@@ -94,19 +94,21 @@
   // The month's money, line by line, with any emergency adjustments applied.
   function monthlyPlan(state, todayIso) {
     const adj = activeAdjustment(state, todayIso);
-    const sv = state.savings;
+    const alloc = allocate(state);
+    const sv = alloc.savings;
     const salary = Number(state.settings.salary) || 0;
     const fixedTotal = sum(state.fixed, (f) => Number(f.amount) || 0);
     const debtMin = sum(state.debts.filter((d) => d.balance > 0), (d) => Number(d.minPayment) || 0);
-    const emergency = Number(sv.emergencyMonthly) || 0;
-    const invest = adj && adj.pauseInvest ? 0 : Number(sv.investMonthly) || 0;
-    const debtExtra = adj && adj.pauseDebtExtra ? 0 : Number(sv.debtExtra) || 0;
+    const emergency = sv.emergencyMonthly;
+    const invest = adj && adj.pauseInvest ? 0 : sv.investMonthly;
+    const debtExtra = adj && adj.pauseDebtExtra ? 0 : sv.debtExtra;
     const sinking = sum(state.sinking, sinkingMonthly);
     const cut = adj ? adj.flexCutPct : 0;
-    const budgets = state.budgets.map((b) => ({
+    const budgets = alloc.budgets.map((b) => ({
       name: b.name,
-      base: Number(b.amount) || 0,
-      amount: Math.round((Number(b.amount) || 0) * (1 - cut / 100)),
+      auto: b.auto,
+      base: b.amount,
+      amount: Math.round(b.amount * (1 - cut / 100)),
     }));
     const flexTotal = sum(budgets, (b) => b.amount);
     const savingsTotal = emergency + invest + debtExtra + sinking;
@@ -116,6 +118,7 @@
       budgets, flexTotal, savingsTotal, allocated,
       unallocated: salary - allocated,
       adjustment: adj,
+      notes: sv.notes,
     };
   }
 
@@ -225,11 +228,20 @@
     ['Entertainment', 10], ['Health', 5], ['Personal care', 5], ['Misc', 10],
   ];
 
+  function weightFor(name) {
+    const key = String(name || '').trim().toLowerCase();
+    const hit = DEFAULT_SPLIT.find(([n]) => n.toLowerCase() === key);
+    return hit ? hit[1] : 5;
+  }
+
   /*
-   * A starting plan from the user's own numbers. Budgeting only: it decides
-   * how much to set aside, never what to invest it in.
+   * Monthly set-asides worked out from the user's own numbers. Budgeting
+   * only: it decides how much to put aside, never what to invest it in.
+   * - about 20% of salary (less when money is tight)
+   * - emergency fund first, until it holds a few months of needs
+   * - debts at 15%+ interest get the rest before the Grow budget does
    */
-  function suggestPlan(state) {
+  function autoSavings(state) {
     const salary = Number(state.settings.salary) || 0;
     const fixed = sum(state.fixed, (f) => Number(f.amount) || 0);
     const mins = sum(state.debts.filter((d) => d.balance > 0), (d) => Number(d.minPayment) || 0);
@@ -237,44 +249,73 @@
     const available = salary - fixed - mins - sinking;
     const notes = [];
     if (available <= 0) {
-      return {
-        ok: false,
-        notes: ['Your fixed payments, debt minimums and yearly costs already use the whole salary. Start with the Debts tab to see what clearing the costliest loan frees up.'],
-      };
+      if (salary > 0) notes.push('Fixed payments, debt minimums and yearly costs already use the whole salary, so nothing can be set aside yet. The Debts tab shows what clearing the costliest loan frees up.');
+      return { emergencyMonthly: 0, investMonthly: 0, debtExtra: 0, notes, emergencyTarget: 0 };
     }
 
+    const pool = round100(Math.min(salary * 0.2, available * 0.35));
     const expensive = state.debts.filter((d) => d.balance > 0 && d.rate >= 15);
-    const currentFlex = sum(state.budgets, (b) => Number(b.amount) || 0);
-    const monthlyNeeds = fixed + mins + (currentFlex || available * 0.6);
-    const target = (Number(state.savings.emergencyTargetMonths) || 3) * monthlyNeeds;
+    const months = Number(state.savings.emergencyTargetMonths) || 3;
+    const target = months * (fixed + mins + available - pool);
     const fundFull = (Number(state.savings.emergencyBalance) || 0) >= target;
 
-    const pool = round100(Math.min(salary * 0.2, available * 0.35));
-    let emergency = 0;
+    let emergency = fundFull ? 0 : round100(pool * (expensive.length ? 0.4 : 0.6));
     let invest = 0;
     let debtExtra = 0;
-    if (!fundFull) emergency = round100(pool * (expensive.length ? 0.4 : 0.6));
-    const rest = pool - emergency;
     if (expensive.length) {
-      debtExtra = rest;
+      debtExtra = pool - emergency;
       const monthlyInterest = sum(expensive, (d) => (d.balance * d.rate) / 1200);
       notes.push(
         'Your ' + expensive.map((d) => d.name).join(' and ') + (expensive.length > 1 ? ' cost' : ' costs') + ' about ₹' +
         Math.round(monthlyInterest).toLocaleString('en-IN') +
-        ' a month in interest, so the extra goes there first. The Grow budget starts once they are cleared.'
+        ' a month in interest, so the extra goes there first. The Grow budget starts once ' + (expensive.length > 1 ? 'they are' : 'it is') + ' cleared.'
       );
     } else {
-      invest = rest;
+      invest = pool - emergency;
     }
-    if (!fundFull) notes.push('Emergency fund target: ₹' + Math.round(target).toLocaleString('en-IN') + ' (' + (state.savings.emergencyTargetMonths || 3) + ' months of needs).');
+    if (!fundFull) notes.push('The emergency fund gets money until it reaches ₹' + Math.round(target).toLocaleString('en-IN') + ' (' + months + ' months of needs).');
+    return { emergencyMonthly: emergency, investMonthly: invest, debtExtra, notes, emergencyTarget: target };
+  }
 
-    const flexPool = available - pool;
-    const weights = currentFlex > 0
-      ? state.budgets.map((b) => [b.name, Number(b.amount) || 0])
-      : DEFAULT_SPLIT;
-    const wTotal = sum(weights, (w) => w[1]);
-    const budgets = weights.map(([name, w]) => ({ name, amount: round100((flexPool * w) / wTotal) }));
-    return { ok: true, emergencyMonthly: emergency, investMonthly: invest, debtExtra, budgets, notes, emergencyTarget: target };
+  /*
+   * Shares the salary out. Whatever is left after fixed payments, debt
+   * minimums, yearly costs, set-asides and any budgets the user typed in
+   * goes to the automatic budgets by weight (Groceries 30%, Travel 15%, ...).
+   * Amounts are whole hundreds; the rounding remainder goes to the largest.
+   */
+  function allocate(state) {
+    const sv = state.savings;
+    const savings = sv.auto
+      ? autoSavings(state)
+      : {
+        emergencyMonthly: Number(sv.emergencyMonthly) || 0,
+        investMonthly: Number(sv.investMonthly) || 0,
+        debtExtra: Number(sv.debtExtra) || 0,
+        notes: [],
+      };
+    const salary = Number(state.settings.salary) || 0;
+    const fixed = sum(state.fixed, (f) => Number(f.amount) || 0);
+    const mins = sum(state.debts.filter((d) => d.balance > 0), (d) => Number(d.minPayment) || 0);
+    const sinking = sum(state.sinking, sinkingMonthly);
+    const pool = salary - fixed - mins - sinking - savings.emergencyMonthly - savings.investMonthly - savings.debtExtra;
+    const customTotal = sum(state.budgets.filter((b) => !b.auto), (b) => Number(b.amount) || 0);
+    const autoPool = Math.max(0, pool - customTotal);
+    const autos = state.budgets.filter((b) => b.auto);
+    const wTotal = sum(autos, (b) => weightFor(b.name));
+    const amounts = {};
+    autos.forEach((b) => { amounts[b.id] = Math.floor((autoPool * weightFor(b.name)) / wTotal / 100) * 100; });
+    if (autos.length) {
+      const largest = autos.reduce((a, b) => (weightFor(b.name) > weightFor(a.name) ? b : a));
+      amounts[largest.id] += autoPool - sum(autos, (b) => amounts[b.id]);
+    }
+    const budgets = state.budgets.map((b) => ({
+      id: b.id,
+      name: b.name,
+      auto: !!b.auto,
+      share: b.auto && wTotal ? Math.round((weightFor(b.name) / wTotal) * 100) : null,
+      amount: b.auto ? amounts[b.id] : Number(b.amount) || 0,
+    }));
+    return { savings, budgets, pool, autoPool, customTotal };
   }
 
   // ---------- insights ----------
@@ -321,8 +362,9 @@
     const n = cycles.length;
     const all = [].concat.apply([], cycles.map((x) => x.txns)).filter((t) => NON_PACE_CATEGORIES.indexOf(t.category) === -1);
     const totals = byCategory(all);
+    const allocated = allocate(state).budgets;
     const budgetMap = {};
-    state.budgets.forEach((b) => { budgetMap[b.name] = Number(b.amount) || 0; });
+    allocated.forEach((b) => { budgetMap[b.name] = b.amount; });
 
     // Over / under budget on average.
     Object.keys(totals).forEach((cat) => {
@@ -337,7 +379,7 @@
       }
     });
     if (n >= 2) {
-      const steady = state.budgets.filter((b) => {
+      const steady = allocated.filter((b) => {
         const under = cycles.every((x) => sum(x.txns.filter((t) => t.category === b.name), (t) => t.amount) <= b.amount);
         const used = cycles.some((x) => x.txns.some((t) => t.category === b.name));
         return under && used && b.amount > 0;
@@ -502,7 +544,7 @@
     const fromFund = Math.min(fund, amount);
     const shortfall = amount - fromFund;
     const base = monthlyPlan(Object.assign({}, state, { adjustment: null }), todayIso);
-    const flexCut = Math.round((sum(state.budgets, (b) => Number(b.amount) || 0) * cutPct) / 100);
+    const flexCut = Math.round((base.flexTotal * cutPct) / 100);
     const freed = base.invest + base.debtExtra + flexCut;
     const recoverMonths = shortfall > 0 ? (freed > 0 ? Math.ceil(shortfall / freed) : Infinity) : 0;
     const refillMonths = fromFund > 0
@@ -629,7 +671,7 @@
 
   const Core = {
     parseISO, toISO, addDays, addMonths, daysBetween, cycleFor, previousCycle,
-    occurrenceInCycle, monthlyPlan, cycleEvents, projectRunway, suggestPlan,
+    occurrenceInCycle, monthlyPlan, cycleEvents, projectRunway, autoSavings, allocate,
     insights, simulateDebts, compareDebtPlans, emergencyPlan, parseSms,
     splitSmsBatch, categorize, normalizeMerchant, sinkingMonthly, inCycle,
     spendInRange, byCategory, DEFAULT_SPLIT,
