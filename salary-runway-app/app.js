@@ -34,6 +34,7 @@
     restoreOpen: false,
     restoreError: '',
     emergency: { type: 'Medical', amount: '', cut: 20 },
+    balanceOpen: false,
   };
 
   // ---------- storage ----------
@@ -55,6 +56,8 @@
       emergencies: [],
       adjustment: null,
       savingsRecorded: [],
+      balanceCheck: null,
+      balancePromptSkipped: null,
     };
   }
 
@@ -207,15 +210,20 @@
       sub = 'At this pace you reach ' + fmtDate(cyc.next) + ' with about <b>' + inr(r.endPace) + '</b> left.';
     }
 
-    const spentByCat = Core.byCategory(Core.spendInRange(state.transactions, cyc).filter((x) => x.date <= t));
+    // Joined mid-cycle: budgets cover only the days from the balance check.
+    const share = r.anchor ? (cyc.days - r.anchorIdx) / cyc.days : 1;
+    const fromDate = r.anchor ? r.anchor.date : cyc.start;
+    const spentByCat = Core.byCategory(Core.spendInRange(state.transactions, cyc).filter((x) => x.date >= fromDate && x.date <= t));
     const bars = r.plan.budgets.map((b) => {
       const spent = spentByCat[b.name] || 0;
       delete spentByCat[b.name];
-      return barRow(b.name, spent, b.amount);
+      return barRow(b.name, spent, Math.round((b.amount * share) / 10) * 10);
     });
+    const flexSpent = Object.values(Core.byCategory(Core.spendInRange(state.transactions, cyc).filter((x) => x.date >= fromDate && x.date <= t))).reduce((a, b) => a + b, 0);
     Object.keys(spentByCat).forEach((cat) => bars.push(barRow(cat + ' (no budget)', spentByCat[cat], 0)));
 
     const upcoming = r.events.filter((e) => e.date > t);
+    const askBalance = !state.isDemo && !r.anchor && state.balancePromptSkipped !== cyc.start;
     const ins = Core.insights(state, t);
     const adj = r.plan.adjustment;
 
@@ -226,14 +234,17 @@
       '<div class="chart-wrap"><div id="runway-chart" role="img" aria-label="Balance through this salary cycle"></div>' +
       '<div class="legend"><span><i></i>Balance so far</span><span><i class="pace"></i>If you keep this pace</span><span><i class="plan"></i>If you keep to budget</span><span><svg width="10" height="10" aria-hidden="true"><circle cx="5" cy="5" r="4" class="c-event"/></svg>Bill or EMI</span></div></div>' +
       '</section>' +
+      (askBalance || ui.balanceOpen ? balanceForm(askBalance && !ui.balanceOpen) : '') +
       (adj ? '<div class="callout warn"><b>Emergency plan active until ' + fmtDate(adj.until, true) + '.</b><span class="hint">Flexible budgets are ' + adj.flexCutPct + '% lower' + (adj.pauseInvest ? ', the Grow budget is paused' : '') + (adj.pauseDebtExtra ? ' and extra debt payments are paused' : '') + '.</span></div>' : '') +
       '<section class="tiles">' +
       tile('Safe to spend today', inr(r.dailyAllowance), r.spentToday ? 'Spent today: ' + inr(r.spentToday) : 'From your flexible budget', true) +
-      tile('Balance now', inr(r.balanceToday), 'After bills paid so far') +
+      tile('Balance now', inr(r.balanceToday),
+        (r.anchor ? 'From your balance on ' + fmtDate(r.anchor.date) : 'Worked out from your plan') +
+        ' · <button class="link" data-action="balance-open">Update</button>') +
       tile('Next salary', plural(daysToPay, 'day'), fmtDate(cyc.next)) +
-      tile('Flexible spending', inr(r.spentToDate), 'of ' + inr(r.plan.flexTotal) + ' budget') +
+      tile('Flexible spending', inr(flexSpent), 'of ' + inr(Math.round((r.plan.flexTotal * share) / 10) * 10) + ' budget' + (r.anchor ? ' since ' + fmtDate(r.anchor.date) : '')) +
       '</section>' +
-      '<section class="card"><div class="card-head"><h2>You can spend this cycle</h2><button class="ghost" data-action="tab" data-tab="plan">Adjust</button></div>' +
+      '<section class="card"><div class="card-head"><h2>' + (r.anchor && r.anchorIdx > 0 ? 'You can spend until payday' : 'You can spend this cycle') + '</h2><button class="ghost" data-action="tab" data-tab="plan">Adjust</button></div>' +
       '<div class="bars">' + bars.join('') + '</div></section>' +
       '<section class="card"><div class="card-head"><h2>Coming up before payday</h2><span class="hint">' + inr(upcoming.reduce((s, e) => s + e.amount, 0)) + '</span></div>' +
       (upcoming.length
@@ -247,6 +258,19 @@
       ins.map((i) => '<div class="insight lvl-' + i.level + '"><div><h3>' + esc(i.title) + '</h3><p>' + esc(i.body) + '</p></div></div>').join('') +
       '</div></section>'
     );
+  }
+
+  function balanceForm(firstTime) {
+    const t = today();
+    const current = state.balanceCheck && state.balanceCheck.date === t ? state.balanceCheck.amount : '';
+    return '<form id="balance-form" class="callout" autocomplete="off">' +
+      '<b>' + (firstTime ? 'How much money is in your account this morning?' : 'Update your balance') + '</b>' +
+      '<span class="hint">' + (firstTime
+        ? 'The app can’t see what you spent before you started. Enter your bank balance as it was at the start of today, and the graph will start from there. Add any spending from today after this.'
+        : 'Check your bank app and enter the balance from the start of today. The graph starts again from this amount, which covers cash and anything not recorded.') + '</span>' +
+      '<div class="row"><label class="field grow-field" for="balance-amount"><span>Balance this morning (₹)</span><input id="balance-amount" type="number" inputmode="numeric" min="0" step="1" required value="' + esc(current) + '" placeholder="12500"></label></div>' +
+      '<div class="row"><button class="primary" type="submit">Save balance</button>' +
+      '<button type="button" class="ghost" data-action="balance-skip">' + (firstTime ? 'Not now' : 'Cancel') + '</button></div></form>';
   }
 
   function tile(label, value, sub, feature) {
@@ -285,7 +309,8 @@
     const vals = [];
     pts.forEach((p) => ['actual', 'pace', 'plan'].forEach((k) => { if (p[k] !== null) vals.push(p[k]); }));
     const start = state.settings.salary - r.plan.savingsTotal;
-    vals.push(start, 0);
+    if (!r.anchor) vals.push(start);
+    vals.push(0);
     const lo = Math.min.apply(null, vals);
     const hi = Math.max.apply(null, vals);
     const step = niceStep(hi - lo || 1, 4);
@@ -312,7 +337,8 @@
     const actual = path('actual', 0);
     const ti = r.idxToday;
     if (actual) {
-      svg += '<path class="c-area" d="' + actual + 'L' + x(ti).toFixed(1) + ' ' + y(Math.max(0, yMin)).toFixed(1) + 'L' + x(0) + ' ' + y(Math.max(0, yMin)).toFixed(1) + 'Z"/>';
+      const first = r.anchorIdx || 0;
+      svg += '<path class="c-area" d="' + actual + 'L' + x(ti).toFixed(1) + ' ' + y(Math.max(0, yMin)).toFixed(1) + 'L' + x(first).toFixed(1) + ' ' + y(Math.max(0, yMin)).toFixed(1) + 'Z"/>';
     }
     svg += '<path class="c-plan" d="' + path('plan', ti) + '"/>';
     svg += '<path class="c-pace" d="' + path('pace', ti) + '"/>';
@@ -448,7 +474,10 @@
       '<section class="card"><h2>Salary</h2><div class="form-grid">' +
       numInput('salary', 'settings.salary', s.salary || '', 'Monthly salary in hand (₹)') +
       numInput('payday', 'settings.payday', s.payday, 'Payday (day of month)', ' max="31"') +
-      '</div></section>' +
+      '<label class="field wide" for="plan-balance"><span>Money in your account this morning (₹)</span><input id="plan-balance" type="number" inputmode="numeric" min="0" step="1" data-balance="1" value="' +
+        esc(state.balanceCheck && state.balanceCheck.date === today() ? state.balanceCheck.amount : '') + '" placeholder="' +
+        (state.balanceCheck ? 'Last entered ' + fmtDate(state.balanceCheck.date) + ': ' + inr(state.balanceCheck.amount) : 'Optional') + '"></label>' +
+      '</div><p class="hint">Starting in the middle of the month? Your balance lets the graph start from the right amount, since the app can’t see earlier spending.</p></section>' +
 
       '<section class="card"><div class="card-head"><h2>Fixed payments</h2><span class="hint">Rent, EMIs, bills, subscriptions</span></div>' +
       '<div class="edit-rows">' + state.fixed.map((f) =>
@@ -836,6 +865,10 @@
         save(); toast('Savings recorded'); break;
       }
       case 'em-apply': applyEmergency(); return;
+      case 'balance-open': ui.balanceOpen = true; break;
+      case 'balance-skip':
+        if (!ui.balanceOpen) { state.balancePromptSkipped = Core.cycleFor(t, Number(state.settings.payday) || 1).start; save(); }
+        ui.balanceOpen = false; break;
       case 'adjust-end': state.adjustment = null; save(); toast('Back to your normal plan'); break;
       default: return;
     }
@@ -851,6 +884,10 @@
 
   document.addEventListener('change', (ev) => {
     const el = ev.target;
+    if (el.dataset.balance) {
+      if (el.value === '') return;
+      setBalance(el.value); toast('Balance saved'); return;
+    }
     if (el.dataset.bind) {
       const v = Number(el.value);
       let val = isFinite(v) && v >= 0 ? v : 0;
@@ -904,7 +941,20 @@
     }
   });
 
+  function setBalance(value) {
+    state.balanceCheck = { date: today(), amount: Math.max(0, Math.round(Number(value) || 0)) };
+    save();
+  }
+
   document.addEventListener('submit', (ev) => {
+    if (ev.target.id === 'balance-form') {
+      ev.preventDefault();
+      setBalance(document.getElementById('balance-amount').value);
+      ui.balanceOpen = false;
+      toast('Balance saved');
+      rerenderKeepScroll();
+      return;
+    }
     if (ev.target.id !== 'add-tx') return;
     ev.preventDefault();
     const amount = Math.round(Number(document.getElementById('tx-amount').value) || 0);

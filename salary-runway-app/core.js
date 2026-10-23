@@ -155,6 +155,9 @@
    * - Up to today: real spending. After today, two projections:
    *     pace: keep spending at this cycle's average daily rate
    *     plan: spend exactly what is left of the flexible budget, evenly
+   * - A balance check ("money in your account this morning") replaces the
+   *   worked-out balance from that day on. Spending before it is unknown,
+   *   so the pace is measured from that day and the plan uses the daily budget.
    */
   function projectRunway(state, todayIso) {
     const cycle = cycleFor(todayIso, Number(state.settings.payday) || 1);
@@ -163,6 +166,9 @@
     const txns = spendInRange(state.transactions, cycle);
     const idxToday = daysBetween(cycle.start, todayIso);
     const N = cycle.days;
+    const check = state.balanceCheck;
+    const anchor = check && inCycle(check.date, cycle) && check.date <= todayIso ? check : null;
+    const aIdx = anchor ? daysBetween(cycle.start, anchor.date) : 0;
 
     const spendByDate = {};
     txns.forEach((t) => { spendByDate[t.date] = (spendByDate[t.date] || 0) + t.amount; });
@@ -173,15 +179,15 @@
     const spentToDate = sum(pastTxns, (t) => t.amount);
     const spentToday = sum(pastTxns.filter((t) => t.date === todayIso), (t) => t.amount);
     const paceSpend = sum(
-      pastTxns.filter((t) => NON_PACE_CATEGORIES.indexOf(t.category) === -1),
+      pastTxns.filter((t) => NON_PACE_CATEGORIES.indexOf(t.category) === -1 && (!anchor || t.date >= anchor.date)),
       (t) => t.amount
     );
-    const daysElapsed = idxToday + 1;
+    const daysElapsed = idxToday - aIdx + 1;
     const remainingDays = N - 1 - idxToday;
-    const paceRate = daysElapsed >= 3 && paceSpend > 0 ? paceSpend / daysElapsed : plan.flexTotal / N;
+    const dailyBudget = plan.flexTotal / N;
+    const paceRate = daysElapsed >= 3 && paceSpend > 0 ? paceSpend / daysElapsed : dailyBudget;
     const flexLeft = Math.max(0, plan.flexTotal - paceSpend);
-    const planRate = remainingDays > 0 ? flexLeft / remainingDays : 0;
-    const dailyAllowance = Math.max(0, plan.flexTotal - (paceSpend - spentToday)) / (remainingDays + 1);
+    const planRate = anchor ? dailyBudget : remainingDays > 0 ? flexLeft / remainingDays : 0;
 
     const points = [];
     let bal = plan.salary - plan.savingsTotal;
@@ -191,9 +197,15 @@
       const date = addDays(cycle.start, i);
       const out = eventsByDate[date] || 0;
       if (i <= idxToday) {
+        if (anchor && i === aIdx) bal = Number(anchor.amount) || 0;
         bal -= out + (spendByDate[date] || 0);
         pace = planned = bal;
-        points.push({ date, actual: bal, pace: i === idxToday ? bal : null, plan: i === idxToday ? bal : null });
+        points.push({
+          date,
+          actual: anchor && i < aIdx ? null : bal,
+          pace: i === idxToday ? bal : null,
+          plan: i === idxToday ? bal : null,
+        });
       } else {
         pace -= out + paceRate;
         planned -= out + planRate;
@@ -201,17 +213,26 @@
       }
     }
 
+    // Safe to spend today: the smaller of what the budget allows and what the
+    // account can cover after the bills still to come.
+    const billsAhead = sum(events.filter((e) => e.date > todayIso), (e) => e.amount);
+    const byMoney = Math.max(0, bal + spentToday - billsAhead) / (remainingDays + 1);
+    const byBudget = anchor
+      ? dailyBudget
+      : Math.max(0, plan.flexTotal - (paceSpend - spentToday)) / (remainingDays + 1);
+    const dailyAllowance = Math.min(byMoney, byBudget);
+
     const firstBelowZero = (key) => {
       for (const p of points) {
         const v = p.actual !== null ? p.actual : p[key];
-        if (v < 0) return p.date;
+        if (v !== null && v < 0) return p.date;
       }
       return null;
     };
 
     const last = points[points.length - 1];
     return {
-      cycle, plan, events, points, idxToday, remainingDays,
+      cycle, plan, events, points, idxToday, remainingDays, anchor, anchorIdx: anchor ? aIdx : null,
       spentToDate, spentToday, flexLeft, paceRate, planRate, dailyAllowance,
       balanceToday: points[idxToday].actual,
       zeroPace: firstBelowZero('pace'),

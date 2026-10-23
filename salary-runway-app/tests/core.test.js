@@ -61,6 +61,38 @@ test('emergency spending does not inflate the daily pace', () => {
   assert.equal(r.spentToDate, 20300);
 });
 
+test('a balance check replaces the worked-out balance from that day', () => {
+  const s = baseState({ settings: { salary: 50000, payday: 1 } });
+  s.balanceCheck = { date: '2026-10-20', amount: 9000 };
+  s.transactions.push({ id: 'a', date: '2026-10-10', amount: 4000, category: 'Food', note: '' });
+  s.transactions.push({ id: 'b', date: '2026-10-20', amount: 500, category: 'Food', note: '' });
+  s.transactions.push({ id: 'c', date: '2026-10-21', amount: 700, category: 'Food', note: '' });
+  const r = Core.projectRunway(s, '2026-10-22');
+  // 9,000 this morning, minus 500 on the 20th and 700 on the 21st.
+  assert.equal(r.balanceToday, 7800);
+  assert.equal(r.points[18].actual, null);
+  assert.equal(r.points[19].actual, 8500);
+  // Pace counts only spending from the balance check: 1,200 over 3 days.
+  assert.equal(Math.round(r.paceRate), 400);
+  // Budget allows 500/day; the account allows 7,800 over 10 days.
+  assert.equal(Math.round(r.dailyAllowance), 500);
+});
+
+test('safe to spend never exceeds what the account can cover', () => {
+  const s = baseState({ settings: { salary: 50000, payday: 1 } });
+  s.balanceCheck = { date: '2026-10-25', amount: 1400 };
+  const r = Core.projectRunway(s, '2026-10-25');
+  assert.equal(Math.round(r.dailyAllowance), 200); // 1,400 over 7 days
+});
+
+test('a balance check from an earlier cycle is ignored', () => {
+  const s = baseState();
+  s.balanceCheck = { date: '2026-09-20', amount: 100 };
+  const r = Core.projectRunway(s, '2026-10-05');
+  assert.equal(r.anchor, null);
+  assert.equal(r.balanceToday, 35000);
+});
+
 test('debt plans: extra payments finish sooner and save interest', () => {
   const debts = [
     { name: 'Card', balance: 85000, rate: 42, minPayment: 4250 },
