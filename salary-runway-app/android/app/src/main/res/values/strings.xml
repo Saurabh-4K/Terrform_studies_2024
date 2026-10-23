@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Salary Runway</string>
+    <string name="title_activity_main">Salary Runway</string>
+    <string name="package_name">com.salaryrunway.app</string>
+    <string name="custom_url_scheme">com.salaryrunway.app</string>
+</resources>

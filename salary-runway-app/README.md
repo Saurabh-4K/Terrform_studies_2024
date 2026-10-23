@@ -15,12 +15,36 @@ python3 -m http.server 8080   # then open http://localhost:8080 (or your compute
 
 It opens with **example numbers** (₹55,000 salary, rent, a bike EMI, a credit card and a personal loan, plus four months of spending). Tap **Start with my numbers** to enter your own.
 
+## Install on Android
+
+Every push builds a new APK on GitHub. On your phone:
+
+1. Open **https://github.com/Saurabh-4K/Terrform_studies_2024/releases/tag/salary-runway-latest** and tap **SalaryRunway.apk**.
+2. When Android asks, allow your browser to install apps ("Install unknown apps").
+3. Open **Salary Runway**. On the Spend tab, tap **Read bank SMS** and allow SMS access to record payments from bank and UPI alerts.
+
+New builds install over the old one and keep your data, because every build is signed with the same key (`android/app/salary-runway.keystore`). That key is in the repo for convenience, so it only suits personal sideloading. Publishing to the Play Store needs a private key kept out of the repo.
+
+Uninstalling the app deletes its data. Copy a backup from the Plan tab first.
+
+### Android app details
+- Built with [Capacitor](https://capacitorjs.com/): the same web app in an Android shell, plus a small native plugin (`SmsInboxPlugin.java`) that reads the SMS inbox.
+- Only messages from named senders (such as `VM-HDFCBK`) are read for payments. On the first read, the app looks back 45 days. After that it checks for new messages each time you open it, and you review each payment before it is added.
+- Fonts are bundled. The app makes no network requests, and Android cloud backup is turned off for its data.
+
+To build locally (needs the Android SDK and JDK 21):
+
+```bash
+npm install
+npm run android:apk   # APK at android/app/build/outputs/apk/debug/app-debug.apk
+```
+
 ## What it does
 
 | Tab | What it does |
 |---|---|
 | **Runway** | Graph of your balance through the salary cycle, with two projections: *at this pace* and *if you keep to budget*. Shows the date money runs out, a daily "safe to spend" amount, how much is left to spend in each budget, upcoming bills and insights from your spending history. |
-| **Spend** | Add payments by hand, or **paste bank/UPI SMS** to import them. Payments are categorised automatically (Swiggy goes to Food, Uber to Travel). When you correct a category, the app remembers it for that shop. |
+| **Spend** | Add payments by hand, or import bank/UPI SMS (read from the inbox in the Android app, pasted in the browser). Payments are categorised automatically (Swiggy goes to Food, Uber to Travel). When you correct a category, the app remembers it for that shop. |
 | **Plan** | Salary and payday, fixed payments, yearly costs (festivals, insurance), monthly set-asides and flexible budgets. **Set-asides and budgets are worked out automatically** from what is left of the salary; edit any amount and the automatic ones adjust to fit. |
 | **Debts** | Loans and cards with interest rates. Shows the monthly interest each one costs, and compares *minimums only*, *highest interest first* and *smallest balance first*: debt-free date, total interest and savings. |
 | **Grow** | Monthly set-aside check-in, emergency fund progress, yearly costs, **emergency mode** (medical bill, car repair, family function, and so on), Grow budget, and short lessons. |
@@ -54,6 +78,8 @@ The prototype is deliberately limited to **budgeting and debt planning**:
 
 ```
 index.html        page shell
+capacitor.config.json, android/   Android app (Capacitor) and the SMS plugin
+scripts/build-www.js              prepares the web files for the Android app
 styles.css        styles (light and dark themes)
 core.js           all calculations: cycles, runway, insights, debt payoff, emergency plan, SMS parser
 demo.js           example data
@@ -69,8 +95,8 @@ npm test
 
 ## Roadmap to a phone app
 
-1. **Android app** (Flutter or React Native) that reuses the logic in `core.js`, with automatic reading of bank SMS (Google Play allows the SMS permission for money-management apps after review) or notification access as a fallback.
-2. Encrypted on-device database, app lock (fingerprint/PIN), and optional encrypted backup.
+1. ~~Android app with automatic bank SMS reading~~ (done; Google Play would review the SMS permission before listing).
+2. Encrypted on-device storage, app lock (fingerprint/PIN), and optional encrypted backup.
 3. Parsing rules for more banks' SMS formats; learn from corrections.
 4. Reminders before bills and EMIs are due.
 5. Later, with a licensed partner: Account Aggregator for iPhone users and more accurate data.
@@ -79,5 +105,5 @@ npm test
 
 - Debt balances don't go down automatically; update them from each statement.
 - Fixed payments are assumed to be paid on their due date.
-- Data lives in one browser. Use **Show backup** on the Plan tab to copy it to another device.
-- Fonts load from Google Fonts. The phone app would bundle them so it makes no network requests.
+- Data lives in one browser or one phone. Use **Show backup** on the Plan tab to copy it to another device.
+- The browser version loads fonts from Google Fonts; the Android app bundles them.

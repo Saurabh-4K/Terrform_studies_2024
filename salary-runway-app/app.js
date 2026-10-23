@@ -23,6 +23,11 @@
     '482913 is your OTP for a transaction of Rs 899. Do not share it with anyone.',
   ].join('\n\n');
 
+  // Inside the Android app, Capacitor provides a bridge to the SMS inbox.
+  const NATIVE = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+  const SmsInbox = NATIVE ? window.Capacitor.registerPlugin('SmsInbox') : null;
+  const SMS_FIRST_READ_DAYS = 45;
+
   let state;
   let tab = 'home';
   const ui = {
@@ -35,6 +40,8 @@
     restoreError: '',
     emergency: { type: 'Medical', amount: '', cut: 20 },
     balanceOpen: false,
+    smsMaxDate: 0,
+    smsBusy: false,
   };
 
   // ---------- storage ----------
@@ -387,12 +394,20 @@
       '<div class="wide"><button class="primary" type="submit">Add payment</button></div>' +
       '</form></section>' +
 
-      '<section class="card"><div class="card-head"><h2>Import from bank SMS</h2></div>' +
-      '<p class="hint">Paste one or more bank or UPI messages. The phone app will read these automatically on Android. In this prototype you paste them, and they are read right here on your device.</p>' +
-      '<label class="field" for="sms-text">Messages<textarea id="sms-text" placeholder="Rs.450.00 debited from a/c **1234 on 21-10-26 to VPA swiggy@icici…">' + esc(ui.smsText) + '</textarea></label>' +
-      '<div class="row"><button class="primary" data-action="sms-read">Read messages</button><button data-action="sms-sample">Paste sample messages</button></div>' +
-      smsPreview() +
-      '</section>' +
+      (NATIVE
+        ? '<section class="card"><div class="card-head"><h2>Bank SMS</h2>' + (state.smsAuto ? modeChip(true) : '') + '</div>' +
+          '<p class="hint">' + (state.smsAuto
+            ? 'New bank and UPI messages are checked each time you open the app. Review them below before they are added.'
+            : 'Let the app read your bank and UPI messages to record payments for you. Messages are read on this phone and never leave it. You review every payment before it is added.') + '</p>' +
+          '<div class="row"><button class="primary" data-action="sms-native"' + (ui.smsBusy ? ' disabled' : '') + '>' +
+          (ui.smsBusy ? 'Reading…' : state.smsAuto ? 'Check for new messages' : 'Read bank SMS') + '</button></div>' +
+          smsPreview() + '</section>'
+        : '<section class="card"><div class="card-head"><h2>Import from bank SMS</h2></div>' +
+          '<p class="hint">Paste one or more bank or UPI messages. The Android app reads them from your inbox automatically. Here you paste them, and they are read right here on your device.</p>' +
+          '<label class="field" for="sms-text">Messages<textarea id="sms-text" placeholder="Rs.450.00 debited from a/c **1234 on 21-10-26 to VPA swiggy@icici…">' + esc(ui.smsText) + '</textarea></label>' +
+          '<div class="row"><button class="primary" data-action="sms-read">Read messages</button><button data-action="sms-sample">Paste sample messages</button></div>' +
+          smsPreview() +
+          '</section>') +
 
       '<section class="card"><div class="card-head"><h2>Payments</h2>' +
       '<div class="seg" role="group" aria-label="Show"><button data-action="tx-filter" data-filter="cycle" aria-pressed="' + (ui.txFilter === 'cycle') + '">This cycle</button>' +
@@ -436,9 +451,14 @@
 
   function readSms() {
     const t = today();
-    const blocks = Core.splitSmsBatch(ui.smsText);
-    ui.smsRows = blocks.map((text) => {
-      const parsed = Core.parseSms(text, state.merchantRules, t);
+    ui.smsRows = smsRows(Core.splitSmsBatch(ui.smsText).map((text) => ({ text, day: t })));
+  }
+
+  // Rows for the review table. `day` is the date the message arrived; text
+  // without a date of its own gets that date.
+  function smsRows(messages) {
+    return messages.map(({ text, day }) => {
+      const parsed = Core.parseSms(text, state.merchantRules, day);
       const duplicate = !!parsed && state.transactions.some((x) =>
         x.date === parsed.date && x.amount === parsed.amount &&
         Core.normalizeMerchant(x.note) === Core.normalizeMerchant(parsed.merchant));
@@ -843,7 +863,8 @@
         ui.smsText = SAMPLE_SMS.replace(/\{d1\}/g, fmtSmsDate(Core.addDays(t, -1))).replace(/\{d2\}/g, fmtSmsDate(t));
         ui.smsRows = null; break;
       case 'sms-read': ui.smsText = document.getElementById('sms-text').value; readSms(); break;
-      case 'sms-clear': ui.smsText = ''; ui.smsRows = null; break;
+      case 'sms-clear': ui.smsText = ''; ui.smsRows = null; markSmsSeen(); save(); break;
+      case 'sms-native': readNativeSms(false); break;
       case 'sms-import': {
         let added = 0;
         ui.smsRows.forEach((r) => {
@@ -853,7 +874,7 @@
           if (key && r.parsed.merchant !== 'Bank payment') state.merchantRules[key] = r.parsed.category;
           added++;
         });
-        ui.smsRows = null; ui.smsText = ''; save(); toast(plural(added, 'payment') + ' added'); break;
+        ui.smsRows = null; ui.smsText = ''; markSmsSeen(); save(); toast(plural(added, 'payment') + ' added'); break;
       }
       case 'record-savings': {
         const p = Core.monthlyPlan(state, t);
@@ -990,7 +1011,57 @@
 
   // ---------- start ----------
 
+  // ---------- SMS inbox (Android app only) ----------
+
+  function markSmsSeen() {
+    if (ui.smsMaxDate > (state.smsReadUntil || 0)) state.smsReadUntil = ui.smsMaxDate;
+    ui.smsMaxDate = 0;
+  }
+
+  /*
+   * Reads messages newer than the last review. Bank and UPI alerts come from
+   * named senders (VM-HDFCBK, JD-SBIUPI), so messages from phone numbers are
+   * skipped. `quiet` is the check on opening the app: no messages, no fuss.
+   */
+  function readNativeSms(quiet) {
+    if (!SmsInbox || ui.smsBusy) return;
+    ui.smsBusy = true;
+    if (!quiet) rerenderKeepScroll();
+    const since = state.smsReadUntil || Date.now() - SMS_FIRST_READ_DAYS * 86400000;
+    SmsInbox.read({ since, limit: 500 }).then((res) => {
+      const msgs = (res.messages || []).filter((m) => /[A-Za-z]/.test(m.address || ''));
+      ui.smsMaxDate = (res.messages || []).reduce((mx, m) => Math.max(mx, m.date), since);
+      const rows = smsRows(msgs.map((m) => ({ text: m.body || '', day: Core.toISO(new Date(m.date)) })))
+        .filter((r) => r.parsed && r.parsed.type === 'debit' && !r.duplicate);
+      state.smsAuto = true;
+      ui.smsBusy = false;
+      if (rows.length) {
+        ui.smsRows = rows;
+        if (quiet) toast(plural(rows.length, 'new bank payment') + ' to review in Spend');
+      } else {
+        ui.smsRows = null;
+        markSmsSeen();
+        if (!quiet) toast('No new bank payments found');
+      }
+      save();
+      rerenderKeepScroll();
+    }, (err) => {
+      ui.smsBusy = false;
+      if (err && err.code === 'PERMISSION_DENIED') state.smsAuto = false;
+      save();
+      if (!quiet) toast(err && err.code === 'PERMISSION_DENIED' ? 'SMS permission is off. You can turn it on in Android settings.' : 'Couldn’t read messages');
+      rerenderKeepScroll();
+    });
+  }
+
+  if (NATIVE) {
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible' && state.smsAuto && !ui.smsRows) readNativeSms(true);
+    });
+  }
+
   state = load();
+  if (NATIVE && state.smsAuto) readNativeSms(true);
   const fromHash = (location.hash || '').replace('#', '');
   tab = TABS.indexOf(fromHash) !== -1 ? fromHash : 'home';
   render();

@@ -1,0 +1,70 @@
+name: Salary Runway Android APK
+
+on:
+  push:
+    branches: [claude/budget-salary-tracker-app-kptvh8, main]
+    paths:
+      - 'salary-runway-app/**'
+      - '.github/workflows/salary-runway-android.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: salary-runway-android-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: salary-runway-app
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: salary-runway-app/package-lock.json
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Install
+        run: npm ci
+
+      - name: Test
+        run: npm test
+
+      - name: Copy the web app into the Android project
+        run: npm run android:sync
+
+      - name: Build APK
+        working-directory: salary-runway-app/android
+        run: ./gradlew assembleDebug --no-daemon
+
+      - name: Name the APK
+        run: cp android/app/build/outputs/apk/debug/app-debug.apk SalaryRunway.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SalaryRunway-apk
+          path: salary-runway-app/SalaryRunway.apk
+
+      # A fixed release tag gives the phone one link that always has the newest APK.
+      - name: Publish the download
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG=salary-runway-latest
+          gh release delete "$TAG" --yes --cleanup-tag || true
+          gh release create "$TAG" SalaryRunway.apk \
+            --target "$GITHUB_SHA" \
+            --prerelease \
+            --title "Salary Runway Android (build $GITHUB_RUN_NUMBER)" \
+            --notes "Open this page on your Android phone and tap SalaryRunway.apk to download. Allow installs from your browser when Android asks. New builds install over the old one and keep your data."
