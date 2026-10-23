@@ -42,4 +42,6 @@
     <string name="confirm_from">Paid from</string>
     <string name="confirm_from_account">Bank account / UPI / debit card</string>
     <string name="confirm_from_card">%1$s ••%2$s (credit card)</string>
+    <string name="sms_title_salary">Salary %1$s credited</string>
+    <string name="sms_text_salary">Tap to record this month\'s pay</string>
 </resources>

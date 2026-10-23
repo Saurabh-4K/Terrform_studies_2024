@@ -38,7 +38,7 @@ public class SmsReceiver extends BroadcastReceiver {
         String body = text.toString();
 
         SmsParser.Result r = SmsParser.parse(body, SmsAlertStore.rules(context));
-        if (r == null || r.salary) return;
+        if (r == null) return;
         String key = SmsParser.key(body);
         if (!SmsAlertStore.add(context, key, r, body)) return;
         if ("cardpayment".equals(r.type)) return; // recorded quietly when the app opens
@@ -61,13 +61,16 @@ public class SmsReceiver extends BroadcastReceiver {
             context.getSystemService(NotificationManager.class).createNotificationChannel(channel);
         }
 
-        boolean statement = "statement".equals(r.type);
+        boolean statement = "statement".equals(r.type) || r.salary;
         boolean debit = "debit".equals(r.type);
         org.json.JSONObject card = SmsAlertStore.cardFor(context, r.last4);
         String cardName = card != null ? card.optString("name") : context.getString(R.string.sms_a_card);
         String title;
         String text;
-        if (statement) {
+        if (r.salary) {
+            title = context.getString(R.string.sms_title_salary, WidgetStore.rupees(r.amount));
+            text = context.getString(R.string.sms_text_salary);
+        } else if (statement) {
             title = context.getString(R.string.sms_title_statement, cardName, WidgetStore.rupees(r.amount));
             text = context.getString(R.string.sms_text_statement);
         } else if (debit && "card".equals(r.paidFrom)) {
@@ -81,7 +84,7 @@ public class SmsReceiver extends BroadcastReceiver {
                 : context.getString(R.string.sms_text_received);
         }
 
-        // A statement opens the app (its card plan); a payment opens the "check this payment" window.
+        // Salary and statements open the app; a payment opens the "check this payment" window.
         Intent open = statement
             ? new Intent(context, MainActivity.class).setFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             : new Intent(context, SmsConfirmActivity.class)

@@ -346,6 +346,35 @@ test('card-free days count back from yesterday', () => {
   assert.equal(Core.cardFreeDays(s, '2026-10-12'), 4);
 });
 
+test('a smaller pay this month shrinks this month only', () => {
+  const s = baseState({ budgets: [{ id: 'g', name: 'Groceries', amount: 0, auto: true }] });
+  const usual = Core.monthlyPlan(s, '2026-10-05');
+  s.payslips = { '2026-10-01': { amount: 47000, usual: 50000, reason: 'Tax deduction' } };
+  const oct = Core.monthlyPlan(s, '2026-10-05');
+  assert.equal(oct.salary, 47000);
+  assert.equal(oct.flexTotal, usual.flexTotal - 3000);
+  assert.equal(Core.projectRunway(s, '2026-10-05').balanceToday, Core.projectRunway(Object.assign({}, s, { payslips: {} }), '2026-10-05').balanceToday - 3000);
+  assert.equal(Core.monthlyPlan(s, '2026-11-05').salary, 50000);
+});
+
+test('a bigger pay keeps the plan on usual pay (the extra is decided separately)', () => {
+  const s = baseState();
+  s.payslips = { '2026-10-01': { amount: 70000, usual: 50000, reason: 'Bonus' } };
+  assert.equal(Core.salaryFor(s, '2026-10-05'), 50000);
+});
+
+test('pay history over the year', () => {
+  const s = baseState();
+  s.payslips = {
+    '2026-08-01': { amount: 70000, usual: 50000, reason: 'Bonus' },
+    '2026-10-01': { amount: 46500, usual: 50000, reason: 'Tax deduction', note: 'Q2 TDS' },
+  };
+  const h = Core.salaryHistory(s, '2026-10-05', 4);
+  assert.deepEqual(h.map((x) => [x.start, x.amount, x.diff, x.reason]), [
+    ['2026-07-01', 50000, 0, ''], ['2026-08-01', 70000, 20000, 'Bonus'], ['2026-09-01', 50000, 0, ''], ['2026-10-01', 46500, -3500, 'Tax deduction'],
+  ]);
+});
+
 test('debt plans: extra payments finish sooner and save interest', () => {
   const debts = [
     { name: 'Card', balance: 85000, rate: 42, minPayment: 4250 },

@@ -81,6 +81,15 @@ When a day ends under its amount, the app asks (the next morning, or after 8 PM)
 ### Bills that vary
 Electricity, gas, water and recharges get an estimate, how many months one payment covers, and a next due date. A share is set aside every month, so a 3-month recharge costs the same each month. When you pay, you enter the real amount and how long it covers (a recharge can be 1 month one time and 3 the next); the app learns the usual amount from the last three payments. Bill payments from SMS can be linked to the right bill.
 
+### Payday: what came in this month
+Pay isn't the same every month. In the first week of each salary cycle (or when the bank's salary SMS arrives, which pre-fills the amount) the Runway tab asks what came in:
+
+- **More than usual:** why (bonus, incentive, overtime, arrears, reimbursement), then "what should this extra do?" (emergency fund, a loan, invest, or keep it).
+- **Less than usual:** why (tax deduction, PF or other deduction, unpaid leave, advance recovery, paid in part). This month's budgets are planned on what actually came in.
+- **A lasting change** (a raise, a new tax slab): tick "This is my new usual pay".
+
+The Plan tab shows this month's pay and **your pay over the year**: a 12-month chart with good and bad months coloured, the reasons, and totals for extra and less.
+
 ### Automatic budgets
 1. **Set-asides** come out first: about 20% of salary (less when money is tight). The emergency fund gets a share until it holds 3 or 6 months of needs. Debts at 15%+ interest get the rest before the Grow budget does.
 2. **Flexible budgets** share everything left by default weights: Groceries 30%, Food & dining 15%, Travel 15%, Shopping 10%, Entertainment 10%, Health 5%, Personal care 5%, Misc 10%. Categories you add get 5%.

@@ -134,7 +134,8 @@ final class SmsAlertStore {
             item.put("paidFrom", r.paidFrom == null ? JSONObject.NULL : r.paidFrom);
             item.put("last4", r.last4 == null ? JSONObject.NULL : r.last4);
             // Card statements and bill payments need no check: the app records them as they are.
-            boolean cardNotice = "statement".equals(r.type) || "cardpayment".equals(r.type);
+            boolean cardNotice = "statement".equals(r.type) || "cardpayment".equals(r.type) || r.salary;
+            item.put("salary", r.salary);
             item.put("status", cardNotice ? "confirmed" : "new");
             items.put(item);
             save(context, items);

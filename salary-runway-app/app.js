@@ -58,6 +58,7 @@
     cardForm: null,
     cardPlan: null,
     cardRemove: null,
+    paydayOpen: false,
     smsBusy: false,
     smsClean: null,
   };
@@ -86,6 +87,7 @@
       bills: [],
       days: {},
       cards: [],
+      payslips: {},
     };
   }
 
@@ -268,6 +270,7 @@
     const adj = r.plan.adjustment;
 
     return (
+      paydayCard() +
       '<section class="hero">' +
       '<p class="eyebrow">Salary cycle · ' + fmtDate(cyc.start) + ' – ' + fmtDate(lastDay) + ' · day ' + (r.idxToday + 1) + ' of ' + cyc.days + '</p>' +
       zoneMeter(z.zone) +
@@ -361,6 +364,130 @@
     return '<section class="card bills-card"><div class="card-head"><h2>Bills to pay</h2><span class="hint">Amounts vary</span></div>' +
       rows.join('') + links.join('') +
       '<p class="hint">Enter what you actually paid and how long it covers. The app learns the usual amount from your last three payments.</p></section>';
+  }
+
+  const PAY_MORE = ['Bonus', 'Incentive or commission', 'Overtime', 'Arrears or hike arrears', 'Reimbursement', 'Other'];
+  const PAY_LESS = ['Tax deduction (TDS)', 'PF or other deduction', 'Unpaid leave', 'Advance or loan recovery', 'Paid in part / late', 'Other'];
+
+  /*
+   * Asked once a cycle, in its first week (or when the bank's salary SMS
+   * arrives): what came in this month, and if it differs, why.
+   */
+  function paydayCard() {
+    const t = today();
+    if (state.isDemo || !state.settings.salary) return '';
+    const cyc = Core.cycleFor(t, Number(state.settings.payday) || 1);
+    const slips = state.payslips || {};
+    const seen = state.salarySeen && state.salarySeen.cycle === cyc.start ? state.salarySeen : null;
+    const due = !slips[cyc.start] && (Core.daysBetween(cyc.start, t) <= 7 || seen);
+    if (!due && !ui.paydayOpen) return '';
+    const usual = Number(state.settings.salary) || 0;
+    const slip = slips[cyc.start];
+    const start = slip ? slip.amount : seen ? seen.amount : usual;
+    return '<section class="card payday-card"><div class="card-head"><h2>' + (slip ? 'This month’s pay' : 'Payday! How much came in this month?') + '</h2></div>' +
+      (seen && !slip ? '<p class="hint">Your bank’s salary SMS on ' + fmtDate(seen.date) + ' said ' + inr(seen.amount) + '.</p>' : '') +
+      '<p class="hint">Your usual pay is ' + inr(usual) + '. Recording each month’s pay, and why it changed, shows your year at a glance.</p>' +
+      '<div class="row"><label class="field grow-field" for="pay-amount"><span>In hand this month (₹)</span><input id="pay-amount" type="number" inputmode="numeric" min="0" value="' + esc(start) + '"></label></div>' +
+      '<div id="pay-reason">' + paydayReason(start, slip) + '</div>' +
+      '<div class="row"><button class="primary" data-action="payday-save">Save</button>' +
+      (start !== usual ? '<button data-action="payday-same">It was my usual ' + inr(usual) + '</button>' : '') +
+      (ui.paydayOpen ? '<button class="ghost" data-action="payday-close">Close</button>' : '') + '</div></section>';
+  }
+
+  function paydayReason(amount, slip) {
+    const usual = Number(state.settings.salary) || 0;
+    const diff = Math.round(Number(amount) || 0) - usual;
+    if (!diff) return '';
+    const list = diff > 0 ? PAY_MORE : PAY_LESS;
+    const chosen = slip && slip.reason;
+    return '<div class="callout' + (diff > 0 ? ' good' : ' warn') + '"><b>' + inr(Math.abs(diff)) + (diff > 0 ? ' more than usual. What was it?' : ' less than usual. Why?') + '</b>' +
+      '<div class="form-grid"><label class="field" for="pay-why"><span>Reason</span><select id="pay-why">' +
+      list.map((x) => '<option' + (x === chosen ? ' selected' : '') + '>' + x + '</option>').join('') + '</select></label>' +
+      '<label class="field" for="pay-note"><span>Note (optional)</span><input id="pay-note" type="text" value="' + esc((slip && slip.note) || '') + '" placeholder="' + (diff > 0 ? 'Diwali bonus' : 'TDS for Q2') + '"></label></div>' +
+      '<label class="check"><input id="pay-new-usual" type="checkbox"> This is my new usual pay from now on</label>' +
+      '<span class="hint">' + (diff > 0
+        ? 'Next, choose what the extra ' + inr(diff) + ' should do: save it, clear a loan, invest, or keep it.'
+        : 'This month’s budgets will be planned on ' + inr(amount) + '.') + '</span></div>';
+  }
+
+  // Records this cycle's pay. Extra above usual pay becomes money received to decide on.
+  function savePayday(amount) {
+    const t = today();
+    const cyc = Core.cycleFor(t, Number(state.settings.payday) || 1);
+    state.payslips = state.payslips || {};
+    const usual = Number(state.settings.salary) || 0;
+    const old = state.payslips[cyc.start];
+    if (old && old.extraTx) {
+      const tx = state.transactions.find((x) => x.id === old.extraTx);
+      if (tx) { undoIncomeUse(tx); state.transactions = state.transactions.filter((x) => x !== tx); }
+    }
+    amount = Math.round(Number(amount) || 0);
+    const why = document.getElementById('pay-why');
+    const note = document.getElementById('pay-note');
+    const newUsual = document.getElementById('pay-new-usual');
+    const slip = { amount, usual, reason: amount !== usual && why ? why.value : '', note: amount !== usual && note ? note.value.trim() : '' };
+    if (amount !== usual && newUsual && newUsual.checked) {
+      slip.usual = amount;
+      slip.previousUsual = usual;
+      state.settings.salary = amount;
+      toast('Usual pay updated to ' + inr(amount));
+    } else if (amount > usual) {
+      const extra = { id: uid(), kind: 'in', date: cyc.start, amount: amount - usual, category: slip.reason, note: 'Extra in this month’s pay', source: 'manual', useFor: null };
+      state.transactions.push(extra);
+      slip.extraTx = extra.id;
+      toast(inr(amount - usual) + ' extra this month. Choose what it should do.');
+    } else {
+      toast(amount < usual ? 'Planned this month on ' + inr(amount) : 'Usual pay recorded');
+    }
+    state.payslips[cyc.start] = slip;
+    ui.paydayOpen = false;
+    save();
+  }
+
+  // The bank's salary SMS: remembered so payday can ask with the right amount.
+  function noteSalary(p) {
+    const cyc = Core.cycleFor(p.date || today(), Number(state.settings.payday) || 1);
+    state.salarySeen = { cycle: cyc.start, amount: p.amount, date: p.date || today() };
+  }
+
+  function thisMonthPay() {
+    if (!state.settings.salary) return '';
+    const cyc = Core.cycleFor(today(), Number(state.settings.payday) || 1);
+    const slip = (state.payslips || {})[cyc.start];
+    const diff = slip ? slip.amount - slip.usual : 0;
+    return '<div class="row pay-line"><span><b>This month:</b> ' + (slip
+      ? inr(slip.amount) + ' in hand' + (diff ? ' (' + (diff > 0 ? '+' : '−') + inr(Math.abs(diff)) + ', ' + esc(slip.reason) + ')' : '')
+      : 'not recorded yet') + '</span><button class="link" data-action="payday-open">' + (slip ? 'Change' : 'Record') + '</button></div>';
+  }
+
+  // Pay over the last 12 months: bars, the months that differed, and totals.
+  function payHistory() {
+    const h = Core.salaryHistory(state, today(), 12);
+    if (!h.some((x) => x.recorded)) return '';
+    const max = Math.max.apply(null, h.map((x) => Math.max(x.amount, x.usual))) || 1;
+    const bars = h.map((x) => {
+      const cls = !x.recorded ? 'none' : x.diff > 0 ? 'up' : x.diff < 0 ? 'down' : 'same';
+      const m = Core.parseISO(x.start);
+      return '<div class="pay-col" title="' + esc(MONTH_NAMES[m.getMonth()] + ': ' + inr(x.amount) + (x.reason ? ' · ' + x.reason : '')) + '">' +
+        '<div class="pay-bar ' + cls + '" style="height:' + Math.max(4, (x.amount / max) * 100).toFixed(1) + '%"></div>' +
+        '<span>' + MONTH_NAMES[m.getMonth()].slice(0, 1) + '</span></div>';
+    }).join('');
+    const odd = h.filter((x) => x.recorded && x.diff);
+    const more = odd.filter((x) => x.diff > 0).reduce((a, x) => a + x.diff, 0);
+    const less = odd.filter((x) => x.diff < 0).reduce((a, x) => a - x.diff, 0);
+    const total = h.reduce((a, x) => a + x.amount, 0);
+    return '<div class="pay-history"><h3>Your pay over the year</h3>' +
+      '<div class="pay-chart" role="img" aria-label="Pay for the last 12 months">' + bars + '</div>' +
+      '<div class="legend"><span><i class="pay-key"></i>Usual pay</span><span><i class="pay-key up"></i>More than usual</span><span><i class="pay-key down"></i>Less than usual</span><span><i class="pay-key none"></i>Not recorded</span></div>' +
+      '<div class="summary"><div class="line"><span>In hand, last 12 months</span><span>' + inr(total) + '</span></div>' +
+      (h.some((x) => !x.recorded) ? '<span class="hint">Months not recorded are counted at your usual pay.</span>' : '') +
+      (more ? '<div class="line"><span>Extra (bonuses and more)</span><span class="good">+' + inr(more) + '</span></div>' : '') +
+      (less ? '<div class="line"><span>Less (deductions and more)</span><span class="bad">−' + inr(less) + '</span></div>' : '') + '</div>' +
+      (odd.length ? '<div class="list">' + odd.slice().reverse().map((x) =>
+        '<div class="list-item"><div class="grow"><div class="title">' + MONTH_NAMES[Core.parseISO(x.start).getMonth()] + ' ' + Core.parseISO(x.start).getFullYear() + ' · ' + esc(x.reason || 'Different') + '</div>' +
+        (x.note ? '<div class="meta">' + esc(x.note) + '</div>' : '') + '</div>' +
+        '<div class="amt ' + (x.diff > 0 ? 'good' : 'bad') + '">' + (x.diff > 0 ? '+' : '−') + inr(Math.abs(x.diff)) + '</div></div>').join('') + '</div>' : '') +
+      '</div>';
   }
 
   function zoneMeter(zone) {
@@ -771,6 +898,7 @@
     return messages.map(({ text, day }) => {
       const parsed = Core.parseSms(text, state.merchantRules, day);
       const key = Core.smsKey(text);
+      if (parsed && parsed.type === 'credit' && parsed.salary) noteSalary(parsed);
       const duplicate = !!parsed && (known.has(key) || state.transactions.some((x) => !x.kind && (
         x.date === parsed.date && x.amount === parsed.amount &&
         Core.normalizeMerchant(x.note) === Core.normalizeMerchant(parsed.merchant))));
@@ -798,6 +926,10 @@
       if (!card) return false;
       card.statement = { date: p.date, total: p.amount, min: p.min, due: p.due, smsKey: o.key };
       return true;
+    }
+    if (p.type === 'credit' && p.salary) {
+      noteSalary(p);
+      return false;
     }
     if (p.type === 'cardpayment') {
       if (!card) return false;
@@ -863,7 +995,7 @@
   function viewPlan() {
     const s = state.settings;
     const plan = Core.monthlyPlan(state, today());
-    const alloc = Core.allocate(state);
+    const alloc = Core.allocate(state, today());
     const sv = alloc.savings;
     const edited = alloc.budgets.some((b) => !b.auto);
     return (
@@ -874,7 +1006,9 @@
       '<label class="field wide" for="plan-balance"><span>Money in your account this morning (₹)</span><input id="plan-balance" type="number" inputmode="numeric" min="0" step="1" data-balance="1" value="' +
         esc(state.balanceCheck && state.balanceCheck.date === today() ? state.balanceCheck.amount : '') + '" placeholder="' +
         (state.balanceCheck ? 'Last entered ' + fmtDate(state.balanceCheck.date) + ': ' + inr(state.balanceCheck.amount) : 'Optional') + '"></label>' +
-      '</div><p class="hint">Starting in the middle of the month? Your balance lets the graph start from the right amount, since the app can’t see earlier spending.</p></section>' +
+      '</div><p class="hint">Starting in the middle of the month? Your balance lets the graph start from the right amount, since the app can’t see earlier spending.</p>' +
+      thisMonthPay() + payHistory() + '</section>' +
+      (ui.paydayOpen ? paydayCard() : '') +
 
       '<section class="card"><div class="card-head"><h2>Fixed payments</h2><span class="hint">Rent, EMIs, bills, subscriptions</span></div>' +
       '<div class="edit-rows">' + state.fixed.map((f) =>
@@ -1189,7 +1323,7 @@
   function viewDebts() {
     const t = today();
     const debts = state.debts.filter((d) => Number(d.balance) > 0);
-    const extra = Core.allocate(state).savings.debtExtra;
+    const extra = Core.allocate(state, t).savings.debtExtra;
     let compare = '';
     if (debts.length) {
       const c = Core.compareDebtPlans(debts, extra);
@@ -1488,6 +1622,10 @@
         state.transactions = state.transactions.filter((x) => x.id !== btn.dataset.id); save(); toast('Deleted'); break;
       }
       case 'tx-kind': ui.txKind = btn.dataset.kind; break;
+      case 'payday-save': savePayday(document.getElementById('pay-amount').value); break;
+      case 'payday-same': savePayday(state.settings.salary); break;
+      case 'payday-open': ui.paydayOpen = true; break;
+      case 'payday-close': ui.paydayOpen = false; break;
       case 'card-add': ui.cardForm = {}; break;
       case 'card-edit': ui.cardForm = { id: btn.dataset.id }; break;
       case 'card-cancel': ui.cardForm = null; break;
@@ -1668,7 +1806,7 @@
       if (el.dataset.bind === 'settings.payday') val = Math.min(31, Math.max(1, Math.round(val) || 1));
       if (state.savings.auto && /^savings\.(emergencyMonthly|investMonthly|debtExtra)$/.test(el.dataset.bind)) {
         // Keep the other two at their worked-out amounts.
-        const sv = Core.allocate(state).savings;
+        const sv = Core.allocate(state, today()).savings;
         state.savings.emergencyMonthly = sv.emergencyMonthly;
         state.savings.investMonthly = sv.investMonthly;
         state.savings.debtExtra = sv.debtExtra;
@@ -1723,6 +1861,12 @@
 
   document.addEventListener('input', (ev) => {
     const el = ev.target;
+    if (el.id === 'pay-amount') {
+      const box = document.getElementById('pay-reason');
+      const cyc = Core.cycleFor(today(), Number(state.settings.payday) || 1);
+      if (box) box.innerHTML = paydayReason(el.value, (state.payslips || {})[cyc.start]);
+      return;
+    }
     if (el.id === 'sms-text') { ui.smsText = el.value; return; }
     if (el.dataset.em === 'amount' || el.dataset.em === 'cut') {
       ui.emergency[el.dataset.em] = el.value;

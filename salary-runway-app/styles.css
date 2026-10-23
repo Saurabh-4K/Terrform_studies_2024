@@ -378,3 +378,23 @@ tr.needs-check td { background: var(--warn-soft); }
 .choice .form-grid, .choice .summary, .choice .row { margin-top: 6px; }
 div.choice { cursor: default; }
 .card-note { padding-inline: 4px; }
+
+/* ---------- pay ---------- */
+.payday-card { border-color: var(--accent); }
+label.check { display: flex; gap: 8px; align-items: center; font-size: 0.88rem; }
+label.check input { width: 18px; height: 18px; accent-color: var(--accent); }
+.pay-line { justify-content: space-between; font-size: 0.92rem; }
+.pay-history { display: grid; gap: 10px; border-top: 1px solid var(--line); padding-top: 12px; }
+.pay-chart { display: grid; grid-template-columns: repeat(12, 1fr); gap: 4px; height: 120px; align-items: end; }
+.pay-col { display: grid; grid-template-rows: 1fr auto; height: 100%; align-items: end; justify-items: center; gap: 4px; }
+.pay-col span { font-size: 0.68rem; color: var(--muted); }
+.pay-bar { width: 100%; border-radius: 4px 4px 0 0; background: var(--accent); opacity: 0.45; }
+.pay-bar.up, .pay-bar.down { opacity: 1; }
+.pay-bar.up { background: var(--good); }
+.pay-bar.down { background: var(--bad); }
+.pay-bar.none { background: var(--surface-2); }
+.legend i.pay-key { width: 10px; height: 10px; border: 0; border-radius: 2px; background: var(--accent); opacity: 0.45; }
+.legend i.pay-key.up, .legend i.pay-key.down { opacity: 1; }
+.legend i.pay-key.up { background: var(--good); }
+.legend i.pay-key.down { background: var(--bad); }
+.legend i.pay-key.none { background: var(--surface-2); }

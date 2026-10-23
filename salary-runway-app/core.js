@@ -152,12 +152,45 @@
     if (b && tx.undo) Object.assign(b, tx.undo);
   }
 
+  // ---------- pay ----------
+
+  /*
+   * What came in this cycle. On payday the user records the in-hand amount
+   * (state.payslips[cycle start] = { amount, usual, reason, note }). A smaller
+   * amount is what the month is planned on; anything above the usual pay is
+   * recorded as money received, so the user decides what it does.
+   */
+  function salaryFor(state, todayIso) {
+    const usual = Number(state.settings.salary) || 0;
+    if (!todayIso) return usual;
+    const slip = (state.payslips || {})[cycleFor(todayIso, Number(state.settings.payday) || 1).start];
+    return slip && Number(slip.amount) < usual ? Number(slip.amount) : usual;
+  }
+
+  /*
+   * Pay over the last `n` cycles, oldest first: amount, usual pay, the
+   * difference and its reason. Cycles without a record count as usual pay.
+   */
+  function salaryHistory(state, todayIso, n) {
+    const payday = Number(state.settings.payday) || 1;
+    const out = [];
+    let c = cycleFor(todayIso, payday);
+    for (let i = 0; i < (n || 12); i++) {
+      const slip = (state.payslips || {})[c.start];
+      const usual = slip ? Number(slip.usual) || 0 : Number(state.settings.salary) || 0;
+      const amount = slip ? Number(slip.amount) || 0 : usual;
+      out.unshift({ start: c.start, amount, usual, diff: amount - usual, reason: slip ? slip.reason || '' : '', note: slip ? slip.note || '' : '', recorded: !!slip });
+      c = previousCycle(c, payday);
+    }
+    return out;
+  }
+
   // The month's money, line by line, with any emergency adjustments applied.
   function monthlyPlan(state, todayIso) {
     const adj = activeAdjustment(state, todayIso);
-    const alloc = allocate(state);
+    const alloc = allocate(state, todayIso);
     const sv = alloc.savings;
-    const salary = Number(state.settings.salary) || 0;
+    const salary = salaryFor(state, todayIso);
     const fixedTotal = sum(state.fixed, (f) => Number(f.amount) || 0);
     const debtMin = sum(state.debts.filter((d) => d.balance > 0), (d) => Number(d.minPayment) || 0);
     const emergency = sv.emergencyMonthly;
@@ -696,8 +729,8 @@
    * - emergency fund first, until it holds a few months of needs
    * - debts at 15%+ interest get the rest before the Grow budget does
    */
-  function autoSavings(state) {
-    const salary = Number(state.settings.salary) || 0;
+  function autoSavings(state, todayIso) {
+    const salary = salaryFor(state, todayIso);
     const fixed = sum(state.fixed, (f) => Number(f.amount) || 0);
     const mins = sum(state.debts.filter((d) => d.balance > 0), (d) => Number(d.minPayment) || 0);
     const sinking = sum(state.sinking, sinkingMonthly) + billsMonthly(state);
@@ -738,17 +771,17 @@
    * goes to the automatic budgets by weight (Groceries 30%, Travel 15%, ...).
    * Amounts are whole hundreds; the rounding remainder goes to the largest.
    */
-  function allocate(state) {
+  function allocate(state, todayIso) {
     const sv = state.savings;
     const savings = sv.auto
-      ? autoSavings(state)
+      ? autoSavings(state, todayIso)
       : {
         emergencyMonthly: Number(sv.emergencyMonthly) || 0,
         investMonthly: Number(sv.investMonthly) || 0,
         debtExtra: Number(sv.debtExtra) || 0,
         notes: [],
       };
-    const salary = Number(state.settings.salary) || 0;
+    const salary = salaryFor(state, todayIso);
     const fixed = sum(state.fixed, (f) => Number(f.amount) || 0);
     const mins = sum(state.debts.filter((d) => d.balance > 0), (d) => Number(d.minPayment) || 0);
     const sinking = sum(state.sinking, sinkingMonthly) + billsMonthly(state);
@@ -817,7 +850,7 @@
     const n = cycles.length;
     const all = [].concat.apply([], cycles.map((x) => x.txns)).filter((t) => NON_PACE_CATEGORIES.indexOf(t.category) === -1);
     const totals = byCategory(all);
-    const allocated = allocate(state).budgets;
+    const allocated = allocate(state, todayIso).budgets;
     const budgetMap = {};
     allocated.forEach((b) => { budgetMap[b.name] = b.amount; });
 
@@ -1063,7 +1096,7 @@
     let saved = null;
     if (top) {
       const paid = Math.min(amount, top.balance);
-      const extra = allocate(state).savings.debtExtra;
+      const extra = allocate(state, todayIso).savings.debtExtra;
       const before = simulateDebts(debts, extra, 'avalanche', true);
       const after = simulateDebts(debts.map((d) => (d === top ? Object.assign({}, d, { balance: d.balance - paid }) : d)), extra, 'avalanche', true);
       saved = Math.max(0, before.totalInterest - after.totalInterest);
@@ -1296,6 +1329,7 @@
     insights, simulateDebts, compareDebtPlans, emergencyPlan, parseSms,
     splitSmsBatch, smsKey, categorize, normalizeMerchant, sinkingMonthly, inCycle,
     spendInRange, incomeInRange, incomeKept, isIncome, isMove, isBillPayment, isFlexible, incomeOptions,
+    salaryFor, salaryHistory,
     billShare, billPot, billsMonthly, billPaidIn, billDue, payBill, undoBillPayment, zoneStatus, ESSENTIAL_CATEGORIES,
     isCardTransfer, statementOn, dueAfter, cardOwedAt, cardReserve, cardStatus, emiQuote, revolveQuote, cardBillPlan,
     recordCardPayment, convertCardBalance, undoCardConvert, cardFreeDays, byCategory, DEFAULT_SPLIT,
