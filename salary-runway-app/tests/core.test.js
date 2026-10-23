@@ -110,6 +110,51 @@ test('a balance check from an earlier cycle is ignored', () => {
   assert.equal(r.balanceToday, 35000);
 });
 
+test('money received raises the balance and today\'s amount', () => {
+  const s = baseState({ settings: { salary: 50000, payday: 1 } });
+  s.balanceCheck = { date: '2026-10-25', amount: 1400 };
+  const before = Core.projectRunway(s, '2026-10-25');
+  s.transactions.push({ id: 'in1', kind: 'in', date: '2026-10-25', amount: 3500, category: 'From family', note: 'Home' });
+  const after = Core.projectRunway(s, '2026-10-25');
+  assert.equal(after.balanceToday, before.balanceToday + 3500);
+  assert.equal(after.spentToDate, 0, 'money in is not spending');
+  // Budget was 500/day; 3,500 extra over the 7 days left adds 500/day.
+  assert.equal(Math.round(after.dailyAllowance), Math.round(before.dailyAllowance) + 500);
+});
+
+test('money moved to a fund leaves the spending money', () => {
+  const s = baseState();
+  s.transactions.push({ id: 'in1', kind: 'in', date: '2026-10-03', amount: 5000, category: 'Refund', note: '', useFor: 'emergency' });
+  assert.equal(Core.projectRunway(s, '2026-10-05').balanceToday, 35000);
+  s.transactions[0].useFor = 'debt';
+  s.transactions[0].debtPaid = 3000;
+  assert.equal(Core.projectRunway(s, '2026-10-05').balanceToday, 37000);
+});
+
+test('choices for money received come with facts and a suggestion', () => {
+  const s = baseState({
+    debts: [{ id: 'cc', name: 'Credit card', balance: 50000, rate: 42, minPayment: 2500, dueDay: 20 }],
+    savings: { emergencyMonthly: 0, investMonthly: 0, debtExtra: 0, emergencyBalance: 60000, emergencyTargetMonths: 3, investSaved: 0 },
+  });
+  s.transactions.push({ id: 'in1', kind: 'in', date: '2026-10-05', amount: 5000, category: 'Money received', note: 'Rahul' });
+  const o = Core.incomeOptions(s, 'in1', '2026-10-05');
+  assert.deepEqual(o.options.map((x) => x.use), ['spend', 'emergency', 'debt', 'grow']);
+  assert.equal(o.recommended, 'debt');
+  assert.ok(o.interestSaved > 0);
+  // With little in the emergency fund, that comes first.
+  s.savings.emergencyBalance = 0;
+  assert.equal(Core.incomeOptions(s, 'in1', '2026-10-05').recommended, 'emergency');
+});
+
+test('when money would run out before payday, the suggestion is to keep it', () => {
+  const s = baseState({ settings: { salary: 30000, payday: 1 } });
+  for (let d = 1; d <= 10; d++) s.transactions.push({ id: 't' + d, date: '2026-10-' + String(d).padStart(2, '0'), amount: 1500, category: 'Food', note: '' });
+  s.transactions.push({ id: 'in1', kind: 'in', date: '2026-10-10', amount: 2000, category: 'Money received', note: '' });
+  const o = Core.incomeOptions(s, 'in1', '2026-10-10');
+  assert.equal(o.recommended, 'spend');
+  assert.match(o.reason, /run out on 11 Oct/);
+});
+
 test('debt plans: extra payments finish sooner and save interest', () => {
   const debts = [
     { name: 'Card', balance: 85000, rate: 42, minPayment: 4250 },
@@ -237,6 +282,16 @@ test('SMS: reads common bank and UPI formats', () => {
     assert.equal(p.category, category, sms);
     assert.equal(p.date, date, sms);
   }
+});
+
+test('SMS: money received gets the sender, and salary is recognised', () => {
+  const p = Core.parseSms('Rs 2,000 credited to your a/c XX1234 on 23-10-26 by UPI from RAHUL SHARMA. Avl bal Rs 5,000', {}, '2026-10-23');
+  assert.equal(p.type, 'credit');
+  assert.equal(p.merchant, 'Rahul Sharma');
+  assert.equal(p.category, 'Money received');
+  assert.equal(p.salary, false);
+  assert.equal(Core.parseSms('Rs 55,000 credited to your a/c XX1234 on 01-10-26 by NEFT SALARY', {}, '2026-10-23').salary, true);
+  assert.equal(Core.parseSms('Refund of Rs 499 credited to your a/c from AMAZON on 20-10-26', {}, '2026-10-23').category, 'Refund');
 });
 
 test('SMS: credits are marked, OTPs and offers are skipped', () => {

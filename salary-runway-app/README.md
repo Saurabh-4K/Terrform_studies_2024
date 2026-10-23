@@ -54,6 +54,16 @@ npm run android:apk   # APK at android/app/build/outputs/apk/debug/app-debug.apk
 2. **Flexible budgets** share everything left by default weights: Groceries 30%, Food & dining 15%, Travel 15%, Shopping 10%, Entertainment 10%, Health 5%, Personal care 5%, Misc 10%. Categories you add get 5%.
 3. Type in your own amount and that category is marked *Set by you*; the automatic ones are re-shared from what remains. **Share everything out automatically** undoes your edits.
 
+### Money received
+Money returned by a friend, money from home, refunds, cashback or side income can be added on the Spend tab (**Money in**) or from bank "credited" SMS. Salary credits are recognised and left out, since salary is already counted. For each amount the app asks what it should do and shows the effect of each choice:
+
+- **Keep it for this month**: raises the balance and today's spending amount
+- **Add to emergency fund**
+- **Pay off the costliest loan**: interest saved and how much sooner you're debt-free
+- **Set aside to invest**: with a reminder to talk to a SEBI-registered adviser
+
+It suggests one: cover this month first if money would run out, then one month of emergency fund, then loans at 15%+ interest, then the full emergency fund, then investing. A choice can be changed later from the payments list.
+
 ### Emergency mode
 Enter what happened and what it costs. The app:
 1. uses the emergency fund first,

@@ -136,8 +136,27 @@
     return events.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
   }
 
+  // Transactions are spending unless kind is 'in' (money received).
+  function isIncome(t) { return t.kind === 'in'; }
+
   function spendInRange(transactions, cycle) {
-    return transactions.filter((t) => inCycle(t.date, cycle));
+    return transactions.filter((t) => !isIncome(t) && inCycle(t.date, cycle));
+  }
+
+  function incomeInRange(transactions, cycle) {
+    return transactions.filter((t) => isIncome(t) && inCycle(t.date, cycle));
+  }
+
+  /*
+   * How much of a money-in entry stays in the account for spending.
+   * useFor: null (not decided yet, so it stays) | 'spend' | 'emergency' |
+   * 'grow' | 'debt'. Money moved to a fund or used on a loan leaves the
+   * spending money, except any part larger than the loan.
+   */
+  function incomeKept(t) {
+    if (!t.useFor || t.useFor === 'spend') return t.amount;
+    if (t.useFor === 'debt') return t.amount - (Number(t.debtPaid) || 0);
+    return 0;
   }
 
   function byCategory(transactions) {
@@ -158,6 +177,8 @@
    * - A balance check ("money in your account this morning") replaces the
    *   worked-out balance from that day on. Spending before it is unknown,
    *   so the pace is measured from that day and the plan uses the daily budget.
+   * - Money received arrives on its date. Whatever is kept for spending is
+   *   added on top of the flexible budget for the rest of the cycle.
    */
   function projectRunway(state, todayIso) {
     const cycle = cycleFor(todayIso, Number(state.settings.payday) || 1);
@@ -172,6 +193,9 @@
 
     const spendByDate = {};
     txns.forEach((t) => { spendByDate[t.date] = (spendByDate[t.date] || 0) + t.amount; });
+    const incomes = incomeInRange(state.transactions, cycle).filter((t) => t.date <= todayIso);
+    incomes.forEach((t) => { spendByDate[t.date] = (spendByDate[t.date] || 0) - incomeKept(t); });
+    const extraIn = sum(incomes.filter((t) => !anchor || t.date >= anchor.date), incomeKept);
     const eventsByDate = {};
     events.forEach((e) => { eventsByDate[e.date] = (eventsByDate[e.date] || 0) + e.amount; });
 
@@ -184,9 +208,10 @@
     );
     const daysElapsed = idxToday - aIdx + 1;
     const remainingDays = N - 1 - idxToday;
-    const dailyBudget = plan.flexTotal / N;
-    const paceRate = daysElapsed >= 3 && paceSpend > 0 ? paceSpend / daysElapsed : dailyBudget;
-    const flexLeft = Math.max(0, plan.flexTotal - paceSpend);
+    // With a balance check, extra money is shared over the days from that check.
+    const dailyBudget = plan.flexTotal / N + (anchor ? extraIn / (N - aIdx) : 0);
+    const paceRate = daysElapsed >= 3 && paceSpend > 0 ? paceSpend / daysElapsed : plan.flexTotal / N;
+    const flexLeft = Math.max(0, plan.flexTotal + extraIn - paceSpend);
     const planRate = anchor ? dailyBudget : remainingDays > 0 ? flexLeft / remainingDays : 0;
 
     const points = [];
@@ -219,7 +244,7 @@
     const byMoney = Math.max(0, bal + spentToday - billsAhead) / (remainingDays + 1);
     const byBudget = anchor
       ? dailyBudget
-      : Math.max(0, plan.flexTotal - (paceSpend - spentToday)) / (remainingDays + 1);
+      : Math.max(0, plan.flexTotal + extraIn - (paceSpend - spentToday)) / (remainingDays + 1);
     const dailyAllowance = Math.min(byMoney, byBudget);
     // What is left of today's amount, and tomorrow's amount once today is counted.
     const leftToday = Math.max(0, dailyAllowance - spentToday);
@@ -239,7 +264,7 @@
     const last = points[points.length - 1];
     return {
       cycle, plan, events, points, idxToday, remainingDays, anchor, anchorIdx: anchor ? aIdx : null,
-      spentToDate, spentToday, flexLeft, paceRate, planRate, dailyAllowance, leftToday, overToday, tomorrowAllowance,
+      spentToDate, spentToday, flexLeft, extraIn, paceRate, planRate, dailyAllowance, leftToday, overToday, tomorrowAllowance,
       balanceToday: points[idxToday].actual,
       zeroPace: firstBelowZero('pace'),
       zeroPlan: firstBelowZero('plan'),
@@ -434,6 +459,7 @@
     const recentCycles = [current].concat(cycles.map((x) => x.cycle));
     const groups = {};
     state.transactions.forEach((t) => {
+      if (isIncome(t)) return;
       const key = normalizeMerchant(t.note);
       if (!key) return;
       const idx = recentCycles.findIndex((cy) => inCycle(t.date, cy));
@@ -586,6 +612,95 @@
     };
   }
 
+  // ---------- money received ----------
+
+  function rupeesIn(n) { return '₹' + Math.round(n).toLocaleString('en-IN'); }
+
+  function shortDate(iso) {
+    const d = parseISO(iso);
+    return d.getDate() + ' ' + MONTHS[d.getMonth()].replace(/^./, (c) => c.toUpperCase());
+  }
+
+  /*
+   * The choices for money received, each with what it would change, and a
+   * suggestion: cover this month first if money would run out, then a
+   * one-month emergency fund, then loans at 15%+ interest, then the full
+   * emergency fund, then Grow.
+   */
+  function incomeOptions(state, txId, todayIso) {
+    const tx = state.transactions.find((t) => t.id === txId);
+    if (!tx) return null;
+    const amount = tx.amount;
+    const withUse = (use) => Object.assign({}, state, {
+      transactions: state.transactions.map((t) => (t.id === txId ? Object.assign({}, t, { useFor: use }) : t)),
+    });
+    const kept = projectRunway(withUse('spend'), todayIso);
+    const without = projectRunway(withUse('emergency'), todayIso);
+
+    const p = monthlyPlan(Object.assign({}, state, { adjustment: null }), todayIso);
+    const needs = p.fixedTotal + p.debtMin + p.flexTotal;
+    const target = (Number(state.savings.emergencyTargetMonths) || 3) * needs;
+    const fund = Number(state.savings.emergencyBalance) || 0;
+    const debts = state.debts.filter((d) => d.balance > 0);
+    const top = debts.slice().sort((a, b) => b.rate - a.rate)[0];
+    const options = [];
+
+    const lasts = (r) => (r.zeroPace ? 'lasts until ' + shortDate(r.zeroPace) : 'lasts until payday');
+    let spendDetail = 'Adds ' + rupeesIn(amount) + ' to this month’s spending money. Today’s amount goes from ' +
+      rupeesIn(without.dailyAllowance) + ' to ' + rupeesIn(kept.dailyAllowance) + '.';
+    if (without.zeroPace !== kept.zeroPace) spendDetail += ' At this pace your money ' + lasts(kept) + ' instead of ' + (without.zeroPace ? shortDate(without.zeroPace) : 'payday') + '.';
+    options.push({ use: 'spend', title: 'Keep it for this month', detail: spendDetail });
+
+    options.push({
+      use: 'emergency',
+      title: 'Add to emergency fund',
+      detail: 'Emergency fund goes from ' + rupeesIn(fund) + ' to ' + rupeesIn(fund + amount) + ' of your ' + rupeesIn(target) + ' target.',
+    });
+
+    let saved = null;
+    if (top) {
+      const paid = Math.min(amount, top.balance);
+      const extra = allocate(state).savings.debtExtra;
+      const before = simulateDebts(debts, extra, 'avalanche', true);
+      const after = simulateDebts(debts.map((d) => (d === top ? Object.assign({}, d, { balance: d.balance - paid }) : d)), extra, 'avalanche', true);
+      saved = Math.max(0, before.totalInterest - after.totalInterest);
+      const sooner = before.months - after.months;
+      options.push({
+        use: 'debt',
+        title: 'Pay off ' + top.name,
+        debtId: top.id,
+        detail: 'Pays ' + rupeesIn(paid) + ' off ' + top.name + ' (' + top.rate + '% a year)' +
+          (before.neverPaysOff ? '.' : '. Saves about ' + rupeesIn(saved) + ' in interest' + (sooner > 0 ? ' and you’re debt-free ' + sooner + (sooner === 1 ? ' month' : ' months') + ' sooner.' : '.')) +
+          (paid < amount ? ' The other ' + rupeesIn(amount - paid) + ' stays for this month.' : ''),
+      });
+    }
+
+    options.push({
+      use: 'grow',
+      title: 'Set aside to invest',
+      detail: 'Adds to the ' + rupeesIn(Number(state.savings.investSaved) || 0) + ' you’ve set aside to invest. Talk to a SEBI-registered investment adviser before investing it.',
+    });
+
+    let recommended, reason;
+    if (without.zeroPace) {
+      recommended = 'spend';
+      reason = 'Without this money, at your current pace you run out on ' + shortDate(without.zeroPace) + ', before payday.';
+    } else if (fund < needs) {
+      recommended = 'emergency';
+      reason = 'Your emergency fund covers less than one month of needs (' + rupeesIn(needs) + ').';
+    } else if (top && top.rate >= 15) {
+      recommended = 'debt';
+      reason = top.name + ' charges ' + top.rate + '% a year. Paying it down saves that interest for certain.';
+    } else if (fund < target) {
+      recommended = 'emergency';
+      reason = 'Your emergency fund is still below its target.';
+    } else {
+      recommended = 'grow';
+      reason = 'This month is covered, your emergency fund is full and there are no expensive loans.';
+    }
+    return { tx, options, recommended, reason, interestSaved: saved };
+  }
+
   // ---------- bank SMS parsing ----------
 
   const CATEGORY_KEYWORDS = [
@@ -645,13 +760,15 @@
       .slice(0, 40);
   }
 
-  function findMerchant(text) {
-    const patterns = [
-      /\binfo[:\s]+([^\s].*?)(?=\.\s|\.$|$|\s+avl)/i,
-      /\b(?:to|at|towards)\s+(?:vpa\s+)?([A-Za-z0-9@._&'\/ -]{2,50}?)(?=\s+(?:on|via|ref|upi|txn|for|avl|avbl|from|using|dt|date)\b|\s*[.,;(]\s|\s*[.,;]?$)/i,
-      /\bon\s+([A-Z][A-Z0-9 &'-]{2,30})(?=\s*[.,]|\s+avl)/,
-      /\b([a-z0-9._-]+@[a-z]+)\b/i,
-    ];
+  function findMerchant(text, type) {
+    const patterns = type === 'credit'
+      ? [/\bfrom\s+(?:vpa\s+)?([A-Za-z0-9@._&'\/ -]{2,50}?)(?=\s+(?:on|via|ref|upi|txn|for|avl|avbl|to|dt|date)\b|\s*[.,;(]\s|\s*[.,;]?$)/i, /\b([a-z0-9._-]+@[a-z]+)\b/i]
+      : [
+        /\binfo[:\s]+([^\s].*?)(?=\.\s|\.$|$|\s+avl)/i,
+        /\b(?:to|at|towards)\s+(?:vpa\s+)?([A-Za-z0-9@._&'\/ -]{2,50}?)(?=\s+(?:on|via|ref|upi|txn|for|avl|avbl|from|using|dt|date)\b|\s*[.,;(]\s|\s*[.,;]?$)/i,
+        /\bon\s+([A-Z][A-Z0-9 &'-]{2,30})(?=\s*[.,]|\s+avl)/,
+        /\b([a-z0-9._-]+@[a-z]+)\b/i,
+      ];
     for (const re of patterns) {
       const m = text.match(re);
       if (m) {
@@ -677,7 +794,18 @@
     const isCredit = /\b(credited|received|deposited|refund(?:ed)?)\b/i.test(t);
     if (!isDebit && !isCredit) return null;
     const type = isDebit ? 'debit' : 'credit';
-    const merchant = findMerchant(t);
+    const merchant = findMerchant(t, type);
+    if (type === 'credit') {
+      return {
+        type,
+        amount,
+        merchant: merchant || 'Money received',
+        date: parseSmsDate(t, todayIso),
+        category: /refund|reversal|reversed|cashback/i.test(t) ? 'Refund' : 'Money received',
+        salary: /\bsal(ary)?\b|payroll/i.test(t),
+        raw: t,
+      };
+    }
     return {
       type,
       amount,
@@ -701,7 +829,7 @@
     occurrenceInCycle, monthlyPlan, cycleEvents, projectRunway, autoSavings, allocate,
     insights, simulateDebts, compareDebtPlans, emergencyPlan, parseSms,
     splitSmsBatch, categorize, normalizeMerchant, sinkingMonthly, inCycle,
-    spendInRange, byCategory, DEFAULT_SPLIT,
+    spendInRange, incomeInRange, incomeKept, isIncome, incomeOptions, byCategory, DEFAULT_SPLIT,
   };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = Core;

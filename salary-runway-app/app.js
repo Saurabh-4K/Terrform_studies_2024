@@ -13,6 +13,13 @@
     'Medical', 'Vehicle repair', 'Family function', 'Death in family', 'Tax payment',
     'Penalty or fine', 'Home repair', 'Job loss', 'Other',
   ];
+  const INCOME_CATEGORIES = ['Money received', 'Money returned', 'From family', 'Refund', 'Cashback', 'Side income', 'Gift'];
+  const INCOME_USE_LABELS = {
+    spend: 'Kept for this month',
+    emergency: 'Added to emergency fund',
+    grow: 'Set aside to invest',
+    debt: 'Used to pay off a loan',
+  };
   const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   const SAMPLE_SMS = [
     'Rs.450.00 debited from a/c **1234 on {d1} to VPA swiggy@icici. Not you? Call 18001234.',
@@ -41,6 +48,7 @@
     emergency: { type: 'Medical', amount: '', cut: 20 },
     balanceOpen: false,
     smsMaxDate: 0,
+    txKind: 'out',
     smsBusy: false,
   };
 
@@ -129,6 +137,12 @@
     const names = state.budgets.map((b) => b.name).filter(Boolean);
     ['Misc', 'Emergency'].forEach((n) => { if (names.indexOf(n) === -1) names.push(n); });
     return names;
+  }
+
+  function incomeCategoryOptions(selected) {
+    const list = INCOME_CATEGORIES.slice();
+    if (selected && list.indexOf(selected) === -1) list.push(selected);
+    return list.map((c) => '<option' + (c === selected ? ' selected' : '') + '>' + esc(c) + '</option>').join('');
   }
 
   function categoryOptions(selected) {
@@ -242,6 +256,7 @@
       '<div class="legend"><span><i></i>Balance so far</span><span><i class="pace"></i>If you keep this pace</span><span><i class="plan"></i>If you keep to budget</span><span><svg width="10" height="10" aria-hidden="true"><circle cx="5" cy="5" r="4" class="c-event"/></svg>Bill or EMI</span></div></div>' +
       '</section>' +
       (askBalance || ui.balanceOpen ? balanceForm(askBalance && !ui.balanceOpen) : '') +
+      incomeCard() +
       (adj ? '<div class="callout warn"><b>Emergency plan active until ' + fmtDate(adj.until, true) + '.</b><span class="hint">Flexible budgets are ' + adj.flexCutPct + '% lower' + (adj.pauseInvest ? ', the Grow budget is paused' : '') + (adj.pauseDebtExtra ? ' and extra debt payments are paused' : '') + '.</span></div>' : '') +
       '<section class="tiles">' +
       tile('Left to spend today', inr(r.leftToday),
@@ -252,7 +267,7 @@
         (r.anchor ? 'From your balance on ' + fmtDate(r.anchor.date) : 'Worked out from your plan') +
         ' · <button class="link" data-action="balance-open">Update</button>') +
       tile('Next salary', plural(daysToPay, 'day'), fmtDate(cyc.next)) +
-      tile('Flexible spending', inr(flexSpent), 'of ' + inr(Math.round((r.plan.flexTotal * share) / 10) * 10) + ' budget' + (r.anchor ? ' since ' + fmtDate(r.anchor.date) : '')) +
+      tile('Flexible spending', inr(flexSpent), 'of ' + inr(Math.round((r.plan.flexTotal * share) / 10) * 10) + ' budget' + (r.extraIn ? ' + ' + inr(r.extraIn) + ' received' : '') + (r.anchor ? ' since ' + fmtDate(r.anchor.date) : '')) +
       '</section>' +
       '<section class="card"><div class="card-head"><h2>' + (r.anchor && r.anchorIdx > 0 ? 'You can spend until payday' : 'You can spend this cycle') + '</h2><button class="ghost" data-action="tab" data-tab="plan">Adjust</button></div>' +
       '<div class="bars">' + bars.join('') + '</div></section>' +
@@ -281,6 +296,56 @@
       '<div class="row"><label class="field grow-field" for="balance-amount"><span>Balance this morning (₹)</span><input id="balance-amount" type="number" inputmode="numeric" min="0" step="1" required value="' + esc(current) + '" placeholder="12500"></label></div>' +
       '<div class="row"><button class="primary" type="submit">Save balance</button>' +
       '<button type="button" class="ghost" data-action="balance-skip">' + (firstTime ? 'Not now' : 'Cancel') + '</button></div></form>';
+  }
+
+  // Money received that still needs a decision, newest first.
+  function pendingIncome() {
+    return state.transactions.filter((x) => Core.isIncome(x) && !x.useFor)
+      .sort((a, b) => (a.date < b.date ? 1 : -1));
+  }
+
+  function incomeCard() {
+    const pending = pendingIncome();
+    if (!pending.length) return '';
+    const tx = pending[0];
+    const o = Core.incomeOptions(state, tx.id, today());
+    return '<section class="card income-card"><div class="card-head"><h2>What should this ' + inr(tx.amount) + ' do?</h2>' +
+      (pending.length > 1 ? '<span class="hint">' + (pending.length - 1) + ' more after this</span>' : '') + '</div>' +
+      '<p class="hint">' + (tx.note ? esc(tx.note) + ' · ' : '') + esc(tx.category) + ' · ' + fmtDate(tx.date) + '. Until you choose, it counts as money for this month.</p>' +
+      '<div class="choices">' + o.options.map((opt) =>
+        '<button class="choice' + (opt.use === o.recommended ? ' suggested' : '') + '" data-action="income-use" data-id="' + esc(tx.id) + '" data-use="' + opt.use + '"' + (opt.debtId ? ' data-debt="' + esc(opt.debtId) + '"' : '') + '>' +
+        '<span class="choice-title">' + esc(opt.title) + (opt.use === o.recommended ? ' <span class="chip chip-auto">Suggested</span>' : '') + '</span>' +
+        '<span class="choice-detail">' + esc(opt.detail) + '</span></button>').join('') + '</div>' +
+      '<p class="hint"><b>Why the suggestion:</b> ' + esc(o.reason) + ' The choice is yours.</p></section>';
+  }
+
+  // Applies a choice for money received: moves it to a fund or a loan.
+  function setIncomeUse(tx, use, debtId) {
+    undoIncomeUse(tx);
+    const sv = state.savings;
+    if (use === 'emergency') sv.emergencyBalance = (Number(sv.emergencyBalance) || 0) + tx.amount;
+    if (use === 'grow') sv.investSaved = (Number(sv.investSaved) || 0) + tx.amount;
+    if (use === 'debt') {
+      const debt = state.debts.find((d) => d.id === debtId);
+      if (!debt) return;
+      const paid = Math.min(tx.amount, Number(debt.balance) || 0);
+      debt.balance = (Number(debt.balance) || 0) - paid;
+      tx.debtId = debt.id;
+      tx.debtPaid = paid;
+    }
+    tx.useFor = use;
+  }
+
+  function undoIncomeUse(tx) {
+    const sv = state.savings;
+    if (tx.useFor === 'emergency') sv.emergencyBalance = Math.max(0, (Number(sv.emergencyBalance) || 0) - tx.amount);
+    if (tx.useFor === 'grow') sv.investSaved = Math.max(0, (Number(sv.investSaved) || 0) - tx.amount);
+    if (tx.useFor === 'debt') {
+      const debt = state.debts.find((d) => d.id === tx.debtId);
+      if (debt) debt.balance = (Number(debt.balance) || 0) + (Number(tx.debtPaid) || 0);
+      delete tx.debtId;
+      delete tx.debtPaid;
+    }
   }
 
   function tile(label, value, sub, feature) {
@@ -382,19 +447,25 @@
   function viewSpend() {
     const t = today();
     const cyc = Core.cycleFor(t, Number(state.settings.payday) || 1);
-    const list = (ui.txFilter === 'cycle' ? Core.spendInRange(state.transactions, cyc) : state.transactions.slice())
+    const list = (ui.txFilter === 'cycle' ? state.transactions.filter((x) => Core.inCycle(x.date, cyc)) : state.transactions.slice())
       .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
-    const total = list.reduce((s, x) => s + x.amount, 0);
+    const spent = list.filter((x) => !Core.isIncome(x)).reduce((s, x) => s + x.amount, 0);
+    const received = list.filter(Core.isIncome).reduce((s, x) => s + x.amount, 0);
     const shown = list.slice(0, 200);
+    const moneyIn = ui.txKind === 'in';
 
     return (
-      '<section class="card"><h2>Add a payment</h2>' +
+      incomeCard() +
+      '<section class="card"><div class="card-head"><h2>' + (moneyIn ? 'Add money received' : 'Add a payment') + '</h2>' +
+      '<div class="seg" role="group" aria-label="Type"><button data-action="tx-kind" data-kind="out" aria-pressed="' + !moneyIn + '">Money out</button>' +
+      '<button data-action="tx-kind" data-kind="in" aria-pressed="' + moneyIn + '">Money in</button></div></div>' +
+      (moneyIn ? '<p class="hint">Money returned to you, money from home, a refund, cashback or side income. Your salary is already counted.</p>' : '') +
       '<form id="add-tx" class="form-grid" autocomplete="off">' +
-      '<label class="field">Amount (₹)<input id="tx-amount" type="number" inputmode="decimal" min="1" step="1" required placeholder="250"></label>' +
-      '<label class="field">Category<select id="tx-category">' + categoryOptions('Food & dining') + '</select></label>' +
+      '<label class="field">Amount (₹)<input id="tx-amount" type="number" inputmode="decimal" min="1" step="1" required placeholder="' + (moneyIn ? '2000' : '250') + '"></label>' +
+      '<label class="field">Category<select id="tx-category">' + (moneyIn ? incomeCategoryOptions('Money received') : categoryOptions('Food & dining')) + '</select></label>' +
       '<label class="field">Date<input id="tx-date" type="date" value="' + t + '" max="' + t + '" required></label>' +
-      '<label class="field">Where / what<input id="tx-note" type="text" placeholder="Swiggy"></label>' +
-      '<div class="wide"><button class="primary" type="submit">Add payment</button></div>' +
+      '<label class="field">' + (moneyIn ? 'From' : 'Where / what') + '<input id="tx-note" type="text" placeholder="' + (moneyIn ? 'Rahul' : 'Swiggy') + '"></label>' +
+      '<div class="wide"><button class="primary" type="submit">' + (moneyIn ? 'Add money received' : 'Add payment') + '</button></div>' +
       '</form></section>' +
 
       (NATIVE
@@ -415,15 +486,18 @@
       '<section class="card"><div class="card-head"><h2>Payments</h2>' +
       '<div class="seg" role="group" aria-label="Show"><button data-action="tx-filter" data-filter="cycle" aria-pressed="' + (ui.txFilter === 'cycle') + '">This cycle</button>' +
       '<button data-action="tx-filter" data-filter="all" aria-pressed="' + (ui.txFilter === 'all') + '">All</button></div></div>' +
-      '<p class="hint">' + plural(list.length, 'payment') + ' · ' + inr(total) + '. Change a category and the app remembers it for that shop next time.</p>' +
+      '<p class="hint">' + inr(spent) + ' spent' + (received ? ' · <span class="good">' + inr(received) + ' received</span>' : '') + '. Change a category and the app remembers it for that shop next time.</p>' +
       (shown.length
         ? '<div class="table-wrap"><table><thead><tr><th>Payment</th><th>Category</th><th class="amt">Amount</th><th><span class="sr">Delete</span></th></tr></thead><tbody>' +
-          shown.map((x) =>
-            '<tr><td><div class="cell-title">' + esc(x.note || 'Payment') + '</div><div class="cell-sub">' + fmtDate(x.date) + (x.source === 'sms' ? ' · from SMS' : '') + '</div></td>' +
-            '<td><select data-tx-cat="' + esc(x.id) + '" aria-label="Category">' + categoryOptions(x.category) + '</select></td>' +
-            '<td class="amt">' + inr(x.amount) + '</td>' +
-            '<td><button class="icon" data-action="tx-delete" data-id="' + esc(x.id) + '" aria-label="Delete payment">✕</button></td></tr>'
-          ).join('') + '</tbody></table></div>' +
+          shown.map((x) => {
+            const isIn = Core.isIncome(x);
+            const sub = fmtDate(x.date) + (x.source === 'sms' ? ' · from SMS' : '') +
+              (isIn ? ' · ' + (x.useFor ? INCOME_USE_LABELS[x.useFor] + ' <button class="link" data-action="income-change" data-id="' + esc(x.id) + '">Change</button>' : '<button class="link" data-action="income-change" data-id="' + esc(x.id) + '">Choose what it does</button>') : '');
+            return '<tr><td><div class="cell-title">' + esc(x.note || (isIn ? 'Money received' : 'Payment')) + '</div><div class="cell-sub">' + sub + '</div></td>' +
+              '<td><select data-tx-cat="' + esc(x.id) + '" aria-label="Category">' + (isIn ? incomeCategoryOptions(x.category) : categoryOptions(x.category)) + '</select></td>' +
+              '<td class="amt' + (isIn ? ' good' : '') + '">' + (isIn ? '+' : '') + inr(x.amount) + '</td>' +
+              '<td><button class="icon" data-action="tx-delete" data-id="' + esc(x.id) + '" aria-label="Delete">✕</button></td></tr>';
+          }).join('') + '</tbody></table></div>' +
           (list.length > shown.length ? '<p class="hint">Showing the latest 200.</p>' : '')
         : '<p class="hint">No payments yet.</p>') +
       '</section>'
@@ -440,15 +514,16 @@
           return '<tr class="muted"><td></td><td colspan="3">Skipped, not a payment: ' + esc(r.text.slice(0, 60)) + '…</td></tr>';
         }
         const p = r.parsed;
-        const note = p.type === 'credit' ? 'Money in, not counted as spending' : r.duplicate ? 'Already added' : '';
-        return '<tr' + (p.type === 'credit' || r.duplicate ? ' class="muted"' : '') + '>' +
-          '<td><input type="checkbox" data-sms-check="' + i + '" aria-label="Import this payment"' + (r.checked ? ' checked' : '') + (p.type === 'credit' ? ' disabled' : '') + '></td>' +
+        const isIn = p.type === 'credit';
+        const note = r.duplicate ? 'Already added' : isIn && p.salary ? 'Looks like your salary, which is already counted' : isIn ? 'Money in' : '';
+        return '<tr' + (r.duplicate || (isIn && p.salary) ? ' class="muted"' : '') + '>' +
+          '<td><input type="checkbox" data-sms-check="' + i + '" aria-label="Add this"' + (r.checked ? ' checked' : '') + '></td>' +
           '<td><div class="cell-title">' + esc(p.merchant) + '</div><div class="cell-sub">' + fmtDate(p.date) + (note ? ' · ' + note : '') + '</div></td>' +
-          '<td>' + (p.type === 'credit' ? '—' : '<select data-sms-cat="' + i + '" aria-label="Category">' + categoryOptions(p.category) + '</select>') + '</td>' +
-          '<td class="amt">' + (p.type === 'credit' ? '+' : '') + inr(p.amount) + '</td></tr>';
+          '<td><select data-sms-cat="' + i + '" aria-label="Category">' + (isIn ? incomeCategoryOptions(p.category) : categoryOptions(p.category)) + '</select></td>' +
+          '<td class="amt' + (isIn ? ' good' : '') + '">' + (isIn ? '+' : '') + inr(p.amount) + '</td></tr>';
       }).join('') +
       '</tbody></table></div>' +
-      '<div class="row"><button class="primary" data-action="sms-import"' + (selected ? '' : ' disabled') + '>Add ' + plural(selected, 'payment') + '</button>' +
+      '<div class="row"><button class="primary" data-action="sms-import"' + (selected ? '' : ' disabled') + '>Add ' + plural(selected, 'item') + '</button>' +
       '<button class="ghost" data-action="sms-clear">Clear</button></div>';
   }
 
@@ -465,7 +540,7 @@
       const duplicate = !!parsed && state.transactions.some((x) =>
         x.date === parsed.date && x.amount === parsed.amount &&
         Core.normalizeMerchant(x.note) === Core.normalizeMerchant(parsed.merchant));
-      return { text, parsed, duplicate, checked: !!parsed && parsed.type === 'debit' && !duplicate };
+      return { text, parsed, duplicate, checked: !!parsed && !duplicate && !parsed.salary };
     });
   }
 
@@ -861,7 +936,22 @@
       case 'list-remove':
         state[btn.dataset.list] = state[btn.dataset.list].filter((x) => x.id !== btn.dataset.id); save(); break;
       case 'tx-filter': ui.txFilter = btn.dataset.filter; break;
-      case 'tx-delete': state.transactions = state.transactions.filter((x) => x.id !== btn.dataset.id); save(); toast('Payment deleted'); break;
+      case 'tx-delete': {
+        const tx = state.transactions.find((x) => x.id === btn.dataset.id);
+        if (tx && Core.isIncome(tx)) undoIncomeUse(tx);
+        state.transactions = state.transactions.filter((x) => x.id !== btn.dataset.id); save(); toast('Deleted'); break;
+      }
+      case 'tx-kind': ui.txKind = btn.dataset.kind; break;
+      case 'income-use': {
+        const tx = state.transactions.find((x) => x.id === btn.dataset.id);
+        if (tx) { setIncomeUse(tx, btn.dataset.use, btn.dataset.debt); save(); toast(INCOME_USE_LABELS[btn.dataset.use]); }
+        break;
+      }
+      case 'income-change': {
+        const tx = state.transactions.find((x) => x.id === btn.dataset.id);
+        if (tx) { undoIncomeUse(tx); tx.useFor = null; save(); window.scrollTo(0, 0); render(); }
+        return;
+      }
       case 'sms-sample':
         ui.smsText = SAMPLE_SMS.replace(/\{d1\}/g, fmtSmsDate(Core.addDays(t, -1))).replace(/\{d2\}/g, fmtSmsDate(t));
         ui.smsRows = null; break;
@@ -871,13 +961,18 @@
       case 'sms-import': {
         let added = 0;
         ui.smsRows.forEach((r) => {
-          if (!r.checked || !r.parsed || r.parsed.type !== 'debit') return;
+          if (!r.checked || !r.parsed) return;
+          if (r.parsed.type === 'credit') {
+            state.transactions.push({ id: uid(), kind: 'in', date: r.parsed.date, amount: r.parsed.amount, category: r.parsed.category, note: r.parsed.merchant, source: 'sms', useFor: null });
+            added++;
+            return;
+          }
           state.transactions.push({ id: uid(), date: r.parsed.date, amount: r.parsed.amount, category: r.parsed.category, note: r.parsed.merchant, source: 'sms' });
           const key = Core.normalizeMerchant(r.parsed.merchant);
           if (key && r.parsed.merchant !== 'Bank payment') state.merchantRules[key] = r.parsed.category;
           added++;
         });
-        ui.smsRows = null; ui.smsText = ''; markSmsSeen(); save(); toast(plural(added, 'payment') + ' added'); break;
+        ui.smsRows = null; ui.smsText = ''; markSmsSeen(); save(); toast(plural(added, 'item') + ' added'); break;
       }
       case 'record-savings': {
         const p = Core.monthlyPlan(state, t);
@@ -944,6 +1039,7 @@
       const tx = state.transactions.find((x) => x.id === el.dataset.txCat);
       if (!tx) return;
       tx.category = el.value;
+      if (Core.isIncome(tx)) { save(); return; }
       const key = Core.normalizeMerchant(tx.note);
       if (key) state.merchantRules[key] = el.value;
       save(); toast('Saved. ' + (key ? 'Future payments to ' + tx.note + ' will go to ' + el.value + '.' : '')); return;
@@ -984,14 +1080,13 @@
     const amount = Math.round(Number(document.getElementById('tx-amount').value) || 0);
     if (amount <= 0) return;
     const note = document.getElementById('tx-note').value.trim();
-    let category = document.getElementById('tx-category').value;
-    state.transactions.push({
-      id: uid(),
-      date: document.getElementById('tx-date').value || today(),
-      amount, category, note, source: 'manual',
-    });
+    const category = document.getElementById('tx-category').value;
+    const tx = { id: uid(), date: document.getElementById('tx-date').value || today(), amount, category, note, source: 'manual' };
+    if (ui.txKind === 'in') { tx.kind = 'in'; tx.useFor = null; }
+    state.transactions.push(tx);
     save();
-    toast(inr(amount) + ' added to ' + category);
+    toast(ui.txKind === 'in' ? inr(amount) + ' received. Choose what it should do.' : inr(amount) + ' added to ' + category);
+    if (ui.txKind === 'in') window.scrollTo(0, 0);
     rerenderKeepScroll();
   });
 
@@ -1035,12 +1130,12 @@
       const msgs = (res.messages || []).filter((m) => /[A-Za-z]/.test(m.address || ''));
       ui.smsMaxDate = (res.messages || []).reduce((mx, m) => Math.max(mx, m.date), since);
       const rows = smsRows(msgs.map((m) => ({ text: m.body || '', day: Core.toISO(new Date(m.date)) })))
-        .filter((r) => r.parsed && r.parsed.type === 'debit' && !r.duplicate);
+        .filter((r) => r.parsed && !r.duplicate && !r.parsed.salary);
       state.smsAuto = true;
       ui.smsBusy = false;
       if (rows.length) {
         ui.smsRows = rows;
-        if (quiet) toast(plural(rows.length, 'new bank payment') + ' to review in Spend');
+        if (quiet) toast(plural(rows.length, 'new bank message') + ' to review in Spend');
       } else {
         ui.smsRows = null;
         markSmsSeen();
