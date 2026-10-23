@@ -965,7 +965,8 @@
             const isIn = Core.isIncome(x);
             if (Core.isMove(x) || Core.isBillPayment(x) || Core.isCardTransfer(x)) {
               const label = Core.isMove(x) ? INCOME_USE_LABELS[x.useFor] || 'Saved · choose where it counts' : x.kind === 'cardpay' ? 'Card bill paid from your account' : x.kind === 'cardconvert' ? 'Moved off the card to your loans' : 'Bill payment';
-              return '<tr><td><div class="cell-title">' + esc(x.note) + '</div><div class="cell-sub">' + fmtDate(x.date) + ' · ' + label + '</div></td>' +
+              const change = Core.isMove(x) && x.useFor ? ' <button class="link" data-action="saved-change" data-id="' + esc(x.id) + '">Change</button>' : '';
+              return '<tr><td><div class="cell-title">' + esc(x.note) + '</div><div class="cell-sub">' + fmtDate(x.date) + ' · ' + label + change + '</div></td>' +
                 '<td>' + (Core.isMove(x) ? 'Saved' : Core.isCardTransfer(x) ? 'Card' : 'Bills') + '</td><td class="amt' + (Core.isMove(x) ? ' good' : '') + '">' + inr(x.amount) + '</td>' +
                 '<td><button class="icon" data-action="tx-delete" data-id="' + esc(x.id) + '" aria-label="Delete">✕</button></td></tr>';
             }
@@ -1079,8 +1080,8 @@
       if (twin) { twin.smsKey = o.key; twin.note = twin.note || tx.note; return true; }
       tx.kind = 'move';
       tx.useFor = null;
-      tx.needsReview = true;
       state.transactions.push(tx);
+      autoAssignSaved(tx);
       return true;
     }
     if (p.type === 'credit') {
@@ -1105,7 +1106,59 @@
   function savedTwin(amount, date, fromSms) {
     return state.transactions.find((x) => Core.isMove(x) && x.amount === amount &&
       Math.abs(Core.daysBetween(x.date, date)) <= 2 &&
-      (fromSms ? x.smsKey && !x.useFor : !x.smsKey)) || null;
+      (fromSms ? x.smsKey && (!x.useFor || x.autoUse) : !x.smsKey)) || null;
+  }
+
+  /*
+   * Puts a saved entry from SMS straight into a fund: where you put money
+   * for that app last time (Jar -> emergency fund), else the safety-first
+   * suggestion. You can change it from the payments list.
+   */
+  function autoAssignSaved(tx) {
+    const learned = (state.savingRules || {})[Core.normalizeMerchant(tx.note)];
+    let use = learned && learned.use;
+    let debtId = learned && learned.debtId;
+    if (use === 'debt' && !state.debts.some((d) => d.id === debtId && d.balance > 0)) use = null;
+    if (!use) {
+      const sug = Core.suggestUse(state, today(), null);
+      use = sug.use === 'spend' ? 'emergency' : sug.use;
+      debtId = sug.debtId;
+    }
+    setIncomeUse(tx, use, debtId);
+    tx.autoUse = true;
+    tx.needsReview = false;
+    ui.autoSaved = (ui.autoSaved || []).concat(tx.id);
+  }
+
+  // Remembers where money for an app goes, so the next SMS from it is placed the same way.
+  function learnSaving(tx, use, debtId) {
+    const shop = Core.normalizeMerchant(tx.note);
+    if (!shop || /^unspent on/.test(shop)) return;
+    state.savingRules = state.savingRules || {};
+    state.savingRules[shop] = { use, debtId: debtId || null };
+  }
+
+  // Savings SMS waiting for a decision (from before this was automatic): place them now.
+  function assignWaitingSaved() {
+    let n = 0;
+    state.transactions.forEach((x) => {
+      if (Core.isMove(x) && !x.useFor && x.smsKey) { autoAssignSaved(x); n++; }
+    });
+    if (n) save();
+  }
+
+  // A toast for savings placed automatically, once they're recorded.
+  function announceAutoSaved() {
+    const ids = ui.autoSaved || [];
+    ui.autoSaved = [];
+    const list = state.transactions.filter((x) => ids.indexOf(x.id) !== -1);
+    if (!list.length) return;
+    if (list.length === 1) {
+      const x = list[0];
+      celebrate(inr(x.amount) + ' to ' + x.note + ' added to ' + (x.useFor === 'emergency' ? 'your emergency fund' : x.useFor === 'debt' ? 'your loan payoff' : 'your savings') + '. Change it in Spend if needed.');
+    } else {
+      celebrate(inr(list.reduce((a, x) => a + x.amount, 0)) + ' of savings added to your funds. Change any in Spend if needed.');
+    }
   }
 
   function smsNote(p) {
@@ -1802,7 +1855,18 @@
         if (!tx) return;
         setIncomeUse(tx, btn.dataset.use, btn.dataset.debt);
         tx.needsReview = false;
+        tx.autoUse = false;
+        learnSaving(tx, btn.dataset.use, btn.dataset.debt);
         save(); celebrate(rewardMessage(btn.dataset.use, tx.amount, btn.dataset.debt, false)); break;
+      }
+      case 'saved-change': {
+        const tx = state.transactions.find((x) => x.id === btn.dataset.id);
+        if (!tx) return;
+        undoIncomeUse(tx);
+        tx.useFor = null;
+        tx.autoUse = false;
+        tx.needsReview = true;
+        save(); window.scrollTo(0, 0); render(); toast('Choose where it counts, at the top.'); return;
       }
       case 'saved-was-spend': {
         const tx = state.transactions.find((x) => x.id === btn.dataset.id);
@@ -1905,7 +1969,7 @@
         const amount = Number(btn.dataset.amount) || 0;
         // The Jar (or similar) SMS for this may already be here.
         let tx = savedTwin(amount, t, true);
-        if (tx) tx.needsReview = false;
+        if (tx) { tx.needsReview = false; tx.autoUse = false; learnSaving(tx, btn.dataset.use, btn.dataset.debt); }
         else {
           tx = { id: uid(), kind: 'move', date: t, amount, category: 'Savings', note: 'Unspent on ' + fmtDate(btn.dataset.date), source: 'manual', useFor: null };
           state.transactions.push(tx);
@@ -1969,7 +2033,8 @@
           if (!r.checked || !r.parsed || recorded.has(r.key)) return;
           if (recordSms(r.parsed, { key: r.key, category: r.parsed.category })) added++;
         });
-        ui.smsRows = null; ui.smsText = ''; markSmsSeen(); save(); toast(plural(added, 'item') + ' added'); break;
+        ui.smsRows = null; ui.smsText = ''; markSmsSeen(); save(); toast(plural(added, 'item') + ' added');
+        announceAutoSaved(); break;
       }
       case 'record-savings': {
         const p = Core.monthlyPlan(state, t);
@@ -2108,12 +2173,13 @@
       const date = document.getElementById('sv-date').value || today();
       // If the bank SMS for this transfer is already here, use it instead of adding a second entry.
       let tx = savedTwin(amount, date, true);
-      if (tx) tx.needsReview = false;
+      if (tx) { tx.needsReview = false; tx.autoUse = false; }
       else {
         tx = { id: uid(), kind: 'move', date, amount, category: 'Savings', note: document.getElementById('sv-note').value.trim() || 'Savings', source: 'manual', useFor: null };
         state.transactions.push(tx);
       }
       setIncomeUse(tx, use, debtId);
+      learnSaving(tx, use, debtId);
       save();
       celebrate(rewardMessage(use, amount, debtId, false));
       rerenderKeepScroll();
@@ -2324,6 +2390,7 @@
       save();
       return SmsInbox.removeAlerts({ keys: items.map((it) => it.key) }).then(() => {
         if (added) toast(plural(added, 'bank SMS', 'bank SMS') + ' recorded');
+        announceAutoSaved();
       });
     }).catch(() => {});
   }
@@ -2352,8 +2419,10 @@
   }
 
   state = load();
+  assignWaitingSaved();
   if (NATIVE) collectNative();
   const fromHash = (location.hash || '').replace('#', '');
   tab = TABS.indexOf(fromHash) !== -1 ? fromHash : 'home';
   render();
+  announceAutoSaved();
 })();
