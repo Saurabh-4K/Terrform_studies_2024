@@ -39,6 +39,44 @@
   const NATIVE = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
   const SmsInbox = NATIVE ? window.Capacitor.registerPlugin('SmsInbox') : null;
   const SpendWidget = NATIVE ? window.Capacitor.registerPlugin('SpendWidget') : null;
+  const Haptics = NATIVE ? window.Capacitor.registerPlugin('Haptics') : null;
+
+  // A light tap on the phone. Never allowed to break anything.
+  function haptic() {
+    try {
+      if (Haptics) Promise.resolve().then(() => Haptics.impact({ style: 'LIGHT' })).catch(() => {});
+      else if (navigator.vibrate) navigator.vibrate(12);
+    } catch (e) { /* no vibration available */ }
+  }
+
+  // Positive feedback for moving money to safety, with honest numbers.
+  function celebrate(msg) {
+    haptic();
+    toast(msg, 'good');
+  }
+
+  /*
+   * What a move to safety buys, in true numbers: days of freedom for the
+   * emergency fund, interest saved a year for a loan.
+   */
+  function rewardMessage(use, amount, debtId, daily) {
+    if (use === 'emergency') {
+      const before = Core.freedomDays(state, today());
+      // The move has already been applied: compare with the fund before it.
+      const now = before ? before.days : 0;
+      const was = before ? Math.floor((before.fund - amount) / before.daily) : 0;
+      return now > was
+        ? 'Nice move! +' + plural(now - was, 'day') + ' of freedom (' + now + ' now).'
+        : 'Nice move! ' + inr(amount) + ' closer to your next day of freedom.';
+    }
+    if (use === 'debt') {
+      const d = state.debts.find((x) => x.id === debtId);
+      const saved = d ? (amount * (Number(d.rate) || 0)) / 100 : 0;
+      return 'Nice move! Saves about ' + inr(saved) + ' in interest a year.' + (daily ? ' Do this daily and it’s ' + inr(amount * 30) + ' a month.' : '');
+    }
+    if (use === 'grow') return 'Nice move! ' + inr(amount) + ' set aside to invest.';
+    return INCOME_USE_LABELS[use] || 'Saved';
+  }
 
   let state;
   let tab = 'home';
@@ -166,11 +204,11 @@
     return list.map((c) => '<option' + (c === selected ? ' selected' : '') + '>' + esc(c) + '</option>').join('');
   }
 
-  function toast(msg) {
+  function toast(msg, kind) {
     const old = document.querySelector('.toast');
     if (old) old.remove();
     const el = document.createElement('div');
-    el.className = 'toast';
+    el.className = 'toast' + (kind ? ' ' + kind : '');
     el.setAttribute('role', 'status');
     el.textContent = msg;
     document.body.appendChild(el);
@@ -303,6 +341,7 @@
       tile('Next salary', plural(daysToPay, 'day'), fmtDate(cyc.next)) +
       tile('Flexible spending', inr(flexSpent), 'of ' + inr(Math.round((r.plan.flexTotal * share) / 10) * 10) + ' budget' + (r.extraIn ? ' + ' + inr(r.extraIn) + ' received' : '') + (r.anchor ? ' since ' + fmtDate(r.anchor.date) : '')) +
       '</section>' +
+      paydayPreviewCard() +
       '<section class="card"><div class="card-head"><h2>' + (r.anchor && r.anchorIdx > 0 ? 'You can spend until payday' : 'You can spend this cycle') + '</h2><button class="ghost" data-action="tab" data-tab="plan">Adjust</button></div>' +
       '<div class="bars">' + bars.join('') + '</div></section>' +
       billsCard() +
@@ -460,6 +499,21 @@
       : 'not recorded yet') + '</span><button class="link" data-action="payday-open">' + (slip ? 'Change' : 'Record') + '</button></div>';
   }
 
+  // Days of Freedom: the emergency fund as time, not just money.
+  function freedomHeader() {
+    const f = Core.freedomDays(state, today());
+    if (!f) {
+      return '<div class="card-head"><h2>Emergency fund</h2></div>' +
+        '<p class="hint">Add your fixed payments and budgets to see your Days of Freedom.</p>';
+    }
+    const chip = f.days === 0 ? 'chip-caution' : 'chip-freedom';
+    return '<div class="freedom' + (f.days === 0 ? ' none' : '') + '"><h2>' + plural(f.days, 'Day', 'Days') + ' of Freedom' + (f.days ? ' 🛡️' : '') + '</h2>' +
+      '<span class="chip ' + chip + '">' + f.badge + '</span></div>' +
+      '<p class="hint">' + (f.days === 0
+        ? 'Every ' + inr(f.daily) + ' saved buys one day of complete financial security.'
+        : '(' + inr(f.fund) + ' saved toward basics of ' + inr(f.daily) + ' a day: fixed payments, loan minimums, bills, groceries and health)') + '</p>';
+  }
+
   // Pay over the last 12 months: bars, the months that differed, and totals.
   function payHistory() {
     const h = Core.salaryHistory(state, today(), 12);
@@ -488,6 +542,39 @@
         (x.note ? '<div class="meta">' + esc(x.note) + '</div>' : '') + '</div>' +
         '<div class="amt ' + (x.diff > 0 ? 'good' : 'bad') + '">' + (x.diff > 0 ? '+' : '−') + inr(Math.abs(x.diff)) + '</div></div>').join('') + '</div>' : '') +
       '</div>';
+  }
+
+  /*
+   * Next payday after what this month's money can't cover (card spending
+   * this month is already counted, so it isn't subtracted again).
+   */
+  function paydayPreviewCard() {
+    const p = Core.nextPaydayPreview(state, today());
+    if (!p.nominal) return '';
+    const tone = p.percent > 50 ? 'bad' : p.percent > 20 ? 'warn' : '';
+    const parts = [];
+    if (p.shortfall) parts.push(['This month’s shortfall at your pace (ends up borrowed)', p.shortfall]);
+    if (p.fromBefore) parts.push(['Card bills from before you added the card', p.fromBefore]);
+    if (p.newCardDebt) parts.push(['Card EMIs and balances starting next month', p.newCardDebt]);
+    let html = '<section class="card preview"><span class="eyebrow">Next payday · ' + fmtDate(p.date) + '</span>';
+    if (p.depleted) {
+      html += '<span class="big bad">Next paycheck fully used up: ₹0 in hand</span>' +
+        '<div class="callout bad"><b>Your card spending has used up your next salary before payday.</b><span class="hint">Every rupee you don’t spend now goes straight to the shortfall. See the Debts tab for the card bills.</span></div>';
+    } else if (!p.borrowed) {
+      html += '<span class="big">Effective payday: ' + inr(p.effective) + '</span>' +
+        '<span class="sub">Nothing borrowed against your next salary. Keep it that way.</span>';
+    } else {
+      html += '<span class="big">Effective payday: ' + inr(p.effective) + '</span>' +
+        '<span class="sub ' + tone + '">(Usual pay ' + inr(p.nominal) + ' − ' + inr(p.borrowed) + ' already borrowed against it)</span>';
+    }
+    if (parts.length) {
+      html += '<div class="summary">' + parts.map((x) => '<div class="line"><span>' + x[0] + '</span><span class="' + (tone || 'warn') + '">−' + inr(x[1]) + '</span></div>').join('') + '</div>';
+    }
+    if (!p.depleted) {
+      html += '<span class="sub">After fixed payments, loan minimums and bills (' + inr(p.committed) + '): ' +
+        (p.freeAfter >= 0 ? inr(p.freeAfter) + ' left for everything else.' : '<span class="bad">' + inr(-p.freeAfter) + ' short</span>.') + '</span>';
+    }
+    return html + '</section>';
   }
 
   function zoneMeter(zone) {
@@ -565,11 +652,11 @@
     if (!day) return '';
     const isToday = day.date === today();
     const when = isToday ? 'today' : day.date === Core.addDays(today(), -1) ? 'yesterday' : 'on ' + fmtDate(day.date);
-    const p = Core.monthlyPlan(Object.assign({}, state, { adjustment: null }), today());
     const fund = Number(state.savings.emergencyBalance) || 0;
-    const needs = p.fixedTotal + p.debtMin + p.variableBills + p.flexTotal;
     const top = state.debts.filter((d) => d.balance > 0).sort((a, b) => b.rate - a.rate)[0];
-    const suggested = fund < needs ? 'emergency' : top && top.rate >= 15 ? 'debt' : 'emergency';
+    const zone = Core.zoneStatus(state, today()).zone;
+    const sug = Core.suggestUse(state, today(), zone !== 'green' ? 'You’re not in the green this month, so keeping it helps you reach payday.' : null);
+    const suggested = sug.use;
     const opt = (use, title, detail, extra) =>
       '<button class="choice' + (use === suggested ? ' suggested' : '') + '" data-action="save-day" data-date="' + day.date + '" data-amount="' + day.left + '" data-use="' + use + '"' + (extra || '') + '>' +
       '<span class="choice-title">' + title + (use === suggested ? ' <span class="chip chip-auto">Suggested</span>' : '') + '</span>' +
@@ -580,9 +667,10 @@
       opt('emergency', 'Add to emergency fund', 'Fund goes from ' + inr(fund) + ' to ' + inr(fund + day.left) + '.') +
       (top ? opt('debt', 'Pay off ' + esc(top.name), 'At ' + top.rate + '% a year, that saves about ' + inr((day.left * top.rate) / 100) + ' a year in interest.', ' data-debt="' + esc(top.id) + '"') : '') +
       opt('grow', 'Set aside to invest', 'Adds to the money you’ve set aside to invest.') +
-      '<button class="choice" data-action="save-day-keep" data-date="' + day.date + '"><span class="choice-title">Keep it for this month</span>' +
-      '<span class="choice-detail">It stays in this month’s money and slightly raises the days ahead.</span></button>' +
-      '</div></section>';
+      '<button class="choice' + (suggested === 'spend' ? ' suggested' : '') + '" data-action="save-day-keep" data-date="' + day.date + '"><span class="choice-title">Keep it for this month' + (suggested === 'spend' ? ' <span class="chip chip-auto">Suggested</span>' : '') + '</span>' +
+      '<span class="choice-detail">It stays in this month’s money and slightly raises the days ahead.</span>' +
+      (top && top.rate >= 15 ? '<span class="choice-badge">Extends this month’s budget, but delays your debt-free date</span>' : '') + '</button>' +
+      '</div><p class="hint"><b>Why the suggestion:</b> ' + esc(sug.reason) + '</p></section>';
   }
 
   function balanceForm(firstTime) {
@@ -638,7 +726,8 @@
       '<div class="choices">' + o.options.map((opt) =>
         '<button class="choice' + (opt.use === o.recommended ? ' suggested' : '') + '" data-action="income-use" data-id="' + esc(tx.id) + '" data-use="' + opt.use + '"' + (opt.debtId ? ' data-debt="' + esc(opt.debtId) + '"' : '') + '>' +
         '<span class="choice-title">' + esc(opt.title) + (opt.use === o.recommended ? ' <span class="chip chip-auto">Suggested</span>' : '') + '</span>' +
-        '<span class="choice-detail">' + esc(opt.detail) + '</span></button>').join('') + '</div>' +
+        '<span class="choice-detail">' + esc(opt.detail) + '</span>' +
+        (opt.badge ? '<span class="choice-badge">' + esc(opt.badge) + '</span>' : '') + '</button>').join('') + '</div>' +
       '<p class="hint"><b>Why the suggestion:</b> ' + esc(o.reason) + ' The choice is yours.</p></section>';
   }
 
@@ -798,7 +887,8 @@
       '<label class="field">Date<input id="tx-date" type="date" value="' + t + '" max="' + t + '" required></label>' +
       '<label class="field">' + (moneyIn ? 'From' : 'Where / what') + '<input id="tx-note" type="text" placeholder="' + (moneyIn ? 'Rahul' : 'Swiggy') + '"></label>' +
       (!moneyIn && (state.cards || []).length
-        ? '<label class="field wide" for="tx-from"><span>Paid from</span><select id="tx-from">' + paidFromOptions('account') + '</select></label>'
+        ? '<label class="field wide" for="tx-from"><span>Paid from</span><select id="tx-from">' + paidFromOptions('account') + '</select></label>' +
+          '<p id="tx-from-warn" class="borrow-warn wide" hidden></p>'
         : '') +
       '<div class="wide"><button class="primary" type="submit">' + (moneyIn ? 'Add money received' : 'Add payment') + '</button></div>' +
       '</form></section>' +
@@ -1136,8 +1226,24 @@
   }
 
   function paidFromOptions(selected) {
-    return '<option value="account"' + (!selected || selected === 'account' ? ' selected' : '') + '>Bank account / UPI / debit card</option>' +
-      (state.cards || []).map((c) => '<option value="' + esc(c.id) + '"' + (selected === c.id ? ' selected' : '') + '>' + cardLabel(c) + ' (credit card)</option>').join('');
+    return '<option value="account"' + (!selected || selected === 'account' ? ' selected' : '') + '>Bank account / UPI / debit card (paid from my money)</option>' +
+      (state.cards || []).map((c) => {
+        const rate = Number(c.rate) || 42;
+        return '<option value="' + esc(c.id) + '"' + (selected === c.id ? ' selected' : '') + '>' + cardLabel(c) +
+          (rate >= 15 ? ' (borrows from next paycheck @ ' + rate + '%)' : ' (credit card @ ' + rate + '%)') + '</option>';
+      }).join('');
+  }
+
+  // The red line under a "Paid from" choice when it's a card.
+  function borrowWarning(cardId) {
+    const c = (state.cards || []).find((x) => x.id === cardId);
+    if (!c) return '';
+    const rate = Number(c.rate) || 42;
+    // Today's spending goes on the next statement, not the one already issued.
+    const due = Core.dueAfter(c, Core.statementOn(c, Core.addMonths(today(), 1)));
+    return rate >= 15
+      ? 'Borrowed money at ' + rate + '% a year. Counted as spent today; it’s on the bill due ' + fmtDate(due) + '.'
+      : 'On ' + esc(c.name) + ' at ' + rate + '% a year. Counted as spent today.';
   }
 
   function cardsSection() {
@@ -1287,6 +1393,15 @@
     toast(card.name + ' saved');
   }
 
+  // Interest leaking out every day, at the top of the Debts tab.
+  function leakBanner() {
+    const l = Core.interestLeak(state, today());
+    if (l.daily < 1) return '';
+    const worst = l.items.filter((x) => x.daily > 0).sort((a, b) => b.daily - a.daily);
+    return '<section class="leak-banner' + (l.high ? '' : ' amber') + '"><h2>You are losing ' + inr(l.daily) + '/day to bank interest</h2>' +
+      '<span class="hint">That’s ' + inr(l.monthly) + ' a month. Biggest: ' + worst.slice(0, 2).map((x) => esc(x.name) + ' (' + inr(x.daily) + '/day at ' + x.rate + '%)').join(', ') + '.</span></section>';
+  }
+
   // Shown when a card payment is added: it's borrowed money.
   function cardSpendWarning(tx) {
     const c = (state.cards || []).find((x) => x.id === tx.paidFrom);
@@ -1353,6 +1468,7 @@
     }
 
     return (
+      leakBanner() +
       cardsSection() +
       '<section class="card"><div class="card-head"><h2>Loans</h2><span class="hint">Update balances from each statement</span></div>' +
       (state.debts.length ? '' : '<p class="hint">No loans added. Add personal loans, EMIs or other debts to see what they cost. Credit cards go in the section above.</p>') +
@@ -1408,7 +1524,7 @@
         : '<p class="hint">Nothing set aside yet. Add amounts in the Plan tab.</p>') +
       '</section>' +
 
-      '<section class="card"><div class="card-head"><h2>Emergency fund</h2><span class="hint">Your buffer against the next surprise</span></div>' +
+      '<section class="card">' + freedomHeader() +
       '<div class="form-grid">' + numInput('emergency-balance', 'savings.emergencyBalance', sv.emergencyBalance, 'Saved so far (₹)') +
       '<label class="field" for="emergency-target"><span>Target</span><select id="emergency-target" data-bind="savings.emergencyTargetMonths">' +
       [3, 6].map((m) => '<option value="' + m + '"' + (Number(sv.emergencyTargetMonths) === m ? ' selected' : '') + '>' + m + ' months</option>').join('') + '</select></label></div>' +
@@ -1715,7 +1831,7 @@
         state.transactions.push(tx);
         setIncomeUse(tx, btn.dataset.use, btn.dataset.debt);
         state.days[btn.dataset.date].prompted = true;
-        save(); toast(inr(tx.amount) + ' ' + MOVE_LABELS[btn.dataset.use]); break;
+        save(); celebrate(rewardMessage(btn.dataset.use, tx.amount, btn.dataset.debt, true)); break;
       }
       case 'save-day-keep': state.days[btn.dataset.date].prompted = true; save(); break;
       case 'tx-confirm': {
@@ -1744,7 +1860,12 @@
         toast('Notifications off'); break;
       case 'income-use': {
         const tx = state.transactions.find((x) => x.id === btn.dataset.id);
-        if (tx) { setIncomeUse(tx, btn.dataset.use, btn.dataset.debt); save(); toast(INCOME_USE_LABELS[btn.dataset.use]); }
+        if (tx) {
+          setIncomeUse(tx, btn.dataset.use, btn.dataset.debt);
+          save();
+          if (btn.dataset.use === 'spend') toast(INCOME_USE_LABELS.spend);
+          else celebrate(rewardMessage(btn.dataset.use, tx.amount, btn.dataset.debt, false));
+        }
         break;
       }
       case 'income-change': {
@@ -1828,6 +1949,11 @@
         if (el.dataset.list === 'budgets' && f === 'amount') item.auto = false;
       }
       save(); refreshAfterEdit(); return;
+    }
+    if (el.id === 'tx-from') {
+      const warn = document.getElementById('tx-from-warn');
+      if (warn) { warn.textContent = borrowWarning(el.value); warn.hidden = el.value === 'account'; }
+      return;
     }
     if (el.dataset.txFrom) {
       const tx = state.transactions.find((x) => x.id === el.dataset.txFrom);
@@ -1985,6 +2111,9 @@
       left: Math.round(r.leftToday - r.overToday),
       date: today(),
       categories: categories().filter((c) => c !== 'Emergency'),
+      // Tomorrow's safe amount = pool / daysAfter; the widget lowers the pool as you overspend.
+      tomorrowPool: Math.round(r.tomorrowAllowance * r.remainingDays),
+      daysAfter: r.remainingDays,
     };
     const key = JSON.stringify(payload);
     if (key === widgetSent) return;

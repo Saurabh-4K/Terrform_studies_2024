@@ -23,7 +23,9 @@ public class SpendWidgetPlugin extends Plugin {
         double left = call.getDouble("left", 0.0);
         String date = call.getString("date", WidgetStore.today());
         JSArray categories = call.getArray("categories", new JSArray());
-        WidgetStore.setSummary(getContext(), Math.round(left), date, categories);
+        double pool = call.getDouble("tomorrowPool", 0.0);
+        int daysAfter = call.getInt("daysAfter", 0);
+        WidgetStore.setSummary(getContext(), Math.round(left), date, categories, Math.round(pool), daysAfter);
         SpendWidgetProvider.updateAll(getContext());
         call.resolve();
     }

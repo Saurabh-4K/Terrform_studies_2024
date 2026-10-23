@@ -32,9 +32,15 @@ public class SpendWidgetProvider extends AppWidgetProvider {
             views.setTextViewText(R.id.widget_amount, WidgetStore.rupees(left));
             views.setTextViewText(R.id.widget_label, context.getString(R.string.widget_left_today));
         } else {
+            // Over today's amount: show what that does to tomorrow, in amber.
             views.setTextViewText(R.id.widget_amount, context.getString(R.string.widget_over, WidgetStore.rupees(-left)));
-            views.setTextViewText(R.id.widget_label, context.getString(R.string.widget_over_hint));
+            Long tomorrow = WidgetStore.tomorrow(context);
+            views.setTextViewText(R.id.widget_label, tomorrow == null
+                ? context.getString(R.string.widget_over_hint)
+                : context.getString(R.string.widget_tomorrow_drops, WidgetStore.rupees(tomorrow)));
+            views.setTextColor(R.id.widget_label, 0xFFFFDCA8);
         }
+        if (left == null || left >= 0) views.setTextColor(R.id.widget_label, 0xD9FFFFFF);
 
         int flags = PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE;
         Intent open = new Intent(context, MainActivity.class).setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);

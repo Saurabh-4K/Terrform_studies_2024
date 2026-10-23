@@ -74,7 +74,7 @@ public class SmsReceiver extends BroadcastReceiver {
             title = context.getString(R.string.sms_title_statement, cardName, WidgetStore.rupees(r.amount));
             text = context.getString(R.string.sms_text_statement);
         } else if (debit && "card".equals(r.paidFrom)) {
-            title = context.getString(R.string.sms_title_card, WidgetStore.rupees(r.amount), cardName, r.merchant);
+            title = context.getString(R.string.sms_title_card, WidgetStore.rupees(r.amount), cardName);
             text = context.getString(R.string.sms_text_card);
         } else {
             title = context.getString(debit ? R.string.sms_title_paid : R.string.sms_title_received,

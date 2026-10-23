@@ -1117,24 +1117,111 @@
       detail: 'Adds to the ' + rupeesIn(Number(state.savings.investSaved) || 0) + ' you’ve set aside to invest. Talk to a SEBI-registered investment adviser before investing it.',
     });
 
-    let recommended, reason;
-    if (without.zeroPace) {
-      recommended = 'spend';
-      reason = 'Without this money, at your current pace you run out on ' + shortDate(without.zeroPace) + ', before payday.';
-    } else if (fund < needs) {
-      recommended = 'emergency';
-      reason = 'Your emergency fund covers less than one month of needs (' + rupeesIn(needs) + ').';
-    } else if (top && top.rate >= 15) {
-      recommended = 'debt';
-      reason = top.name + ' charges ' + top.rate + '% a year. Paying it down saves that interest for certain.';
-    } else if (fund < target) {
-      recommended = 'emergency';
-      reason = 'Your emergency fund is still below its target.';
-    } else {
-      recommended = 'grow';
-      reason = 'This month is covered, your emergency fund is full and there are no expensive loans.';
+    const s = suggestUse(state, todayIso, without.zeroPace ? 'Without this money, at your current pace you run out on ' + shortDate(without.zeroPace) + ', before payday.' : null);
+    // Keeping it while an expensive loan is open has a cost worth seeing.
+    if (top && top.rate >= 15) options[0].badge = 'Extends this month’s budget, but delays your debt-free date';
+    return { tx, options, recommended: s.use, reason: s.reason, interestSaved: saved };
+  }
+
+  // ---------- behaviour: the numbers behind the nudges ----------
+
+  /*
+   * One order for every "what should this money do?" suggestion:
+   * 1. keep it, if this month would otherwise run out (`runsOut` says why)
+   * 2. the emergency fund, until it covers 30 days of basics
+   * 3. loans at 15%+ interest
+   * 4. the emergency fund, up to its full target
+   * 5. invest
+   * An empty fund comes before debt: without it, the next surprise goes on a card.
+   */
+  function suggestUse(state, todayIso, runsOut) {
+    if (runsOut) return { use: 'spend', reason: runsOut };
+    const f = freedomDays(state, todayIso);
+    const days = f ? f.days : 0;
+    const top = state.debts.filter((d) => d.balance > 0).sort((a, b) => b.rate - a.rate)[0];
+    if (days < 30) {
+      return { use: 'emergency', reason: 'Your emergency fund covers ' + days + (days === 1 ? ' day' : ' days') + ' of basics. A 30-day shield comes first, so the next surprise doesn’t go on a card.' };
     }
-    return { tx, options, recommended, reason, interestSaved: saved };
+    if (top && top.rate >= 15) {
+      return { use: 'debt', reason: top.name + ' charges ' + top.rate + '% a year. Paying it down saves that interest for certain.', debtId: top.id };
+    }
+    const p = monthlyPlan(Object.assign({}, state, { adjustment: null }), todayIso);
+    const target = (Number(state.savings.emergencyTargetMonths) || 3) * (p.fixedTotal + p.debtMin + p.variableBills + p.flexTotal);
+    if ((Number(state.savings.emergencyBalance) || 0) < target) {
+      return { use: 'emergency', reason: 'Your emergency fund is still below its ' + (state.savings.emergencyTargetMonths || 3) + '-month target.' };
+    }
+    return { use: 'grow', reason: 'This month is covered, your emergency fund is full and there are no expensive loans.' };
+  }
+
+  /*
+   * Days of Freedom: how long the emergency fund covers the basics (fixed
+   * payments, loan minimums, bills that vary, groceries and health). Null
+   * until there are basics to measure against.
+   */
+  function freedomDays(state, todayIso) {
+    const p = monthlyPlan(Object.assign({}, state, { adjustment: null }), todayIso);
+    const essentials = sum(p.budgets.filter((b) => ESSENTIAL_CATEGORIES.indexOf(b.name) !== -1), (b) => b.base);
+    const needs = p.fixedTotal + p.debtMin + p.variableBills + essentials;
+    if (needs <= 0) return null;
+    const daily = needs / 30;
+    const fund = Number(state.savings.emergencyBalance) || 0;
+    const days = Math.floor(fund / daily);
+    const badge = days === 0 ? 'Unprotected' : days <= 14 ? 'Starter shield' : days <= 89 ? 'Incident proof' : 'Unshakeable';
+    return { days, daily, needs, fund, badge };
+  }
+
+  /*
+   * Interest leaking out each day. Only money that actually costs interest
+   * counts: loans (including card EMIs and carried balances) and card bills
+   * past their due date. A card bill paid in full by its due date costs nothing.
+   */
+  function interestLeak(state, todayIso) {
+    const items = [];
+    state.debts.filter((d) => d.balance > 0).forEach((d) => {
+      items.push({ name: d.name, balance: Number(d.balance) || 0, rate: Number(d.rate) || 0 });
+    });
+    (state.cards || []).forEach((c) => {
+      const st = cardStatus(state, c, todayIso);
+      if (st.overdue) items.push({ name: c.name + ' (overdue bill)', balance: st.remaining, rate: Number(c.rate) || 42 });
+    });
+    items.forEach((x) => { x.daily = (x.balance * x.rate) / 36500; });
+    const daily = sum(items, (x) => x.daily);
+    return { daily, monthly: daily * 30, items, high: items.some((x) => x.rate >= 15 && x.balance > 0) };
+  }
+
+  /*
+   * Next payday, after what this month's money can't cover. Card spending
+   * was already taken from this month, so only these are subtracted:
+   * - this month's shortfall at the current pace (it ends up borrowed)
+   * - card bills from before the card was added that fall due next month
+   * - card EMIs and carried card balances that start next month
+   * Fixed payments, loan minimums and bills are then shown as what's committed.
+   */
+  function nextPaydayPreview(state, todayIso) {
+    const r = projectRunway(state, todayIso);
+    const payday = Number(state.settings.payday) || 1;
+    const next = cycleFor(r.cycle.next, payday);
+    const nominal = Number(state.settings.salary) || 0;
+    const shortfall = Math.max(0, -Math.round(r.endPace));
+    let fromBefore = 0;
+    (state.cards || []).forEach((c) => {
+      cardLegacyEvents(state, c, todayIso).forEach((e) => { if (inCycle(e.date, next)) fromBefore += e.amount; });
+    });
+    const startsNext = (d) => d.fromCard && d.starts && inCycle(d.starts, next) && d.balance > 0;
+    const newCardDebt = sum(state.debts.filter(startsNext), (d) => Number(d.minPayment) || 0);
+    const borrowed = Math.round(shortfall + fromBefore + newCardDebt);
+    const effective = Math.max(0, nominal - borrowed);
+    const committed = Math.round(
+      sum(state.fixed, (f) => Number(f.amount) || 0) +
+      sum(state.debts.filter((d) => d.balance > 0 && !startsNext(d)), (d) => Number(d.minPayment) || 0) +
+      billsMonthly(state) + sum(state.sinking, sinkingMonthly)
+    );
+    return {
+      date: next.start, nominal, shortfall, fromBefore, newCardDebt, borrowed, effective,
+      percent: nominal > 0 ? (borrowed / nominal) * 100 : 0,
+      depleted: nominal > 0 && nominal - borrowed <= 0,
+      committed, freeAfter: effective - committed,
+    };
   }
 
   // ---------- bank SMS parsing ----------
@@ -1329,7 +1416,7 @@
     insights, simulateDebts, compareDebtPlans, emergencyPlan, parseSms,
     splitSmsBatch, smsKey, categorize, normalizeMerchant, sinkingMonthly, inCycle,
     spendInRange, incomeInRange, incomeKept, isIncome, isMove, isBillPayment, isFlexible, incomeOptions,
-    salaryFor, salaryHistory,
+    salaryFor, salaryHistory, suggestUse, freedomDays, interestLeak, nextPaydayPreview,
     billShare, billPot, billsMonthly, billPaidIn, billDue, payBill, undoBillPayment, zoneStatus, ESSENTIAL_CATEGORIES,
     isCardTransfer, statementOn, dueAfter, cardOwedAt, cardReserve, cardStatus, emiQuote, revolveQuote, cardBillPlan,
     recordCardPayment, convertCardBalance, undoCardConvert, cardFreeDays, byCategory, DEFAULT_SPLIT,

@@ -33,12 +33,27 @@ final class WidgetStore {
         return new SimpleDateFormat("yyyy-MM-dd", Locale.US).format(new Date());
     }
 
-    static void setSummary(Context context, long left, String date, JSONArray categories) {
+    /**
+     * left: rupees left today (negative when over). pool and daysAfter work out
+     * tomorrow's safe amount: pool / daysAfter, lowered by spending added later.
+     */
+    static void setSummary(Context context, long left, String date, JSONArray categories, long pool, int daysAfter) {
         prefs(context).edit()
             .putLong("left", left)
             .putString("date", date)
             .putString("categories", categories.toString())
+            .putLong("pool", pool)
+            .putInt("daysAfter", daysAfter)
             .apply();
+    }
+
+    /** Tomorrow's safe amount, or null if unknown (not today's numbers, or payday is tomorrow). */
+    static Long tomorrow(Context context) {
+        SharedPreferences p = prefs(context);
+        if (!today().equals(p.getString("date", ""))) return null;
+        int days = p.getInt("daysAfter", 0);
+        if (days <= 0) return null;
+        return Math.max(0, p.getLong("pool", 0)) / days;
     }
 
     /** Rupees left to spend today (negative when over), or null if the app hasn't worked it out today. */
@@ -74,7 +89,10 @@ final class WidgetStore {
             queue.put(expense);
             SharedPreferences.Editor edit = p.edit().putString("queue", queue.toString());
             Long left = leftToday(context);
-            if (left != null) edit.putLong("left", left - amount);
+            if (left != null) {
+                edit.putLong("left", left - amount);
+                edit.putLong("pool", p.getLong("pool", 0) - Math.max(0, amount - Math.max(0, left)));
+            }
             edit.apply();
         } catch (JSONException ignored) {
             // A JSON error here means a broken queue; the expense is not saved.
@@ -84,7 +102,10 @@ final class WidgetStore {
     /** Changes today's amount on the widget, e.g. when a bank SMS shows a payment. */
     static synchronized void adjustLeft(Context context, long change) {
         Long left = leftToday(context);
-        if (left != null) prefs(context).edit().putLong("left", left + change).apply();
+        if (left == null) return;
+        // Only spending beyond today's amount eats into the days ahead.
+        long over = Math.max(0, -(left + change)) - Math.max(0, -left);
+        prefs(context).edit().putLong("left", left + change).putLong("pool", prefs(context).getLong("pool", 0) - over).apply();
     }
 
     static synchronized JSONArray queued(Context context) {

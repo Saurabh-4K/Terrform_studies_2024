@@ -375,6 +375,66 @@ test('pay history over the year', () => {
   ]);
 });
 
+test('Days of Freedom: how long the fund covers the basics', () => {
+  const s = baseState({ budgets: [{ id: 'g', name: 'Groceries', amount: 6000 }, { id: 'f', name: 'Food', amount: 9500 }] });
+  // Basics: rent 15,000 + groceries 6,000 = 21,000 a month = 700 a day.
+  s.savings.emergencyBalance = 7000;
+  let f = Core.freedomDays(s, '2026-10-05');
+  assert.deepEqual([f.days, Math.round(f.daily), f.badge], [10, 700, 'Starter shield']);
+  s.savings.emergencyBalance = 0;
+  assert.equal(Core.freedomDays(s, '2026-10-05').badge, 'Unprotected');
+  s.savings.emergencyBalance = 70000;
+  assert.equal(Core.freedomDays(s, '2026-10-05').badge, 'Unshakeable');
+  // Nothing set up: no number rather than a silly one.
+  assert.equal(Core.freedomDays(baseState({ fixed: [], budgets: [] }), '2026-10-05'), null);
+});
+
+test('interest leak counts loans and overdue card bills, not card bills paid on time', () => {
+  const s = cardState({ debts: [{ id: 'pl', name: 'Personal loan', balance: 120000, rate: 14, minPayment: 4100, dueDay: 7 }] });
+  s.transactions.push({ id: 'a', date: '2026-09-20', amount: 10000, category: 'Food', note: '', paidFrom: 'hd' });
+  let l = Core.interestLeak(s, '2026-10-12');
+  assert.equal(Math.round(l.daily), 46); // 120,000 x 14% / 365
+  assert.equal(l.high, false);
+  // After the 25 Oct due date the unpaid 10,000 at 42% starts costing.
+  l = Core.interestLeak(s, '2026-10-26');
+  assert.equal(Math.round(l.daily), 46 + 12);
+  assert.equal(l.high, true);
+  // 0% EMI: no leak.
+  assert.equal(Core.interestLeak(baseState({ debts: [{ id: 'z', name: 'No-cost EMI', balance: 20000, rate: 0, minPayment: 2000, dueDay: 5 }] }), '2026-10-05').daily, 0);
+});
+
+test('payday preview subtracts only what this month can’t cover', () => {
+  const s = cardState({ settings: { salary: 50000, payday: 1 } });
+  // Card spending this month is already counted, so it doesn't reduce next payday.
+  s.transactions.push({ id: 'a', date: '2026-10-03', amount: 2000, category: 'Food', note: '', paidFrom: 'hd' });
+  let p = Core.nextPaydayPreview(s, '2026-10-05');
+  assert.deepEqual([p.borrowed, p.effective], [0, 50000]);
+  // An EMI starting next month does.
+  Core.convertCardBalance(s, 'hd', 12000, { kind: 'emi', rate: 22, months: 6, fee: 0 }, '2026-10-05');
+  p = Core.nextPaydayPreview(s, '2026-10-05');
+  assert.equal(p.newCardDebt, Core.emiQuote(12000, 22, 6, 0).emi);
+  assert.equal(p.effective, 50000 - p.newCardDebt);
+  // So does this month's shortfall at the current pace.
+  for (let d = 1; d <= 5; d++) s.transactions.push({ id: 'x' + d, date: '2026-10-0' + d, amount: 9000, category: 'Food', note: '' });
+  p = Core.nextPaydayPreview(s, '2026-10-05');
+  assert.ok(p.shortfall > 0);
+  assert.equal(p.borrowed, p.shortfall + p.newCardDebt);
+});
+
+test('suggestion order: this month, a 30-day shield, expensive loans, full fund, invest', () => {
+  const s = baseState({ budgets: [{ id: 'g', name: 'Groceries', amount: 6000 }], debts: [{ id: 'cc', name: 'Card balance', balance: 50000, rate: 42, minPayment: 2500, dueDay: 20 }] });
+  assert.equal(Core.suggestUse(s, '2026-10-05', 'runs out').use, 'spend');
+  // Basics 15,000 + 2,500 + 6,000 = 23,500 a month: 20 days is 15,667.
+  s.savings.emergencyBalance = 15000;
+  assert.equal(Core.suggestUse(s, '2026-10-05').use, 'emergency');
+  s.savings.emergencyBalance = 25000;
+  assert.equal(Core.suggestUse(s, '2026-10-05').use, 'debt');
+  s.debts = [];
+  assert.equal(Core.suggestUse(s, '2026-10-05').use, 'emergency');
+  s.savings.emergencyBalance = 500000;
+  assert.equal(Core.suggestUse(s, '2026-10-05').use, 'grow');
+});
+
 test('debt plans: extra payments finish sooner and save interest', () => {
   const debts = [
     { name: 'Card', balance: 85000, rate: 42, minPayment: 4250 },
