@@ -33,6 +33,7 @@
   // Inside the Android app, Capacitor provides a bridge to the SMS inbox.
   const NATIVE = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
   const SmsInbox = NATIVE ? window.Capacitor.registerPlugin('SmsInbox') : null;
+  const SpendWidget = NATIVE ? window.Capacitor.registerPlugin('SpendWidget') : null;
 
   let state;
   let tab = 'home';
@@ -196,6 +197,7 @@
       ).join('') +
       '</div></nav>';
     if (tab === 'home') drawRunway();
+    syncWidget();
   }
 
   function setTab(t) {
@@ -491,7 +493,7 @@
         ? '<div class="table-wrap"><table><thead><tr><th>Payment</th><th>Category</th><th class="amt">Amount</th><th><span class="sr">Delete</span></th></tr></thead><tbody>' +
           shown.map((x) => {
             const isIn = Core.isIncome(x);
-            const sub = fmtDate(x.date) + (x.source === 'sms' ? ' · from SMS' : '') +
+            const sub = fmtDate(x.date) + (x.source === 'sms' ? ' · from SMS' : x.source === 'widget' ? ' · from widget' : '') +
               (isIn ? ' · ' + (x.useFor ? INCOME_USE_LABELS[x.useFor] + ' <button class="link" data-action="income-change" data-id="' + esc(x.id) + '">Change</button>' : '<button class="link" data-action="income-change" data-id="' + esc(x.id) + '">Choose what it does</button>') : '');
             return '<tr><td><div class="cell-title">' + esc(x.note || (isIn ? 'Money received' : 'Payment')) + '</div><div class="cell-sub">' + sub + '</div></td>' +
               '<td><select data-tx-cat="' + esc(x.id) + '" aria-label="Category">' + (isIn ? incomeCategoryOptions(x.category) : categoryOptions(x.category)) + '</select></td>' +
@@ -1187,14 +1189,65 @@
     });
   }
 
+  // ---------- home-screen widget (Android app only) ----------
+
+  let widgetSent = '';
+
+  // Tells the widget what is left today and which categories to offer.
+  function syncWidget() {
+    if (!SpendWidget || !state.settings.salary) return;
+    const r = Core.projectRunway(state, today());
+    const payload = {
+      left: Math.round(r.leftToday - r.overToday),
+      date: today(),
+      categories: categories().filter((c) => c !== 'Emergency'),
+    };
+    const key = JSON.stringify(payload);
+    if (key === widgetSent) return;
+    widgetSent = key;
+    // A widget problem must never stop the app, so errors are swallowed.
+    Promise.resolve().then(() => SpendWidget.update(payload)).catch(() => { widgetSent = ''; });
+  }
+
+  /*
+   * Saves expenses added from the widget, then clears them from the widget's
+   * queue. Ids stop an entry being added twice if the app closes in between.
+   */
+  function collectWidgetExpenses() {
+    if (!SpendWidget) return Promise.resolve();
+    return Promise.resolve().then(() => SpendWidget.getQueued()).then((res) => {
+      const entries = res.entries || [];
+      if (!entries.length) return null;
+      const have = new Set(state.transactions.map((x) => x.id));
+      entries.forEach((e) => {
+        if (have.has(e.id)) return;
+        state.transactions.push({
+          id: e.id, date: e.date, amount: Math.round(Number(e.amount) || 0),
+          category: e.category || 'Misc', note: e.note || '', source: 'widget',
+        });
+      });
+      save();
+      return SpendWidget.removeQueued({ ids: entries.map((e) => e.id) }).then(() => {
+        toast(plural(entries.length, 'expense') + ' added from the widget');
+        rerenderKeepScroll();
+      });
+    }).catch(() => {});
+  }
+
   if (NATIVE) {
     document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'visible' && state.smsAuto && !ui.smsRows) readNativeSms(true);
+      if (document.visibilityState !== 'visible') return;
+      collectWidgetExpenses().then(() => {
+        if (state.smsAuto && !ui.smsRows) readNativeSms(true);
+        else rerenderKeepScroll();
+      });
     });
   }
 
   state = load();
-  if (NATIVE && state.smsAuto) readNativeSms(true);
+  if (NATIVE) {
+    collectWidgetExpenses().then(() => { if (state.smsAuto) readNativeSms(true); });
+  }
   const fromHash = (location.hash || '').replace('#', '');
   tab = TABS.indexOf(fromHash) !== -1 ? fromHash : 'home';
   render();

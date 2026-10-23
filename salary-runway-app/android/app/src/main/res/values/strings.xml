@@ -4,4 +4,21 @@
     <string name="title_activity_main">Salary Runway</string>
     <string name="package_name">com.salaryrunway.app</string>
     <string name="custom_url_scheme">com.salaryrunway.app</string>
+    <string name="widget_name">Spend today</string>
+    <string name="widget_description">Shows what is left to spend today and adds an expense without opening the app.</string>
+    <string name="widget_left_today">Left to spend today</string>
+    <string name="widget_over">%1$s over</string>
+    <string name="widget_over_hint">Over today\'s amount</string>
+    <string name="widget_open_app">Open app</string>
+    <string name="widget_open_app_hint">to see today\'s amount</string>
+    <string name="widget_add">+ Add</string>
+    <string name="quick_title">Add an expense</string>
+    <string name="quick_left">%1$s left to spend today</string>
+    <string name="quick_over">%1$s over today\'s amount</string>
+    <string name="quick_amount">Amount (₹)</string>
+    <string name="quick_note">Where / what (optional)</string>
+    <string name="quick_cancel">Cancel</string>
+    <string name="quick_save">Add</string>
+    <string name="quick_amount_error">Enter an amount</string>
+    <string name="quick_added">%1$s added</string>
 </resources>

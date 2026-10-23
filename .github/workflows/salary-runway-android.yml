@@ -1,11 +1,17 @@
 name: Salary Runway Android APK
 
 # One release a week: Sunday 03:21 UTC (about 8:51 AM in India).
-# Pushes don't build. Use "Run workflow" on the Actions tab for an urgent build.
+# Pushes don't build. Use "Run workflow" on the Actions tab for an urgent build,
+# or untick "release" to only check that the app compiles.
 on:
   schedule:
     - cron: '21 3 * * 0'
   workflow_dispatch:
+    inputs:
+      release:
+        description: Publish the APK to the download link
+        type: boolean
+        default: true
 
 permissions:
   contents: write
@@ -79,7 +85,7 @@ jobs:
 
       # A fixed release tag gives the phone one link that always has the newest APK.
       - name: Publish the download
-        if: steps.changes.outputs.build == 'true'
+        if: steps.changes.outputs.build == 'true' && (github.event_name == 'schedule' || inputs.release)
         env:
           GH_TOKEN: ${{ github.token }}
         run: |

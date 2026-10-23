@@ -26,6 +26,28 @@
 
         </activity>
 
+        <!-- "Add an expense" window opened from the home-screen widget. -->
+        <activity
+            android:name=".QuickAddActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:label="@string/quick_title"
+            android:taskAffinity=""
+            android:theme="@style/QuickAddTheme"
+            android:windowSoftInputMode="stateAlwaysVisible" />
+
+        <receiver
+            android:name=".SpendWidgetProvider"
+            android:exported="false"
+            android:label="@string/widget_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/spend_widget_info" />
+        </receiver>
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"

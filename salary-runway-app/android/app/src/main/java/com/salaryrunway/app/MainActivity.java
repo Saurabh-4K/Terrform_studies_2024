@@ -8,6 +8,7 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(SmsInboxPlugin.class);
+        registerPlugin(SpendWidgetPlugin.class);
         super.onCreate(savedInstanceState);
     }
 }
