@@ -81,6 +81,12 @@ final class WidgetStore {
         }
     }
 
+    /** Changes today's amount on the widget, e.g. when a bank SMS shows a payment. */
+    static synchronized void adjustLeft(Context context, long change) {
+        Long left = leftToday(context);
+        if (left != null) prefs(context).edit().putLong("left", left + change).apply();
+    }
+
     static synchronized JSONArray queued(Context context) {
         try {
             return new JSONArray(prefs(context).getString("queue", "[]"));

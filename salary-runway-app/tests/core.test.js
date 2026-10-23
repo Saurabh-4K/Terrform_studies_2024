@@ -305,6 +305,14 @@ test('SMS: learned categories win over keywords', () => {
   assert.equal(p.category, 'Groceries');
 });
 
+test('SMS key matches the Android app (SmsParser.key)', () => {
+  // Values printed by the Java SmsParser for the same text.
+  assert.equal(Core.smsKey('Rs.450.00 debited from a/c **1234 on 21-10-26 to VPA swiggy@icici. Not you? Call 18001234.'), 's1c0a7a35');
+  assert.equal(Core.smsKey('Rs 55,000 credited to your a/c XX1234 on 01-10-26 by NEFT SALARY'), 'sd45634e8');
+  // Line breaks and spacing don't change the key.
+  assert.equal(Core.smsKey('Rs 55,000 credited to your a/c\nXX1234 on 01-10-26 by NEFT  SALARY'), 'sd45634e8');
+});
+
 test('SMS batch splits on blank lines or one message per line', () => {
   assert.equal(Core.splitSmsBatch('Rs 10 debited\n\nRs 20 debited').length, 2);
   assert.equal(Core.splitSmsBatch('Rs 10 debited to A\nRs 20 debited to B\nRs 30 debited to C').length, 3);

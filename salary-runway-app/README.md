@@ -32,6 +32,8 @@ Uninstalling the app deletes its data. Copy a backup from the Plan tab first.
 ### Android app details
 - Built with [Capacitor](https://capacitorjs.com/): the same web app in an Android shell, plus a small native plugin (`SmsInboxPlugin.java`) that reads the SMS inbox.
 - Only messages from named senders (such as `VM-HDFCBK`) are read for payments. Reading starts from the day you allow SMS access, so you can categorise payments the same day. After that it checks for new messages each time you open it, and you review each payment before it is added.
+- **Notifications for new bank SMS** (optional, Spend tab): each bank or UPI SMS is recorded as it arrives and a notification asks you to check its category. Tapping it opens a small "Check this payment" window (change category, or mark *Not a payment*). Payments you don't check are recorded anyway and highlighted under **Needs your check** until you confirm them. Messages are matched by their text, so one SMS is never recorded twice. The Android side (`SmsReceiver`, `SmsParser.java`) mirrors the app's own SMS reader; `tests/` pins the shared message key.
+- **Home-screen widget** "Spend today": what's left to spend today, and **+ Add** to record an expense from a small window without opening the app.
 - Fonts are bundled. The app makes no network requests, and Android cloud backup is turned off for its data.
 
 To build locally (needs the Android SDK and JDK 21):

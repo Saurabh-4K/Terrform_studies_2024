@@ -21,4 +21,17 @@
     <string name="quick_save">Add</string>
     <string name="quick_amount_error">Enter an amount</string>
     <string name="quick_added">%1$s added</string>
+    <string name="sms_channel">Bank SMS</string>
+    <string name="sms_channel_description">A reminder to check the category when a bank or UPI payment SMS arrives.</string>
+    <string name="sms_title_paid">%1$s paid to %2$s</string>
+    <string name="sms_title_received">%1$s received from %2$s</string>
+    <string name="sms_text_paid">Tap to check the category: %1$s</string>
+    <string name="sms_text_received">Tap to check it and choose what it\'s for</string>
+    <string name="confirm_title">CHECK THIS PAYMENT</string>
+    <string name="confirm_category">Category</string>
+    <string name="confirm_note">Where / what</string>
+    <string name="confirm_ignore">Not a payment</string>
+    <string name="confirm_save">Save</string>
+    <string name="confirm_saved">Saved</string>
+    <string name="confirm_ignored">Left out</string>
 </resources>

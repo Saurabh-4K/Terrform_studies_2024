@@ -765,7 +765,7 @@
       ? [/\bfrom\s+(?:vpa\s+)?([A-Za-z0-9@._&'\/ -]{2,50}?)(?=\s+(?:on|via|ref|upi|txn|for|avl|avbl|to|dt|date)\b|\s*[.,;(]\s|\s*[.,;]?$)/i, /\b([a-z0-9._-]+@[a-z]+)\b/i]
       : [
         /\binfo[:\s]+([^\s].*?)(?=\.\s|\.$|$|\s+avl)/i,
-        /\b(?:to|at|towards)\s+(?:vpa\s+)?([A-Za-z0-9@._&'\/ -]{2,50}?)(?=\s+(?:on|via|ref|upi|txn|for|avl|avbl|from|using|dt|date)\b|\s*[.,;(]\s|\s*[.,;]?$)/i,
+        /\b(?:to|at|towards)\s+(?:vpa\s+)?([A-Za-z0-9@._&'\/ -]{2,50}?)(?=\s+(?:on|via|ref|upi|txn|for|avl|avbl|from|using|dt|date|received)\b|\s*[.,;(]\s|\s*[.,;]?$)/i,
         /\bon\s+([A-Z][A-Z0-9 &'-]{2,30})(?=\s*[.,]|\s+avl)/,
         /\b([a-z0-9._-]+@[a-z]+)\b/i,
       ];
@@ -816,6 +816,18 @@
     };
   }
 
+  /*
+   * Identifies a message by its text so the same SMS isn't added twice: once
+   * from a notification and again when the inbox is read. Must match
+   * SmsParser.key() in the Android app.
+   */
+  function smsKey(body) {
+    const text = String(body || '').replace(/\s/g, '');
+    let h = 5381;
+    for (let i = 0; i < text.length; i++) h = ((h << 5) + h + text.charCodeAt(i)) | 0;
+    return 's' + (h >>> 0).toString(16);
+  }
+
   function splitSmsBatch(text) {
     const blocks = String(text || '').split(/\n\s*\n/).map((s) => s.trim()).filter(Boolean);
     if (blocks.length > 1) return blocks;
@@ -828,7 +840,7 @@
     parseISO, toISO, addDays, addMonths, daysBetween, cycleFor, previousCycle,
     occurrenceInCycle, monthlyPlan, cycleEvents, projectRunway, autoSavings, allocate,
     insights, simulateDebts, compareDebtPlans, emergencyPlan, parseSms,
-    splitSmsBatch, categorize, normalizeMerchant, sinkingMonthly, inCycle,
+    splitSmsBatch, smsKey, categorize, normalizeMerchant, sinkingMonthly, inCycle,
     spendInRange, incomeInRange, incomeKept, isIncome, incomeOptions, byCategory, DEFAULT_SPLIT,
   };
 

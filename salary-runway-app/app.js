@@ -198,6 +198,7 @@
       '</div></nav>';
     if (tab === 'home') drawRunway();
     syncWidget();
+    syncAlerts();
   }
 
   function setTab(t) {
@@ -258,6 +259,11 @@
       '<div class="legend"><span><i></i>Balance so far</span><span><i class="pace"></i>If you keep this pace</span><span><i class="plan"></i>If you keep to budget</span><span><svg width="10" height="10" aria-hidden="true"><circle cx="5" cy="5" r="4" class="c-event"/></svg>Bill or EMI</span></div></div>' +
       '</section>' +
       (askBalance || ui.balanceOpen ? balanceForm(askBalance && !ui.balanceOpen) : '') +
+      (needsCheck().length
+        ? '<div class="callout warn"><b>' + plural(needsCheck().length, 'payment') + ' from SMS ' + (needsCheck().length === 1 ? 'needs' : 'need') + ' a quick check</b>' +
+          '<span class="hint">Make sure ' + (needsCheck().length === 1 ? 'it’s' : 'they’re') + ' in the right category.</span>' +
+          '<div><button class="primary" data-action="tab" data-tab="spend">Check now</button></div></div>'
+        : '') +
       incomeCard() +
       (adj ? '<div class="callout warn"><b>Emergency plan active until ' + fmtDate(adj.until, true) + '.</b><span class="hint">Flexible budgets are ' + adj.flexCutPct + '% lower' + (adj.pauseInvest ? ', the Grow budget is paused' : '') + (adj.pauseDebtExtra ? ' and extra debt payments are paused' : '') + '.</span></div>' : '') +
       '<section class="tiles">' +
@@ -298,6 +304,25 @@
       '<div class="row"><label class="field grow-field" for="balance-amount"><span>Balance this morning (₹)</span><input id="balance-amount" type="number" inputmode="numeric" min="0" step="1" required value="' + esc(current) + '" placeholder="12500"></label></div>' +
       '<div class="row"><button class="primary" type="submit">Save balance</button>' +
       '<button type="button" class="ghost" data-action="balance-skip">' + (firstTime ? 'Not now' : 'Cancel') + '</button></div></form>';
+  }
+
+  // Payments recorded from SMS that the user hasn't checked yet.
+  function needsCheck() {
+    return state.transactions.filter((x) => x.needsReview).sort((a, b) => (a.date < b.date ? 1 : -1));
+  }
+
+  function needsCheckCard() {
+    const list = needsCheck();
+    if (!list.length) return '';
+    return '<section class="card check-card"><div class="card-head"><h2>Needs your check</h2><span class="chip chip-check">' + list.length + '</span></div>' +
+      '<p class="hint">Recorded from bank SMS. Is the category right?</p>' +
+      '<div class="list">' + list.map((x) =>
+        '<div class="check-item"><div class="check-top"><div class="grow"><div class="title">' + esc(x.note || 'Bank payment') + '</div>' +
+        '<div class="meta">' + fmtDate(x.date) + '</div></div><div class="amt">' + inr(x.amount) + '</div></div>' +
+        '<div class="row"><select data-tx-cat="' + esc(x.id) + '" aria-label="Category">' + categoryOptions(x.category) + '</select></div>' +
+        '<div class="row"><button class="primary" data-action="tx-confirm" data-id="' + esc(x.id) + '">Looks right</button>' +
+        '<button class="ghost" data-action="tx-not-payment" data-id="' + esc(x.id) + '">Not a payment</button></div></div>'
+      ).join('') + '</div></section>';
   }
 
   // Money received that still needs a decision, newest first.
@@ -457,6 +482,7 @@
     const moneyIn = ui.txKind === 'in';
 
     return (
+      needsCheckCard() +
       incomeCard() +
       '<section class="card"><div class="card-head"><h2>' + (moneyIn ? 'Add money received' : 'Add a payment') + '</h2>' +
       '<div class="seg" role="group" aria-label="Type"><button data-action="tx-kind" data-kind="out" aria-pressed="' + !moneyIn + '">Money out</button>' +
@@ -477,6 +503,15 @@
             : 'Let the app read your bank and UPI messages to record payments for you. Messages are read on this phone and never leave it. You review every payment before it is added.') + '</p>' +
           '<div class="row"><button class="primary" data-action="sms-native"' + (ui.smsBusy ? ' disabled' : '') + '>' +
           (ui.smsBusy ? 'Reading…' : state.smsAuto ? 'Check for new messages' : 'Read bank SMS') + '</button></div>' +
+          (state.smsAuto
+            ? '<div class="callout"><b>' + (state.smsAlerts ? 'Notifications for new bank SMS are on' : 'Get a notification when a bank SMS arrives') + '</b>' +
+              '<span class="hint">' + (state.smsAlerts
+                ? 'Each new payment is recorded as it arrives and you get a notification to check its category. Payments you don’t check wait here, highlighted.'
+                : 'Check each payment’s category the moment it happens, from a small pop-up. Android will ask to allow receiving SMS and notifications.') + '</span>' +
+              '<div>' + (state.smsAlerts
+                ? '<button class="ghost" data-action="alerts-off">Turn off</button>'
+                : '<button class="primary" data-action="alerts-on">Turn on notifications</button>') + '</div></div>'
+            : '') +
           smsPreview() + '</section>'
         : '<section class="card"><div class="card-head"><h2>Import from bank SMS</h2></div>' +
           '<p class="hint">Paste one or more bank or UPI messages. The Android app reads them from your inbox automatically. Here you paste them, and they are read right here on your device.</p>' +
@@ -495,7 +530,8 @@
             const isIn = Core.isIncome(x);
             const sub = fmtDate(x.date) + (x.source === 'sms' ? ' · from SMS' : x.source === 'widget' ? ' · from widget' : '') +
               (isIn ? ' · ' + (x.useFor ? INCOME_USE_LABELS[x.useFor] + ' <button class="link" data-action="income-change" data-id="' + esc(x.id) + '">Change</button>' : '<button class="link" data-action="income-change" data-id="' + esc(x.id) + '">Choose what it does</button>') : '');
-            return '<tr><td><div class="cell-title">' + esc(x.note || (isIn ? 'Money received' : 'Payment')) + '</div><div class="cell-sub">' + sub + '</div></td>' +
+            return '<tr' + (x.needsReview ? ' class="needs-check"' : '') + '><td><div class="cell-title">' + esc(x.note || (isIn ? 'Money received' : 'Payment')) +
+              (x.needsReview ? ' <span class="chip chip-check">Check</span>' : '') + '</div><div class="cell-sub">' + sub + '</div></td>' +
               '<td><select data-tx-cat="' + esc(x.id) + '" aria-label="Category">' + (isIn ? incomeCategoryOptions(x.category) : categoryOptions(x.category)) + '</select></td>' +
               '<td class="amt' + (isIn ? ' good' : '') + '">' + (isIn ? '+' : '') + inr(x.amount) + '</td>' +
               '<td><button class="icon" data-action="tx-delete" data-id="' + esc(x.id) + '" aria-label="Delete">✕</button></td></tr>';
@@ -537,12 +573,14 @@
   // Rows for the review table. `day` is the date the message arrived; text
   // without a date of its own gets that date.
   function smsRows(messages) {
+    const ignored = new Set(state.smsIgnored || []);
     return messages.map(({ text, day }) => {
       const parsed = Core.parseSms(text, state.merchantRules, day);
-      const duplicate = !!parsed && state.transactions.some((x) =>
+      const key = Core.smsKey(text);
+      const duplicate = !!parsed && (ignored.has(key) || state.transactions.some((x) => x.smsKey === key || (
         x.date === parsed.date && x.amount === parsed.amount &&
-        Core.normalizeMerchant(x.note) === Core.normalizeMerchant(parsed.merchant));
-      return { text, parsed, duplicate, checked: !!parsed && !duplicate && !parsed.salary };
+        Core.normalizeMerchant(x.note) === Core.normalizeMerchant(parsed.merchant))));
+      return { text, key, parsed, duplicate, checked: !!parsed && !duplicate && !parsed.salary };
     });
   }
 
@@ -976,6 +1014,30 @@
         state.transactions = state.transactions.filter((x) => x.id !== btn.dataset.id); save(); toast('Deleted'); break;
       }
       case 'tx-kind': ui.txKind = btn.dataset.kind; break;
+      case 'tx-confirm': {
+        const tx = state.transactions.find((x) => x.id === btn.dataset.id);
+        if (tx) {
+          tx.needsReview = false;
+          const key = Core.normalizeMerchant(tx.note);
+          if (key && tx.note !== 'Bank payment') state.merchantRules[key] = tx.category;
+          save(); toast('Saved');
+        }
+        break;
+      }
+      case 'tx-not-payment': {
+        const tx = state.transactions.find((x) => x.id === btn.dataset.id);
+        if (tx) {
+          if (tx.smsKey) state.smsIgnored = (state.smsIgnored || []).concat(tx.smsKey).slice(-500);
+          state.transactions = state.transactions.filter((x) => x !== tx);
+          save(); toast('Left out');
+        }
+        break;
+      }
+      case 'alerts-on': enableAlerts(); return;
+      case 'alerts-off':
+        state.smsAlerts = false; save();
+        if (SmsInbox) Promise.resolve().then(() => SmsInbox.disableAlerts()).catch(() => {});
+        toast('Notifications off'); break;
       case 'income-use': {
         const tx = state.transactions.find((x) => x.id === btn.dataset.id);
         if (tx) { setIncomeUse(tx, btn.dataset.use, btn.dataset.debt); save(); toast(INCOME_USE_LABELS[btn.dataset.use]); }
@@ -994,14 +1056,15 @@
       case 'sms-native': readNativeSms(false); break;
       case 'sms-import': {
         let added = 0;
+        const recorded = new Set(state.transactions.map((x) => x.smsKey).filter(Boolean));
         ui.smsRows.forEach((r) => {
-          if (!r.checked || !r.parsed) return;
+          if (!r.checked || !r.parsed || recorded.has(r.key)) return;
           if (r.parsed.type === 'credit') {
-            state.transactions.push({ id: uid(), kind: 'in', date: r.parsed.date, amount: r.parsed.amount, category: r.parsed.category, note: r.parsed.merchant, source: 'sms', useFor: null });
+            state.transactions.push({ id: uid(), kind: 'in', date: r.parsed.date, amount: r.parsed.amount, category: r.parsed.category, note: r.parsed.merchant, source: 'sms', smsKey: r.key, useFor: null });
             added++;
             return;
           }
-          state.transactions.push({ id: uid(), date: r.parsed.date, amount: r.parsed.amount, category: r.parsed.category, note: r.parsed.merchant, source: 'sms' });
+          state.transactions.push({ id: uid(), date: r.parsed.date, amount: r.parsed.amount, category: r.parsed.category, note: r.parsed.merchant, source: 'sms', smsKey: r.key });
           const key = Core.normalizeMerchant(r.parsed.merchant);
           if (key && r.parsed.merchant !== 'Bank payment') state.merchantRules[key] = r.parsed.category;
           added++;
@@ -1073,6 +1136,7 @@
       const tx = state.transactions.find((x) => x.id === el.dataset.txCat);
       if (!tx) return;
       tx.category = el.value;
+      if (tx.needsReview) { tx.needsReview = false; rerenderKeepScroll(); }
       if (Core.isIncome(tx)) { save(); return; }
       const key = Core.normalizeMerchant(tx.note);
       if (key) state.merchantRules[key] = el.value;
@@ -1234,20 +1298,104 @@
     }).catch(() => {});
   }
 
+  // ---------- alerts for new bank SMS (Android app only) ----------
+
+  function enableAlerts() {
+    if (!SmsInbox) return;
+    Promise.resolve().then(() => SmsInbox.enableAlerts()).then((res) => {
+      state.smsAlerts = true;
+      alertsSent = '';
+      save();
+      toast(res && res.notifications === false
+        ? 'On. Notifications are off for this app in Android settings, so payments will wait here.'
+        : 'You’ll get a notification for each new bank SMS');
+      rerenderKeepScroll();
+    }, () => toast('SMS permission is needed for this. You can allow it in Android settings.'));
+  }
+
+  let alertsSent = '';
+
+  // Gives the notification pop-up the same categories and learned shops as the app.
+  function syncAlerts() {
+    if (!SmsInbox || !state.smsAlerts) return;
+    const payload = {
+      categories: categories().filter((c) => c !== 'Emergency'),
+      incomeCategories: INCOME_CATEGORIES,
+      rules: state.merchantRules,
+    };
+    const key = JSON.stringify(payload);
+    if (key === alertsSent) return;
+    alertsSent = key;
+    Promise.resolve().then(() => SmsInbox.syncAlerts(payload)).catch(() => { alertsSent = ''; });
+  }
+
+  /*
+   * Saves bank SMS caught while the app was closed. Ones checked in the
+   * pop-up are saved as they are; unchecked payments are saved and marked
+   * "needs your check"; ones marked "not a payment" are remembered so the
+   * inbox reader doesn't offer them again.
+   */
+  function collectAlerts() {
+    if (!SmsInbox) return Promise.resolve();
+    return Promise.resolve().then(() => SmsInbox.getAlerts()).then((res) => {
+      const items = (res && res.items) || [];
+      if (!items.length) return null;
+      const known = new Set(state.transactions.map((x) => x.smsKey).filter(Boolean));
+      let added = 0;
+      items.forEach((it) => {
+        if (known.has(it.key)) return;
+        if (it.status === 'ignored') {
+          state.smsIgnored = (state.smsIgnored || []).concat(it.key).slice(-500);
+          return;
+        }
+        const tx = {
+          id: uid(), date: it.date, amount: Math.round(Number(it.amount) || 0), category: it.category,
+          note: it.note || it.merchant, source: 'sms', smsKey: it.key,
+        };
+        if (it.type === 'credit') {
+          tx.kind = 'in';
+          tx.useFor = null;
+        } else if (it.status === 'confirmed') {
+          const shop = Core.normalizeMerchant(it.merchant);
+          if (shop && it.merchant !== 'Bank payment') state.merchantRules[shop] = it.category;
+        } else {
+          tx.needsReview = true;
+        }
+        state.transactions.push(tx);
+        added++;
+      });
+      save();
+      return SmsInbox.removeAlerts({ keys: items.map((it) => it.key) }).then(() => {
+        if (added) toast(plural(added, 'bank SMS', 'bank SMS') + ' recorded');
+      });
+    }).catch(() => {});
+  }
+
+  // Drops review rows for messages already recorded another way (e.g. from a notification).
+  function pruneSmsRows() {
+    if (!ui.smsRows) return;
+    const known = new Set(state.transactions.map((x) => x.smsKey).filter(Boolean).concat(state.smsIgnored || []));
+    ui.smsRows = ui.smsRows.filter((r) => !known.has(r.key));
+    if (!ui.smsRows.length) ui.smsRows = null;
+  }
+
+  // Everything to pick up when the app opens or comes back to the front.
+  function collectNative() {
+    return collectWidgetExpenses().then(collectAlerts).then(() => {
+      pruneSmsRows();
+      if (state.smsAuto && !ui.smsRows) readNativeSms(true);
+      else rerenderKeepScroll();
+    });
+  }
+
   if (NATIVE) {
     document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState !== 'visible') return;
-      collectWidgetExpenses().then(() => {
-        if (state.smsAuto && !ui.smsRows) readNativeSms(true);
-        else rerenderKeepScroll();
-      });
+      if (document.visibilityState === 'visible') collectNative();
     });
   }
 
   state = load();
-  if (NATIVE) {
-    collectWidgetExpenses().then(() => { if (state.smsAuto) readNativeSms(true); });
-  }
+  if (NATIVE) collectNative();
   const fromHash = (location.hash || '').replace('#', '');
   tab = TABS.indexOf(fromHash) !== -1 ? fromHash : 'home';
   render();

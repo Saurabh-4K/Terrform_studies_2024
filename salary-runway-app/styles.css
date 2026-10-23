@@ -338,3 +338,12 @@ button.link { border: 0; background: none; padding: 0; color: var(--accent); fon
 .choice-detail { font-size: 0.85rem; color: var(--muted); }
 .income-card { border-color: var(--accent); }
 td.amt.good { color: var(--good); }
+.check-card { border-color: var(--marigold); }
+.check-item { display: grid; gap: 8px; padding: 12px 0; border-top: 1px solid var(--line); }
+.check-item:first-child { border-top: 0; padding-top: 0; }
+.check-top { display: flex; gap: 10px; align-items: baseline; }
+.check-top .amt { font-weight: 650; }
+.check-item select { max-width: 100%; }
+.chip-check { background: var(--warn-soft); color: var(--warn); }
+tr.needs-check td { background: var(--warn-soft); }
+.check-top .grow { flex: 1; min-width: 0; }

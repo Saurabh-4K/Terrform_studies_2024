@@ -36,6 +36,24 @@
             android:theme="@style/QuickAddTheme"
             android:windowSoftInputMode="stateAlwaysVisible" />
 
+        <!-- "Check this payment" window opened from a bank SMS notification. -->
+        <activity
+            android:name=".SmsConfirmActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:label="@string/confirm_title"
+            android:taskAffinity=""
+            android:theme="@style/QuickAddTheme" />
+
+        <receiver
+            android:name=".SmsReceiver"
+            android:exported="true"
+            android:permission="android.permission.BROADCAST_SMS">
+            <intent-filter>
+                <action android:name="android.provider.Telephony.SMS_RECEIVED" />
+            </intent-filter>
+        </receiver>
+
         <receiver
             android:name=".SpendWidgetProvider"
             android:exported="false"
@@ -64,4 +82,7 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- Reads bank and UPI SMS on the phone to record payments. Asked for only when the user taps "Read bank SMS". -->
     <uses-permission android:name="android.permission.READ_SMS" />
+    <!-- Catches new bank SMS to ask for a category check. Asked for only when the user turns alerts on. -->
+    <uses-permission android:name="android.permission.RECEIVE_SMS" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 </manifest>
