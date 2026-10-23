@@ -1,11 +1,10 @@
 name: Salary Runway Android APK
 
+# One release a week: Sunday 03:21 UTC (about 8:51 AM in India).
+# Pushes don't build. Use "Run workflow" on the Actions tab for an urgent build.
 on:
-  push:
-    branches: [claude/budget-salary-tracker-app-kptvh8, main]
-    paths:
-      - 'salary-runway-app/**'
-      - '.github/workflows/salary-runway-android.yml'
+  schedule:
+    - cron: '21 3 * * 0'
   workflow_dispatch:
 
 permissions:
@@ -24,40 +23,63 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Skip the week when nothing changed since the last release.
+      - name: Check for changes since the last release
+        id: changes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          last=$(gh release view salary-runway-latest --json targetCommitish --jq .targetCommitish 2>/dev/null || true)
+          if [ "${{ github.event_name }}" = "schedule" ] && [ "$last" = "$GITHUB_SHA" ]; then
+            echo "No changes since the last release ($last). Skipping this week."
+            echo "build=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "build=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: actions/setup-node@v4
+        if: steps.changes.outputs.build == 'true'
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: salary-runway-app/package-lock.json
 
       - uses: actions/setup-java@v4
+        if: steps.changes.outputs.build == 'true'
         with:
           distribution: temurin
           java-version: 21
 
       - name: Install
+        if: steps.changes.outputs.build == 'true'
         run: npm ci
 
       - name: Test
+        if: steps.changes.outputs.build == 'true'
         run: npm test
 
       - name: Copy the web app into the Android project
+        if: steps.changes.outputs.build == 'true'
         run: npm run android:sync
 
       - name: Build APK
+        if: steps.changes.outputs.build == 'true'
         working-directory: salary-runway-app/android
         run: ./gradlew assembleDebug --no-daemon
 
       - name: Name the APK
+        if: steps.changes.outputs.build == 'true'
         run: cp android/app/build/outputs/apk/debug/app-debug.apk SalaryRunway.apk
 
       - uses: actions/upload-artifact@v4
+        if: steps.changes.outputs.build == 'true'
         with:
           name: SalaryRunway-apk
           path: salary-runway-app/SalaryRunway.apk
 
       # A fixed release tag gives the phone one link that always has the newest APK.
       - name: Publish the download
+        if: steps.changes.outputs.build == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |

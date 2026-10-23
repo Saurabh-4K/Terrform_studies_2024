@@ -17,7 +17,9 @@ It opens with **example numbers** (₹55,000 salary, rent, a bike EMI, a credit 
 
 ## Install on Android
 
-Every push builds a new APK on GitHub. On your phone:
+A new APK is released **once a week, on Sunday morning** (about 8:50 AM India time), and only if something changed that week. Pushing code doesn't build anything. For an urgent fix, open the repository's **Actions** tab, choose **Salary Runway Android APK**, then **Run workflow**.
+
+On your phone:
 
 1. Open **https://github.com/Saurabh-4K/Terrform_studies_2024/releases/tag/salary-runway-latest** and tap **SalaryRunway.apk**.
 2. When Android asks, allow your browser to install apps ("Install unknown apps").
