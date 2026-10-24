@@ -442,3 +442,18 @@ label.check input { width: 18px; height: 18px; accent-color: var(--accent); }
 .reset-step-subtext { color: var(--muted); font-size: 0.9rem; margin: 0; }
 .reset-step-subtext.good { color: var(--good); }
 .reset-highlight-number { font-family: var(--font-display); font-size: 1.8rem; font-weight: 700; color: var(--good); }
+
+/* ---------- (i) help ---------- */
+.title-i { display: flex; align-items: center; gap: 2px; min-width: 0; }
+.title-i h2 { margin: 0; }
+.hero-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.hero-top .eyebrow { margin: 0; }
+.info-btn {
+  flex: none; width: 36px; height: 36px; margin: -6px -4px -6px 0; padding: 8px;
+  border: 0; border-radius: 50%; background: transparent; color: var(--muted); min-height: 0;
+  display: inline-grid; place-items: center; cursor: pointer; box-shadow: none;
+}
+.info-btn svg { width: 20px; height: 20px; }
+.info-btn:hover, .info-btn:focus-visible { color: var(--accent); background: var(--surface-2); }
+.help-card h2 { margin: 0; }
+.help-card p { margin: 0; color: var(--ink); line-height: 1.5; }

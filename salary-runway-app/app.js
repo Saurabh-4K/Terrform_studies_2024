@@ -99,6 +99,8 @@
     paydayOpen: false,
     smsBusy: false,
     smsClean: null,
+    help: null,
+    helpFrom: null,
   };
 
   // ---------- storage ----------
@@ -226,6 +228,113 @@
   };
   const TAB_LABELS = { home: 'Runway', spend: 'Spend', plan: 'Plan', debts: 'Debts', grow: 'Grow' };
 
+  // How-to text, kept behind an (i) button so the screens show numbers, not instructions.
+  const HELP = {
+    runway: ['How the Runway works', [
+      'The graph shows your balance from payday to payday. <b>If you keep this pace</b> follows how you’ve spent so far; <b>If you keep to budget</b> follows your plan.',
+      '<b>Green:</b> at this pace, your money lasts until payday. <b>Careful:</b> bills and basics are covered, but this pace runs out early. <b>Red:</b> the money left doesn’t cover the bills and basics still to come (the red band on the graph).',
+      '<b>Left to spend today</b> is what you can spend today and still reach payday. Money you move to savings today counts against it, since you can’t spend it any more.',
+    ]],
+    payday: ['Payday check-in', [
+      'Pay isn’t the same every month. Record what came in and why it changed: a bonus, tax, leave or a deduction. This month’s budgets are planned on what actually came in.',
+      'A lasting change, like a raise or a new tax slab? Tick <b>This is my new usual pay</b>.',
+      'Your pay over the year is on the Plan tab.',
+    ]],
+    add: ['Money out, in and saved', [
+      '<b>Money out:</b> anything you paid. If you paid by credit card, pick the card in <b>Paid from</b>; it counts as spent today.',
+      '<b>Money in:</b> money returned to you, money from home, a refund, cashback or side income. Your salary is already counted. The app asks what each amount should do.',
+      '<b>Saved:</b> money you moved to Jar, a recurring deposit, a SIP or gold. It leaves your account but isn’t spending. It counts against today’s amount, since you can’t spend it any more.',
+    ]],
+    sms: ['Bank SMS', [
+      'The app reads bank and UPI messages on this phone to record payments. Messages never leave the phone, and you review every payment before it is added.',
+      'Reading starts from the day you allow it. After that, new messages are checked each time you open the app.',
+      '<b>Notifications:</b> each new payment is recorded as it arrives and a notification asks you to check its category. Payments you don’t check wait under <b>Needs your check</b>.',
+      'In the browser version, paste the messages instead. They are read right here on your device.',
+    ]],
+    payments: ['Payments', [
+      'Change a category and the app remembers it for that shop next time.',
+      'Delete a payment with ✕. Money in and saved entries can be changed from here too.',
+    ]],
+    salary: ['Salary and balance', [
+      'Enter your monthly salary in hand and the day it arrives.',
+      'Starting in the middle of the month? Enter the money in your account this morning, so the graph starts from the right amount. The app can’t see earlier spending.',
+    ]],
+    fixed: ['Fixed payments', [
+      'Payments that are the same every month: rent, EMIs, subscriptions. They leave on their due day.',
+      'Credit cards and loans with a balance go in the Debts tab. Their minimum payments are counted automatically.',
+    ]],
+    bills: ['Bills that vary', [
+      'For bills whose amount changes, or that you sometimes pay for several months at once.',
+      'A share is set aside every month, so a 3-month recharge doesn’t hit one month hard.',
+      'When you pay, enter what you actually paid and how long it covers. The app learns the usual amount from your last three payments.',
+    ]],
+    setaside: ['Set aside each month', [
+      'Taken out on payday, before spending: emergency fund first, then extra toward costly loans, then the Grow budget.',
+      'The Grow budget is money you plan to invest. Talk to a SEBI-registered investment adviser about where. This app only helps you set the amount aside.',
+      'Moved it? Tap <b>I’ve moved this money aside</b> on the Grow tab, or lock it in at the payday reset. A Jar or savings SMS for the same amount joins it instead of counting twice.',
+    ]],
+    yearly: ['Yearly costs', [
+      'Costs you know are coming: festivals, insurance, servicing, school fees.',
+      'Saving a little each month means they don’t become emergencies or loans.',
+    ]],
+    flex: ['Flexible budgets', [
+      'What is left of your salary is shared out across these automatically.',
+      'Type your own amount and that category is marked <b>Set by you</b>. The automatic ones adjust to fit. <b>Share everything out automatically</b> undoes your edits.',
+    ]],
+    data: ['Your data', [
+      'Everything is saved on this device only. Nothing is uploaded.',
+      'Copy a backup to move to another phone, or before uninstalling: uninstalling deletes the app’s data.',
+    ]],
+    smsclean: ['Clean up SMS imports', [
+      'Removes payments and money received that were added from SMS before the date you pick. Anything you added by hand stays.',
+    ]],
+    cards: ['Credit cards', [
+      'Card spending is counted as spent the day it happens, so the money is kept aside for the bill. Paying the bill only moves it to the card.',
+      'Each card shows the bill, the due date and how much of the limit you’re using.',
+      '<b>Pay in full</b> whenever you can: no interest. The minimum keeps most of the interest running. EMI is suggested only when you can’t pay in full and it’s clearly cheaper.',
+    ]],
+    loans: ['Loans', [
+      'Add personal loans, EMIs or other debts to see what they cost. Update balances from each statement.',
+      'Credit cards usually charge 36–45% a year on unpaid balances. Paying only the minimum keeps most of that cost running.',
+    ]],
+    payoff: ['When will you be debt-free?', [
+      '<b>Highest interest first</b> pays the least interest.',
+      '<b>Smallest balance first</b> clears a loan sooner, which many people find motivating.',
+      'When a loan is cleared, its payment moves to the next one.',
+    ]],
+    fund: ['Emergency fund', [
+      '<b>Days of Freedom:</b> how many days your fund covers the basics (fixed payments, loan minimums, bills, groceries and health) with no salary.',
+      'Keep this money somewhere you can reach within a day.',
+      'Most debt cycles start with one surprise bill paid by credit card. This fund turns it into an inconvenience instead of a loan.',
+    ]],
+    emergency: ['Something unexpected', [
+      'Medical bills, a car repair, a family function or a tax bill. Enter the cost and see how to absorb it without new debt.',
+      'The emergency fund is used first, then this month’s money. Grow and extra debt payments pause and flexible budgets are cut until the gap is made back.',
+    ]],
+    grow: ['Grow', [
+      'Check that an adviser is registered on SEBI’s website: <a href="https://www.sebi.gov.in/sebiweb/other/OtherAction.do?doRecognisedFpi=yes&amp;intmId=13" target="_blank" rel="noopener">sebi.gov.in → Intermediaries → Investment Advisers</a>.',
+      'Salary Runway doesn’t recommend any adviser, product, bank or fund, and earns nothing from them.',
+    ]],
+  };
+
+  function info(key) {
+    return '<button class="info-btn" data-action="help" data-help="' + key + '" aria-label="How ' + HELP[key][0].toLowerCase() + ' works">' +
+      '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 11v6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="7.6" r="1.25" fill="currentColor"/></svg></button>';
+  }
+
+  // A card title with its (i) button.
+  function titled(title, key) {
+    return '<div class="title-i"><h2>' + title + '</h2>' + info(key) + '</div>';
+  }
+
+  function helpModal() {
+    const h = ui.help && HELP[ui.help];
+    if (!h) return '';
+    return '<div class="reset-modal-overlay help-overlay" role="presentation"><div class="reset-modal-card help-card" role="dialog" aria-modal="true" aria-labelledby="help-title" id="help-card">' +
+      '<h2 id="help-title">' + h[0] + '</h2>' + h[1].map((x) => '<p>' + x + '</p>').join('') +
+      '<div><button class="primary" data-action="help-close">Got it</button></div></div></div>';
+  }
+
   function render() {
     const app = document.getElementById('app');
     const banner = state.isDemo
@@ -247,11 +356,18 @@
         '<button data-action="tab" data-tab="' + t + '"' + (t === tab ? ' aria-current="page"' : '') + '>' +
         '<svg viewBox="0 0 24 24" aria-hidden="true">' + ICONS[t] + '</svg>' + TAB_LABELS[t] + '</button>'
       ).join('') +
-      '</div></nav>' + resetModal();
+      '</div></nav>' + resetModal() + helpModal();
     if (tab === 'home') drawRunway();
     if (ui.reset) {
       const first = document.querySelector('#reset-card input, #reset-card button.primary');
       if (first) first.focus();
+    }
+    if (ui.help) {
+      document.querySelector('#help-card button.primary').focus();
+    } else if (ui.helpFrom) {
+      const back = document.querySelector('[data-help="' + ui.helpFrom + '"]');
+      if (back) back.focus({ preventScroll: true });
+      ui.helpFrom = null;
     }
     syncWidget();
     syncAlerts();
@@ -314,7 +430,7 @@
     return (
       paydayCard() +
       '<section class="hero">' +
-      '<p class="eyebrow">Salary cycle · ' + fmtDate(cyc.start) + ' – ' + fmtDate(lastDay) + ' · day ' + (r.idxToday + 1) + ' of ' + cyc.days + '</p>' +
+      '<div class="hero-top"><p class="eyebrow">Salary cycle · ' + fmtDate(cyc.start) + ' – ' + fmtDate(lastDay) + ' · day ' + (r.idxToday + 1) + ' of ' + cyc.days + '</p>' + info('runway') + '</div>' +
       zoneMeter(z.zone) +
       '<h1>' + headline + '</h1><p class="sub">' + sub + '</p>' +
       (z.zone === 'red' ? redOptions(z, r) : '') +
@@ -401,9 +517,8 @@
       '<div class="meta">' + fmtDate(x.date) + ' · ' + inr(x.amount) + ' · which bill is this?</div></div></div>' +
       '<div class="row"><select id="bill-link-' + esc(x.id) + '" aria-label="Bill">' + bills.map((b) => '<option value="' + esc(b.id) + '">' + esc(b.name) + '</option>').join('') + '</select>' +
       '<button data-action="bill-link" data-id="' + esc(x.id) + '">Link</button></div></div>');
-    return '<section class="card bills-card"><div class="card-head"><h2>Bills to pay</h2><span class="hint">Amounts vary</span></div>' +
-      rows.join('') + links.join('') +
-      '<p class="hint">Enter what you actually paid and how long it covers. The app learns the usual amount from your last three payments.</p></section>';
+    return '<section class="card bills-card"><div class="card-head">' + titled('Bills to pay', 'bills') + '<span class="hint">Amounts vary</span></div>' +
+      rows.join('') + links.join('') + '</section>';
   }
 
   const PAY_MORE = ['Bonus', 'Incentive or commission', 'Overtime', 'Arrears or hike arrears', 'Reimbursement', 'Other'];
@@ -424,9 +539,9 @@
     const usual = Number(state.settings.salary) || 0;
     const slip = slips[cyc.start];
     const start = slip ? slip.amount : seen ? seen.amount : usual;
-    return '<section class="card payday-card"><div class="card-head"><h2>' + (slip ? 'This month’s pay' : 'Payday! How much came in this month?') + '</h2></div>' +
+    return '<section class="card payday-card"><div class="card-head">' + titled(slip ? 'This month’s pay' : 'Payday! How much came in this month?', 'payday') + '</div>' +
       (seen && !slip ? '<p class="hint">Your bank’s salary SMS on ' + fmtDate(seen.date) + ' said ' + inr(seen.amount) + '.</p>' : '') +
-      '<p class="hint">Your usual pay is ' + inr(usual) + '. Recording each month’s pay, and why it changed, shows your year at a glance.</p>' +
+      '<p class="hint">Your usual pay is ' + inr(usual) + '.</p>' +
       '<div class="row"><label class="field grow-field" for="pay-amount"><span>In hand this month (₹)</span><input id="pay-amount" type="number" inputmode="numeric" min="0" value="' + esc(start) + '"></label></div>' +
       '<div id="pay-reason">' + paydayReason(start, slip) + '</div>' +
       '<div class="row"><button class="primary" data-action="payday-save">Save</button>' +
@@ -576,15 +691,15 @@
   function freedomHeader() {
     const f = Core.freedomDays(state, today());
     if (!f) {
-      return '<div class="card-head"><h2>Emergency fund</h2></div>' +
+      return '<div class="card-head">' + titled('Emergency fund', 'fund') + '</div>' +
         '<p class="hint">Add your fixed payments and budgets to see your Days of Freedom.</p>';
     }
     const chip = f.days === 0 ? 'chip-caution' : 'chip-freedom';
-    return '<div class="freedom' + (f.days === 0 ? ' none' : '') + '"><h2>' + plural(f.days, 'Day', 'Days') + ' of Freedom' + (f.days ? ' 🛡️' : '') + '</h2>' +
+    return '<div class="freedom' + (f.days === 0 ? ' none' : '') + '">' + titled(plural(f.days, 'Day', 'Days') + ' of Freedom' + (f.days ? ' 🛡️' : ''), 'fund') +
       '<span class="chip ' + chip + '">' + f.badge + '</span></div>' +
       '<p class="hint">' + (f.days === 0
         ? 'Every ' + inr(f.daily) + ' saved buys one day of complete financial security.'
-        : '(' + inr(f.fund) + ' saved toward basics of ' + inr(f.daily) + ' a day: fixed payments, loan minimums, bills, groceries and health)') + '</p>';
+        : inr(f.fund) + ' saved · basics cost ' + inr(f.daily) + ' a day') + '</p>';
   }
 
   // Pay over the last 12 months: bars, the months that differed, and totals.
@@ -788,8 +903,7 @@
   function savedForm() {
     const t = today();
     const top = state.debts.filter((d) => d.balance > 0).sort((a, b) => b.rate - a.rate)[0];
-    return '<p class="hint">Money you moved to savings: Jar, a recurring deposit, a SIP, gold. It leaves your account but isn’t spending.</p>' +
-      '<form id="save-tx" class="form-grid" autocomplete="off">' +
+    return '<form id="save-tx" class="form-grid" autocomplete="off">' +
       '<label class="field">Amount (₹)<input id="sv-amount" type="number" inputmode="decimal" min="1" step="1" required placeholder="58"></label>' +
       '<label class="field">Counts as<select id="sv-use"><option value="emergency">Emergency fund</option><option value="grow">Savings / investing</option>' +
       (top ? '<option value="debt" data-debt="' + esc(top.id) + '">Paid ' + esc(top.name) + '</option>' : '') + '</select></label>' +
@@ -989,12 +1103,11 @@
       needsCheckCard() +
       billsCard() +
       incomeCard() +
-      '<section class="card"><div class="card-head"><h2>' + (saving ? 'Add money saved' : moneyIn ? 'Add money received' : 'Add a payment') + '</h2>' +
+      '<section class="card"><div class="card-head">' + titled(saving ? 'Add money saved' : moneyIn ? 'Add money received' : 'Add a payment', 'add') +
       '<div class="seg" role="group" aria-label="Type"><button data-action="tx-kind" data-kind="out" aria-pressed="' + (!moneyIn && !saving) + '">Money out</button>' +
       '<button data-action="tx-kind" data-kind="in" aria-pressed="' + moneyIn + '">Money in</button>' +
       '<button data-action="tx-kind" data-kind="save" aria-pressed="' + saving + '">Saved</button></div></div>' +
       (saving ? savedForm() :
-      (moneyIn ? '<p class="hint">Money returned to you, money from home, a refund, cashback or side income. Your salary is already counted.</p>' : '') +
       '<form id="add-tx" class="form-grid" autocomplete="off">' +
       '<label class="field">Amount (₹)<input id="tx-amount" type="number" inputmode="decimal" min="1" step="1" required placeholder="' + (moneyIn ? '2000' : '250') + '"></label>' +
       '<label class="field">Category<select id="tx-category">' + (moneyIn ? incomeCategoryOptions('Money received') : categoryOptions('Food & dining')) + '</select></label>' +
@@ -1008,33 +1121,27 @@
       '</form>') + '</section>' +
 
       (NATIVE
-        ? '<section class="card"><div class="card-head"><h2>Bank SMS</h2>' + (state.smsAuto ? modeChip(true) : '') + '</div>' +
-          '<p class="hint">' + (state.smsAuto
-            ? 'New bank and UPI messages are checked each time you open the app. Review them below before they are added.'
-            : 'Let the app read your bank and UPI messages to record payments for you. Messages are read on this phone and never leave it. You review every payment before it is added.') + '</p>' +
+        ? '<section class="card"><div class="card-head">' + titled('Bank SMS', 'sms') + (state.smsAuto ? modeChip(true) : '') + '</div>' +
+          (state.smsAuto ? '' : '<p class="hint">Record payments from your bank and UPI messages. Read on this phone only.</p>') +
           '<div class="row"><button class="primary" data-action="sms-native"' + (ui.smsBusy ? ' disabled' : '') + '>' +
           (ui.smsBusy ? 'Reading…' : state.smsAuto ? 'Check for new messages' : 'Read bank SMS') + '</button></div>' +
           (state.smsAuto
             ? '<div class="callout"><b>' + (state.smsAlerts ? 'Notifications for new bank SMS are on' : 'Get a notification when a bank SMS arrives') + '</b>' +
-              '<span class="hint">' + (state.smsAlerts
-                ? 'Each new payment is recorded as it arrives and you get a notification to check its category. Payments you don’t check wait here, highlighted.'
-                : 'Check each payment’s category the moment it happens, from a small pop-up. Android will ask to allow receiving SMS and notifications.') + '</span>' +
               '<div>' + (state.smsAlerts
                 ? '<button class="ghost" data-action="alerts-off">Turn off</button>'
                 : '<button class="primary" data-action="alerts-on">Turn on notifications</button>') + '</div></div>'
             : '') +
           smsPreview() + '</section>'
-        : '<section class="card"><div class="card-head"><h2>Import from bank SMS</h2></div>' +
-          '<p class="hint">Paste one or more bank or UPI messages. The Android app reads them from your inbox automatically. Here you paste them, and they are read right here on your device.</p>' +
+        : '<section class="card"><div class="card-head">' + titled('Import from bank SMS', 'sms') + '</div>' +
           '<label class="field" for="sms-text">Messages<textarea id="sms-text" placeholder="Rs.450.00 debited from a/c **1234 on 21-10-26 to VPA swiggy@icici…">' + esc(ui.smsText) + '</textarea></label>' +
           '<div class="row"><button class="primary" data-action="sms-read">Read messages</button><button data-action="sms-sample">Paste sample messages</button></div>' +
           smsPreview() +
           '</section>') +
 
-      '<section class="card"><div class="card-head"><h2>Payments</h2>' +
+      '<section class="card"><div class="card-head">' + titled('Payments', 'payments') +
       '<div class="seg" role="group" aria-label="Show"><button data-action="tx-filter" data-filter="cycle" aria-pressed="' + (ui.txFilter === 'cycle') + '">This cycle</button>' +
       '<button data-action="tx-filter" data-filter="all" aria-pressed="' + (ui.txFilter === 'all') + '">All</button></div></div>' +
-      '<p class="hint">' + inr(spent) + ' spent' + (received ? ' · <span class="good">' + inr(received) + ' received</span>' : '') + '. Change a category and the app remembers it for that shop next time.</p>' +
+      '<p class="hint">' + inr(spent) + ' spent' + (received ? ' · <span class="good">' + inr(received) + ' received</span>' : '') + '</p>' +
       (shown.length
         ? '<div class="table-wrap"><table><thead><tr><th>Payment</th><th>Category</th><th class="amt">Amount</th><th><span class="sr">Delete</span></th></tr></thead><tbody>' +
           shown.map((x) => {
@@ -1282,25 +1389,23 @@
     const edited = alloc.budgets.some((b) => !b.auto);
     return (
       (s.salary ? '' : '<div class="callout"><b>Start here.</b><span class="hint">Enter your salary and payday, then your fixed payments. Everything else can come later.</span></div>') +
-      '<section class="card"><h2>Salary</h2><div class="form-grid">' +
+      '<section class="card">' + titled('Salary', 'salary') + '<div class="form-grid">' +
       numInput('salary', 'settings.salary', s.salary || '', 'Monthly salary in hand (₹)') +
       numInput('payday', 'settings.payday', s.payday, 'Payday (day of month)', ' max="31"') +
       '<label class="field wide" for="plan-balance"><span>Money in your account this morning (₹)</span><input id="plan-balance" type="number" inputmode="numeric" min="0" step="1" data-balance="1" value="' +
         esc(state.balanceCheck && state.balanceCheck.date === today() ? state.balanceCheck.amount : '') + '" placeholder="' +
         (state.balanceCheck ? 'Last entered ' + fmtDate(state.balanceCheck.date) + ': ' + inr(state.balanceCheck.amount) : 'Optional') + '"></label>' +
-      '</div><p class="hint">Starting in the middle of the month? Your balance lets the graph start from the right amount, since the app can’t see earlier spending.</p>' +
+      '</div>' +
       thisMonthPay() + payHistory() + '</section>' +
       (ui.paydayOpen ? paydayCard() : '') +
 
-      '<section class="card"><div class="card-head"><h2>Fixed payments</h2><span class="hint">Rent, EMIs, bills, subscriptions</span></div>' +
+      '<section class="card"><div class="card-head">' + titled('Fixed payments', 'fixed') + '<span class="hint">Rent, EMIs, subscriptions</span></div>' +
       '<div class="edit-rows">' + state.fixed.map((f) =>
         '<div class="edit-row">' + listField('fixed', f, 'name', 'Name', 'text') + listField('fixed', f, 'amount', 'Amount (₹)', 'number') +
         listField('fixed', f, 'dueDay', 'Due day', 'number', ' max="31"') + removeButton('fixed', f) + '</div>').join('') + '</div>' +
-      '<div><button data-action="list-add" data-list="fixed">Add fixed payment</button></div>' +
-      '<p class="hint">Credit cards and loans with a balance go in the Debts tab. Their minimum payments are counted automatically.</p></section>' +
+      '<div><button data-action="list-add" data-list="fixed">Add fixed payment</button></div></section>' +
 
-      '<section class="card"><div class="card-head"><h2>Bills that vary</h2><span class="hint">Electricity, gas, water, recharges</span></div>' +
-      '<p class="hint">For bills whose amount changes, or that you sometimes pay for several months at once. A share is set aside every month, so a 3-month recharge doesn’t hit one month hard.</p>' +
+      '<section class="card"><div class="card-head">' + titled('Bills that vary', 'bills') + '<span class="hint">Electricity, gas, water, recharges</span></div>' +
       '<div class="edit-rows">' + (state.bills || []).map((b) =>
         '<div class="edit-row cols-bill">' + listField('bills', b, 'name', 'Name', 'text') + listField('bills', b, 'estimate', 'About (₹)', 'number') +
         '<label class="field" for="bills-' + esc(b.id) + '-every"><span>Paid every</span><select id="bills-' + esc(b.id) + '-every" data-list="bills" data-id="' + esc(b.id) + '" data-field="everyMonths">' + periodOptions(b.everyMonths) + '</select></label>' +
@@ -1311,7 +1416,7 @@
           '<button class="ghost" data-action="fixed-to-bill">Move from fixed payments</button>'
         : '') + '</div></section>' +
 
-      '<section class="card"><div class="card-head"><h2>Set aside each month</h2>' + modeChip(state.savings.auto) + '</div>' +
+      '<section class="card"><div class="card-head">' + titled('Set aside each month', 'setaside') + modeChip(state.savings.auto) + '</div>' +
       '<div class="form-grid">' +
       numInput('emergency-monthly', 'savings.emergencyMonthly', sv.emergencyMonthly, 'Emergency fund (₹)') +
       numInput('debt-extra', 'savings.debtExtra', sv.debtExtra, 'Extra toward debts (₹)') +
@@ -1319,11 +1424,9 @@
       '</div>' +
       (state.savings.auto
         ? sv.notes.map((n) => '<p class="hint">' + esc(n) + '</p>').join('')
-        : '<div class="row"><span class="hint">You set these amounts.</span><button class="ghost" data-action="savings-auto">Work them out for me</button></div>') +
-      '<p class="hint">Taken out on payday. The Grow budget is money you plan to invest; talk to a SEBI-registered investment adviser about where. This app only helps you set the amount aside.</p></section>' +
+        : '<div class="row"><span class="hint">You set these amounts.</span><button class="ghost" data-action="savings-auto">Work them out for me</button></div>') + '</section>' +
 
-      '<section class="card"><div class="card-head"><h2>Yearly costs</h2><span class="hint">Festivals, insurance, servicing, school fees</span></div>' +
-      '<p class="hint">Costs you know are coming. Saving a little each month means they don’t become emergencies.</p>' +
+      '<section class="card"><div class="card-head">' + titled('Yearly costs', 'yearly') + '<span class="hint">Festivals, insurance, servicing, school fees</span></div>' +
       '<div class="edit-rows">' + state.sinking.map((f) =>
         '<div class="edit-row">' + listField('sinking', f, 'name', 'Name', 'text') + listField('sinking', f, 'amount', 'Per year (₹)', 'number') +
         '<label class="field" for="sinking-' + esc(f.id) + '-month"><span>Month</span><select id="sinking-' + esc(f.id) + '-month" data-list="sinking" data-id="' + esc(f.id) + '" data-field="month">' +
@@ -1331,8 +1434,7 @@
         removeButton('sinking', f) + '</div>').join('') + '</div>' +
       '<div><button data-action="list-add" data-list="sinking">Add yearly cost</button></div></section>' +
 
-      '<section class="card"><div class="card-head"><h2>Flexible budgets</h2><span class="hint">' + inr(Math.max(0, alloc.pool)) + ' to spend this month</span></div>' +
-      '<p class="hint">What is left of your salary is shared out across these automatically. Change any amount and the automatic ones adjust to fit.</p>' +
+      '<section class="card"><div class="card-head">' + titled('Flexible budgets', 'flex') + '<span class="hint">' + inr(Math.max(0, alloc.pool)) + ' to spend this month</span></div>' +
       '<div class="edit-rows">' + alloc.budgets.map((b) => {
         const item = state.budgets.find((x) => x.id === b.id);
         return '<div class="edit-row cols-2">' + listField('budgets', item, 'name', 'Category', 'text') +
@@ -1346,8 +1448,7 @@
 
       '<section class="card" id="plan-summary">' + planSummary() + '</section>' +
 
-      '<section class="card"><h2>Your data</h2>' +
-      '<p class="hint">Everything is saved in this browser on this device only. Nothing is uploaded. Copy a backup if you want to move it to another device.</p>' +
+      '<section class="card">' + titled('Your data', 'data') +
       '<div class="row"><button data-action="backup">' + (ui.backup ? 'Hide backup' : 'Show backup') + '</button>' +
       '<button data-action="restore-toggle">Restore from backup</button>' +
       '<button data-action="load-demo">Load example data</button>' +
@@ -1367,8 +1468,7 @@
   function smsCleanup() {
     if (!state.transactions.some((x) => x.source === 'sms')) return '';
     const c = ui.smsClean;
-    return '<section class="card"><h2>Clean up SMS imports</h2>' +
-      '<p class="hint">Removes payments and money received that were added from SMS before the date you pick. Anything you added by hand stays.</p>' +
+    return '<section class="card">' + titled('Clean up SMS imports', 'smsclean') +
       '<div class="row"><label class="field grow-field" for="sms-clean-date"><span>Remove SMS imports dated before</span><input id="sms-clean-date" type="date" value="' + (c ? c.date : today()) + '" max="' + today() + '"></label></div>' +
       (c
         ? (c.count
@@ -1440,8 +1540,7 @@
 
   function cardsSection() {
     const cards = state.cards || [];
-    let html = '<section class="card"><div class="card-head"><h2>Credit cards</h2><span class="hint">' + cards.length + ' of ' + MAX_CARDS + '</span></div>' +
-      '<p class="hint">Card spending is counted as spent the day it happens, so the money is kept aside for the bill. The app tracks each card’s statement, due date and how much of the limit you’re using.</p>';
+    let html = '<section class="card"><div class="card-head">' + titled('Credit cards', 'cards') + '<span class="hint">' + cards.length + ' of ' + MAX_CARDS + '</span></div>';
     html += cards.map(cardBlock).join('');
     if (ui.cardForm) html += cardForm();
     else if (cards.length < MAX_CARDS) html += '<div><button data-action="card-add">Add credit card</button></div>';
@@ -1647,23 +1746,21 @@
       };
       const bestKey = c.avalanche.totalInterest <= c.snowball.totalInterest ? 'avalanche' : 'snowball';
       compare =
-        '<section class="card"><h2>When will you be debt-free?</h2>' +
+        '<section class="card">' + titled('When will you be debt-free?', 'payoff') +
         '<div class="form-grid">' + numInput('debt-extra-2', 'savings.debtExtra', extra, 'Extra per month on top of minimums (₹)') + '</div>' +
         '<div class="plans">' +
         card('Minimums only', c.minimum, null, false) +
         (extra > 0
           ? card('Highest interest first', c.avalanche, c.minimum, bestKey === 'avalanche') + card('Smallest balance first', c.snowball, c.minimum, bestKey === 'snowball' && c.snowball.totalInterest < c.avalanche.totalInterest)
           : '<div class="plan-card"><span class="eyebrow">With an extra payment</span><span class="hint">Add an extra amount above to see how much sooner you could finish and how much interest you would save.</span></div>') +
-        '</div>' +
-        '<p class="hint"><b>Highest interest first</b> pays the least interest. <b>Smallest balance first</b> clears a loan sooner, which many people find motivating. When a loan is cleared, its payment moves to the next one.</p>' +
-        '</section>';
+        '</div></section>';
     }
 
     return (
       leakBanner() +
       cardsSection() +
-      '<section class="card"><div class="card-head"><h2>Loans</h2><span class="hint">Update balances from each statement</span></div>' +
-      (state.debts.length ? '' : '<p class="hint">No loans added. Add personal loans, EMIs or other debts to see what they cost. Credit cards go in the section above.</p>') +
+      '<section class="card"><div class="card-head">' + titled('Loans', 'loans') + '</div>' +
+      (state.debts.length ? '' : '<p class="hint">No loans added.</p>') +
       '<div class="edit-rows">' + state.debts.map((d) =>
         '<div class="edit-row cols-debt">' + listField('debts', d, 'name', 'Name', 'text') + listField('debts', d, 'balance', 'Balance (₹)', 'number') +
         listField('debts', d, 'rate', 'Interest %/yr', 'number') + listField('debts', d, 'minPayment', 'Monthly min (₹)', 'number') +
@@ -1674,7 +1771,6 @@
         return '<div class="list-item"><div class="grow"><div class="title">' + esc(d.name) + '</div><div class="meta">' + d.rate + '% a year</div></div>' +
           '<div class="amt ' + (d.rate >= 15 ? 'bad' : '') + '">' + inr(i) + ' interest/month</div></div>';
       }).join('') + '</div>' : '') +
-      '<p class="hint">Credit cards usually charge 36–45% a year on unpaid balances. Paying only the minimum keeps most of that cost running.</p>' +
       '</section>' + compare
     );
   }
@@ -1707,7 +1803,7 @@
 
     return (
       (movedThisCycle ? '<div class="callout good"><b>' + inr(movedThisCycle) + ' saved from daily leftovers this month</b><span class="hint">Every unspent day you move to savings or a loan gets you closer to a loan-free life.</span></div>' : '') +
-      '<section class="card"><div class="card-head"><h2>This month’s set-aside</h2><span class="hint">Cycle starting ' + fmtDate(cyc.start) + '</span></div>' +
+      '<section class="card"><div class="card-head">' + titled('This month’s set-aside', 'setaside') + '<span class="hint">Cycle starting ' + fmtDate(cyc.start) + '</span></div>' +
       (setAside.length
         ? '<div class="summary">' + setAside.map((x) => '<div class="line"><span>' + x[0] + '</span><span>' + inr(x[1]) + '</span></div>').join('') + '</div>' +
           (recorded
@@ -1722,7 +1818,7 @@
       [3, 6].map((m) => '<option value="' + m + '"' + (Number(sv.emergencyTargetMonths) === m ? ' selected' : '') + '>' + m + ' months</option>').join('') + '</select></label></div>' +
       '<div class="bar-row"><div class="bar-top"><span>' + inr(sv.emergencyBalance) + ' of ' + inr(target) + '</span><span class="amt">' + Math.round(fundPct) + '%</span></div>' +
       '<div class="bar"><span style="width:' + fundPct.toFixed(1) + '%"></span></div></div>' +
-      '<p class="hint">' + fundNote + ' Keep this money somewhere you can reach within a day.</p></section>' +
+      '<p class="hint">' + fundNote + '</p></section>' +
 
       (state.sinking.length
         ? '<section class="card"><h2>Yearly costs</h2><div class="bars">' + state.sinking.map((f) => {
@@ -1735,13 +1831,12 @@
 
       viewEmergency() +
 
-      '<section class="card"><div class="card-head"><h2>Grow</h2><span class="hint">Money set aside to invest</span></div>' +
+      '<section class="card"><div class="card-head">' + titled('Grow', 'grow') + '<span class="hint">Money set aside to invest</span></div>' +
       '<div class="tiles" style="grid-template-columns:repeat(2,minmax(0,1fr))">' +
       tile('Set aside so far', inr(sv.investSaved), 'From your Grow budget') +
       tile('Each month', inr(p.invest), p.invest ? 'Grow budget' : 'Not started yet') + '</div>' +
       '<div class="callout"><b>Ready to invest this money?</b>' +
-      '<span>Talk to a <b>SEBI-registered investment adviser</b> before investing. They can look at your goals and suggest options that suit you. All investments carry risk, and the decision is yours.</span>' +
-      '<span class="hint">Check that an adviser is registered on SEBI’s website: <a href="https://www.sebi.gov.in/sebiweb/other/OtherAction.do?doRecognisedFpi=yes&amp;intmId=13" target="_blank" rel="noopener">sebi.gov.in → Intermediaries → Investment Advisers</a>. Salary Runway doesn’t recommend any adviser, product, bank or fund, and earns nothing from them.</span></div>' +
+      '<span>Talk to a <b>SEBI-registered investment adviser</b> before investing. They can look at your goals and suggest options that suit you. All investments carry risk, and the decision is yours.</span></div>' +
       '</section>' +
 
       '<section class="card"><h2>Learn the basics</h2>' + LESSONS.map((l) =>
@@ -1763,14 +1858,13 @@
     const t = today();
     const e = ui.emergency;
     const adj = state.adjustment && t < state.adjustment.until ? state.adjustment : null;
-    let html = '<section class="card"><div class="card-head"><h2>Something unexpected happened?</h2></div>';
+    let html = '<section class="card"><div class="card-head">' + titled('Something unexpected happened?', 'emergency') + '</div>';
     if (adj) {
       html += '<div class="callout warn"><b>Recovery plan active until ' + fmtDate(adj.until, true) + ' (' + esc(adj.reason) + ')</b>' +
         '<span class="hint">Flexible budgets −' + adj.flexCutPct + '%' + (adj.pauseInvest ? ', Grow paused' : '') + (adj.pauseDebtExtra ? ', extra debt payments paused' : '') + '.</span>' +
         '<div><button data-action="adjust-end">End recovery plan now</button></div></div>';
     }
-    html += '<p class="hint">Medical bills, a car repair, a family function or a tax bill. Enter the cost and see how to absorb it without new debt.</p>' +
-      '<div class="form-grid">' +
+    html += '<div class="form-grid">' +
       '<label class="field" for="em-type"><span>What happened</span><select id="em-type" data-em="type">' +
       EMERGENCY_TYPES.map((x) => '<option' + (x === e.type ? ' selected' : '') + '>' + x + '</option>').join('') + '</select></label>' +
       '<label class="field" for="em-amount"><span>Cost (₹)</span><input id="em-amount" type="number" inputmode="numeric" min="0" data-em="amount" value="' + esc(e.amount) + '" placeholder="25000"></label>' +
@@ -1862,6 +1956,9 @@
   }
 
   document.addEventListener('click', (ev) => {
+    if (ev.target.classList && ev.target.classList.contains('help-overlay')) {
+      ui.helpFrom = ui.help; ui.help = null; rerenderKeepScroll(); return;
+    }
     const btn = ev.target.closest('[data-action]');
     if (!btn) return;
     const a = btn.dataset.action;
@@ -1930,6 +2027,8 @@
         state.transactions = state.transactions.filter((x) => x.id !== btn.dataset.id); save(); toast('Deleted'); break;
       }
       case 'tx-kind': ui.txKind = btn.dataset.kind; break;
+      case 'help': ui.help = btn.dataset.help; break;
+      case 'help-close': ui.helpFrom = ui.help; ui.help = null; break;
       case 'reset-next': ui.reset.step = 2; break;
       case 'reset-back': ui.reset.step = 1; break;
       case 'reset-later': ui.reset = null; toast('You can set aside your savings from the Grow tab.'); break;
@@ -2329,7 +2428,8 @@
   });
 
   document.addEventListener('keydown', (ev) => {
-    if (ev.key === 'Escape' && ui.reset) { ui.reset = null; rerenderKeepScroll(); }
+    if (ev.key === 'Escape' && ui.help) { ui.helpFrom = ui.help; ui.help = null; rerenderKeepScroll(); }
+    else if (ev.key === 'Escape' && ui.reset) { ui.reset = null; rerenderKeepScroll(); }
   });
 
   window.addEventListener('hashchange', () => {

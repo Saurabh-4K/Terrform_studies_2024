@@ -279,6 +279,7 @@ Built from your last three salary cycles, with every point in rupees:
 
 - **Friction only on harmful choices:** borrowing on a card gets red labels and warnings; good choices (saving, paying debt) are one tap.
 - **Smart defaults, never forced:** a *Suggested* badge, always with the reason.
+- **Numbers on screen, help on request:** cards show amounts, dates and warnings. How a feature works sits behind the **(i)** next to its title (Runway, payday, adding money, bank SMS, payments, salary, fixed payments, bills that vary, set-asides, yearly costs, flexible budgets, your data, SMS cleanup, credit cards, loans, payoff plans, emergency fund, emergencies, Grow). The SEBI adviser notice on the Grow tab and the footer disclaimer stay visible.
 - **True numbers only:** rewards and warnings never exaggerate.
 - **Colours:** freedom green `#0D7A5D` / `#2ECC71` (dark), debt red `#D32F2F` / `#F26657`, caution amber `#E67E22` for fills and `#9A5400` / `#F39C12` for text, neutral `#616161` / `#BDC3C7`, card warning background `#FFF5F5` / `#2C1E1E`. All text colours meet readability guidelines.
 - **Fast and offline:** all of this is worked out on the phone from data the app already has, in well under a millisecond per calculation, with no new data stored.
