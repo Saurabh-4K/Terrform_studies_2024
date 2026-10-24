@@ -17,17 +17,18 @@ import java.util.Set;
 @CapacitorPlugin(name = "SpendWidget")
 public class SpendWidgetPlugin extends Plugin {
 
-    /** left: rupees left today (negative when over), date: yyyy-MM-dd, categories: budget names (with labels), lang. */
+    /** left: rupees left today (negative when over), allowance: today's amount, date: yyyy-MM-dd, categories: budget names (with labels), lang. */
     @PluginMethod
     public void update(PluginCall call) {
         double left = call.getDouble("left", 0.0);
+        double allowance = call.getDouble("allowance", 0.0);
         String date = call.getString("date", WidgetStore.today());
         JSArray categories = call.getArray("categories", new JSArray());
         JSArray labels = call.getArray("categoryLabels", new JSArray());
         double pool = call.getDouble("tomorrowPool", 0.0);
         int daysAfter = call.getInt("daysAfter", 0);
         Lang.set(getContext(), call.getString("lang"));
-        WidgetStore.setSummary(getContext(), Math.round(left), date, categories, labels, Math.round(pool), daysAfter);
+        WidgetStore.setSummary(getContext(), Math.round(left), Math.round(allowance), date, categories, labels, Math.round(pool), daysAfter);
         SpendWidgetProvider.updateAll(getContext());
         call.resolve();
     }

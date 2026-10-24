@@ -6,24 +6,55 @@ import android.appwidget.AppWidgetProvider;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
+import android.os.Build;
+import android.os.Bundle;
+import android.util.SizeF;
+import android.view.View;
 import android.widget.RemoteViews;
 
-/** Home-screen widget: today's spending amount and a button to add an expense. */
+import java.util.HashMap;
+import java.util.Map;
+
+/**
+ * Home-screen widget: the app's logo and name, what's left to spend today
+ * with a bar for how much of today's amount remains, days to payday, and a
+ * button to add an expense. Two rows by default; one row shows a compact version.
+ */
 public class SpendWidgetProvider extends AppWidgetProvider {
 
     @Override
     public void onUpdate(Context context, AppWidgetManager manager, int[] widgetIds) {
-        for (int id : widgetIds) manager.updateAppWidget(id, views(context));
+        for (int id : widgetIds) manager.updateAppWidget(id, views(context, manager, id));
+    }
+
+    @Override
+    public void onAppWidgetOptionsChanged(Context context, AppWidgetManager manager, int id, Bundle options) {
+        // Resized: before Android 12 the layout is picked here.
+        manager.updateAppWidget(id, views(context, manager, id));
     }
 
     static void updateAll(Context context) {
         AppWidgetManager manager = AppWidgetManager.getInstance(context);
         int[] ids = manager.getAppWidgetIds(new ComponentName(context, SpendWidgetProvider.class));
-        for (int id : ids) manager.updateAppWidget(id, views(context));
+        for (int id : ids) manager.updateAppWidget(id, views(context, manager, id));
     }
 
-    private static RemoteViews views(Context context) {
-        RemoteViews views = new RemoteViews(context.getPackageName(), R.layout.widget_spend);
+    private static RemoteViews views(Context context, AppWidgetManager manager, int id) {
+        RemoteViews large = build(context, true);
+        RemoteViews small = build(context, false);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            // Android 12+: the launcher picks the layout that fits.
+            Map<SizeF, RemoteViews> sizes = new HashMap<>();
+            sizes.put(new SizeF(180f, 40f), small);
+            sizes.put(new SizeF(180f, 100f), large);
+            return new RemoteViews(sizes);
+        }
+        int height = manager.getAppWidgetOptions(id).getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 0);
+        return height == 0 || height >= 100 ? large : small;
+    }
+
+    private static RemoteViews build(Context context, boolean large) {
+        RemoteViews views = new RemoteViews(context.getPackageName(), large ? R.layout.widget_spend : R.layout.widget_spend_small);
         Context text = Lang.wrap(context);
         views.setTextViewText(R.id.widget_add, text.getString(R.string.widget_add));
         Long left = WidgetStore.leftToday(context);
@@ -44,9 +75,23 @@ public class SpendWidgetProvider extends AppWidgetProvider {
         }
         if (left == null || left >= 0) views.setTextColor(R.id.widget_label, 0xD9FFFFFF);
 
+        if (large) {
+            // How much of today's amount is still there.
+            Integer pct = WidgetStore.leftPercent(context);
+            views.setViewVisibility(R.id.widget_bar, pct == null ? View.GONE : View.VISIBLE);
+            if (pct != null) views.setProgressBar(R.id.widget_bar, 100, pct, false);
+            Integer days = WidgetStore.daysToPayday(context);
+            views.setViewVisibility(R.id.widget_payday, days == null ? View.GONE : View.VISIBLE);
+            if (days != null) {
+                views.setTextViewText(R.id.widget_payday, days <= 1
+                    ? text.getString(R.string.widget_payday_tomorrow)
+                    : text.getString(R.string.widget_payday_in, days));
+            }
+        }
+
         int flags = PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE;
         Intent open = new Intent(context, MainActivity.class).setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        views.setOnClickPendingIntent(R.id.widget_summary, PendingIntent.getActivity(context, 0, open, flags));
+        views.setOnClickPendingIntent(R.id.widget_root, PendingIntent.getActivity(context, 0, open, flags));
         Intent add = new Intent(context, QuickAddActivity.class)
             .setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
         views.setOnClickPendingIntent(R.id.widget_add, PendingIntent.getActivity(context, 1, add, flags));

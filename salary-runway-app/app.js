@@ -2951,6 +2951,7 @@
     const r = Core.projectRunway(state, today());
     const payload = {
       left: Math.round(r.leftToday - r.overToday),
+      allowance: Math.round(r.dailyAllowance),
       date: today(),
       categories: categories().filter((c) => c !== 'Emergency'),
       categoryLabels: categories().filter((c) => c !== 'Emergency').map(label),

@@ -42,4 +42,6 @@
     <string name="confirm_from_card">%1$s ••%2$s (क्रेडिट कार्ड)</string>
     <string name="sms_title_salary">पगार झाला! %1$s जमा</string>
     <string name="sms_text_salary">तुमची मासिक योजना पाहण्यासाठी टॅप करा</string>
+    <string name="widget_payday_in">%1$d दिवसांत पगार</string>
+    <string name="widget_payday_tomorrow">उद्या पगार</string>
 </resources>

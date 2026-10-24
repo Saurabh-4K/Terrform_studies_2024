@@ -42,4 +42,6 @@
     <string name="confirm_from_card">%1$s ••%2$s (क्रेडिट कार्ड)</string>
     <string name="sms_title_salary">सैलरी आ गई! %1$s जमा</string>
     <string name="sms_text_salary">अपनी मासिक योजना देखने के लिए टैप करें</string>
+    <string name="widget_payday_in">%1$d दिन में सैलरी</string>
+    <string name="widget_payday_tomorrow">कल सैलरी</string>
 </resources>

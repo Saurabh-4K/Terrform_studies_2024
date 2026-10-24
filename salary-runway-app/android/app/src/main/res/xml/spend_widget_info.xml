@@ -1,14 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 3 x 1 cells. updatePeriodMillis is 0 because the app pushes updates. -->
+<!-- 3 x 2 cells by default; it can shrink to 1 row (a compact layout) or grow.
+     updatePeriodMillis is 0 because the app pushes updates. -->
 <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
     android:description="@string/widget_description"
     android:initialLayout="@layout/widget_spend"
     android:minWidth="180dp"
-    android:minHeight="40dp"
+    android:minHeight="110dp"
     android:minResizeWidth="180dp"
+    android:minResizeHeight="40dp"
     android:previewLayout="@layout/widget_spend"
-    android:resizeMode="horizontal"
+    android:resizeMode="horizontal|vertical"
     android:targetCellWidth="3"
-    android:targetCellHeight="1"
+    android:targetCellHeight="2"
     android:updatePeriodMillis="0"
     android:widgetCategory="home_screen" />

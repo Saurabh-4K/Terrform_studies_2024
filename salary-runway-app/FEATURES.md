@@ -315,7 +315,8 @@ Built from your last three salary cycles, with every point in rupees:
 
 ## 14. Android app extras
 
-- **Home-screen widget "Spend today"** (3×1):
+- **Home-screen widget "Spend today"** (3×2 by default, resizable):
+  - A deep-green card with the Salary Runway logo and name, a faint runway line in the corner, **Payday in 8 days**, and a bar showing how much of today's amount is left. Shrunk to one row (Android 12+, or after resizing), it shows a compact version: logo, amount and + Add.
   - Shows what's left to spend today. When you go over: **Over by ₹147 · Tomorrow's safe spend drops to ₹135**, in amber. This updates even for expenses added from the widget or card SMS while the app is closed.
   - **+ Add** opens a small window over the home screen (amount, category, note) to record an expense **without opening the app**. The widget's amount drops straight away, and the app saves the expense next time it opens.
   - After midnight it shows "Open app" until the app works out the new day.

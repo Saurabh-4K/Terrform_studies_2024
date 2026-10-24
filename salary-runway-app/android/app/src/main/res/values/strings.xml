@@ -45,4 +45,6 @@
     <string name="confirm_from_card">%1$s ••%2$s (credit card)</string>
     <string name="sms_title_salary">Payday! %1$s credited</string>
     <string name="sms_text_salary">Tap to review your monthly plan</string>
+    <string name="widget_payday_in">Payday in %1$d days</string>
+    <string name="widget_payday_tomorrow">Payday tomorrow</string>
 </resources>

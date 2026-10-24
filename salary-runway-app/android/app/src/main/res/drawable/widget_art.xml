@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Background art: the brand's runway line, large and faint, running off the card. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="150dp"
+    android:height="110dp"
+    android:viewportWidth="150"
+    android:viewportHeight="110">
+    <path
+        android:pathData="M40,22 L132,92"
+        android:strokeWidth="9"
+        android:strokeColor="#14FFFFFF"
+        android:strokeLineCap="round" />
+    <path
+        android:fillColor="#14FFFFFF"
+        android:pathData="M40,8a14,14 0,1 1,0 28a14,14 0,1 1,0 -28z" />
+    <path
+        android:fillColor="#1FFFB547"
+        android:pathData="M132,78a14,14 0,1 1,0 28a14,14 0,1 1,0 -28z" />
+</vector>

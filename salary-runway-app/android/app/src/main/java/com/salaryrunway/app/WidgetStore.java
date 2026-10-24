@@ -37,9 +37,10 @@ final class WidgetStore {
      * left: rupees left today (negative when over). pool and daysAfter work out
      * tomorrow's safe amount: pool / daysAfter, lowered by spending added later.
      */
-    static void setSummary(Context context, long left, String date, JSONArray categories, JSONArray categoryLabels, long pool, int daysAfter) {
+    static void setSummary(Context context, long left, long allowance, String date, JSONArray categories, JSONArray categoryLabels, long pool, int daysAfter) {
         prefs(context).edit()
             .putLong("left", left)
+            .putLong("allowance", allowance)
             .putString("date", date)
             .putString("categories", categories.toString())
             .putString("categoryLabels", categoryLabels.toString())
@@ -55,6 +56,21 @@ final class WidgetStore {
         int days = p.getInt("daysAfter", 0);
         if (days <= 0) return null;
         return Math.max(0, p.getLong("pool", 0)) / days;
+    }
+
+    /** How much of today's amount is left, 0–100, or null if not known today. */
+    static Integer leftPercent(Context context) {
+        Long left = leftToday(context);
+        long allowance = prefs(context).getLong("allowance", 0);
+        if (left == null || allowance <= 0) return null;
+        return (int) Math.max(0, Math.min(100, Math.round(left * 100.0 / allowance)));
+    }
+
+    /** Days until payday (1 = tomorrow), or null if not known today. */
+    static Integer daysToPayday(Context context) {
+        SharedPreferences p = prefs(context);
+        if (!today().equals(p.getString("date", ""))) return null;
+        return p.getInt("daysAfter", 0) + 1;
     }
 
     /** Rupees left to spend today (negative when over), or null if the app hasn't worked it out today. */
