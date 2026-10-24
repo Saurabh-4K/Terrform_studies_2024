@@ -156,6 +156,7 @@ android/app/src/main/java/com/salaryrunway/app/
   QuickAddActivity.java           the widget's "Add an expense" window
   SpendWidgetPlugin.java, WidgetStore.java   widget data shared with the app
   Lang.java                       the app's language for the widget, notification and pop-ups
+  ShareFilePlugin.java            shares the monthly report for an AI chat through Android's share menu
 .github/workflows/salary-runway-android.yml  weekly APK build (Sunday morning)
 ```
 

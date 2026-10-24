@@ -48,6 +48,7 @@
   const SmsInbox = NATIVE ? window.Capacitor.registerPlugin('SmsInbox') : null;
   const SpendWidget = NATIVE ? window.Capacitor.registerPlugin('SpendWidget') : null;
   const Haptics = NATIVE ? window.Capacitor.registerPlugin('Haptics') : null;
+  const ShareFile = NATIVE ? window.Capacitor.registerPlugin('ShareFile') : null;
 
   // A light tap on the phone. Never allowed to break anything.
   function haptic() {
@@ -265,6 +266,12 @@
       'The graph shows your balance from payday to payday. <b>If you keep this pace</b> follows how you’ve spent so far; <b>If you keep to budget</b> follows your plan.',
       '<b>Green:</b> at this pace, your money lasts until payday. <b>Careful:</b> bills and basics are covered, but this pace runs out early. <b>Red:</b> the money left doesn’t cover the bills and basics still to come (the red band on the graph).',
       '<b>Left to spend today</b> is what you can spend today and still reach payday. Money you move to savings today counts against it, since you can’t spend it any more.',
+    ]],
+    aiplan: ['Plan next month with AI', [
+      '<b>Share report</b> opens your phone’s share menu: pick ChatGPT, Gemini or Claude to attach it, or Drive or Files to keep it. <b>Copy text</b> copies it to paste into any AI chat.',
+      'The questions are at the top of the report and stay the same every month, so the AI answers in the same shape each time: last month in brief, the trend, a budget table, a debt plan, the emergency fund, leaks to fix, a daily limit and 3 rules.',
+      'It has every entry from last month, with notes and places, and summaries of the two months before. Nothing leaves the phone until you share or paste it.',
+      'Best on payday, when last month is complete. The AI is asked to answer in the app’s language. Its plan is advice from a chat; check it against the app’s numbers.',
     ]],
     payday: ['Payday check-in', [
       'Pay isn’t the same every month. Record what came in and why it changed: a bonus, tax, leave or a deduction. This month’s budgets are planned on what actually came in.',
@@ -743,6 +750,50 @@
     state.salarySeen = { cycle: cyc.start, amount: p.amount, date: p.date || today() };
   }
 
+  // The month's report for any AI chat, with the questions inside.
+  function aiPlanCard() {
+    if (!state.settings.salary || state.isDemo) return '';
+    return '<section class="card">' + titled('Plan next month with AI', 'aiplan') +
+      '<p class="hint">' + tr('A report of last month (every entry) and the two months before, with the questions for the AI already inside. Give it to any free AI chat: ChatGPT, Gemini or Claude.') + '</p>' +
+      '<div class="row"><button class="primary" data-action="ai-report-share">' + tr('Share report') + '</button>' +
+      '<button data-action="ai-report-copy">' + tr('Copy text') + '</button></div></section>';
+  }
+
+  function shareAiReport() {
+    const r = Core.aiReport(state, today(), I18N.getLang());
+    if (ShareFile) {
+      Promise.resolve().then(() => ShareFile.share({ name: r.name, text: r.text, title: tr('Plan next month with AI') })).catch(() => toast('Couldn’t open the share menu'));
+      return;
+    }
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([r.text], { type: 'text/plain;charset=utf-8' }));
+    a.download = r.name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  }
+
+  function copyAiReport() {
+    const text = Core.aiReport(state, today(), I18N.getLang()).text;
+    const fallback = () => {
+      const area = document.createElement('textarea');
+      area.value = text;
+      area.setAttribute('readonly', '');
+      area.style.position = 'fixed';
+      area.style.opacity = '0';
+      document.body.appendChild(area);
+      area.select();
+      let ok = false;
+      try { ok = document.execCommand('copy'); } catch (e) { /* not supported */ }
+      area.remove();
+      toast(ok ? 'Report copied. Paste it into an AI chat.' : 'Couldn’t copy. Use Share report instead.');
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(() => toast('Report copied. Paste it into an AI chat.'), fallback);
+    } else fallback();
+  }
+
   function thisMonthPay() {
     if (!state.settings.salary) return '';
     const cyc = Core.cycleFor(today(), Number(state.settings.payday) || 1);
@@ -908,6 +959,7 @@
           tr(r.small.count === 1 ? '1 small payment under ₹{under} added up to {amount}.' : '{n} small payments under ₹{under} added up to {amount}.', { n: r.small.count, under: r.small.under, amount: inr(r.small.total) }))
         : stat('good', tr('Small payment leaks'), tr('None'), tr('No payments under ₹{under}.', { under: r.small.under }))) +
       '<button class="primary report-go" data-action="report-done">' + tr('Take lessons into next month') + '</button>' +
+      '<button class="link report-ai" data-action="ai-report-share">' + tr('Get next month’s plan from an AI chat') + '</button>' +
       '</div></div>';
   }
 
@@ -1695,6 +1747,7 @@
       '</div>' +
       thisMonthPay() + payHistory() + '</section>' +
       (ui.paydayOpen ? paydayCard() : '') +
+      aiPlanCard() +
 
       '<section class="card"><div class="card-head">' + titled('Fixed payments', 'fixed') + '<span class="hint">' + tr('Rent, EMIs, subscriptions') + '</span></div>' +
       '<div class="edit-rows">' + state.fixed.map((f) =>
@@ -2329,6 +2382,8 @@
         try { localStorage.removeItem(KEY); } catch (e) { /* ignore */ }
         state = emptyState(); ui.confirmWipe = false; ui.backup = null; save(); toast('All data erased'); break;
       case 'backup': ui.backup = ui.backup ? null : JSON.stringify(state); break;
+      case 'ai-report-share': shareAiReport(); return;
+      case 'ai-report-copy': copyAiReport(); return;
       case 'backup-copy': {
         const area = document.getElementById('backup-text');
         const done = () => toast('Backup copied');

@@ -94,6 +94,13 @@ When a new salary cycle starts (the payday check-in is due, or the bank's salary
 - A watch-out with nothing to report turns green: *Every category stayed within its budget.*
 - **Take lessons into next month** closes it and opens this month's payday check-in, then the payday reset. Shown once per cycle; Escape closes it for now.
 
+### Plan next month with AI (free)
+Plan tab → **Plan next month with AI**, or *Get next month's plan from an AI chat* on the report card. It makes a text report to give any free AI chat (ChatGPT, Gemini, Claude); the app itself has no AI and sends nothing.
+- **Share report** opens the phone's share menu (attach it in an AI app, or keep it in Drive or Files). **Copy text** copies it to paste into a chat. In a browser, *Share report* downloads the `.txt` file.
+- **The questions come first and never change**, so the answer has the same shape every month: last month in brief, the trend against the 2 months before, a budget table for next month, a debt plan (highest interest first), the emergency fund, the 3 biggest leaks with ₹ saved, one daily limit, 3 rules, and (in Personal mode) investing once the basics are in place. The AI is told to use only the report's numbers, never to suggest any kind of borrowing, and to reply in the app's language.
+- **What's in it:** your setup today (salary, payday, fixed payments, bills, loans, cards and what's owed, emergency fund and its days, set-asides, yearly costs, budgets); **last month in full**: pay, other money in (borrowed money marked), spending by category against budget, card days, small payments, money moved to savings or loans, top places, and **every entry**; **the two months before** as summaries; and **this month so far**.
+- Best on payday, when last month is complete.
+
 ### Payday reset (3 steps)
 Opens once a cycle, right after the payday check-in is saved. **Later** (or Escape) closes it at any step.
 1. **What's already spoken for:** *Payday check-in (₹55,000)*: fixed payments, loan minimums and EMIs, bills that vary (monthly share), yearly costs (monthly share) → **Money free for your month**.

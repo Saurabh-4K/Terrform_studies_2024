@@ -491,3 +491,4 @@ label.check input { width: 18px; height: 18px; accent-color: var(--accent); }
 .report-sub { grid-column: 1 / -1; color: var(--muted); font-size: 0.8rem; line-height: 1.35; }
 .report-go { width: 100%; margin-top: 6px; }
 .report-card:focus { outline: none; }
+.report-ai { align-self: center; }
