@@ -186,7 +186,7 @@ A three-part meter, **Green · Careful · Red**, with a headline that says what 
 
 ## 6. Bank SMS reading
 
-- **Android app:** reads the inbox after you allow it, **starting from the day you give permission**. After that it checks for new messages each time you open the app. You review payments before they're added.
+- **Android app:** reads the inbox after you allow it, **only messages from today**. Each time you open the app it checks today's new messages; messages from earlier days are never offered, even ones you didn't review, and a message today about a payment from an earlier day is left out too. You review payments before they're added.
 - **Browser version:** paste messages to import them.
 - **Notifications for new bank SMS** (optional, Android): see [Android app extras](#14-android-app-extras).
 - Only **named senders** (such as VM-HDFCBK) are read; messages from phone numbers are ignored.

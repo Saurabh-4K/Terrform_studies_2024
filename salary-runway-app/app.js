@@ -278,7 +278,7 @@
     ]],
     sms: ['Bank SMS', [
       'The app reads bank and UPI messages on this phone to record payments. Messages never leave the phone, and you review every payment before it is added.',
-      'Reading starts from the day you allow it. After that, new messages are checked each time you open the app.',
+      'Only today’s messages are read. Each time you open the app, today’s new messages are checked; earlier days are never added.',
       '<b>Notifications:</b> each new payment is recorded as it arrives and a notification asks you to check its category. Payments you don’t check wait under <b>Needs your check</b>.',
       'In the browser version, paste the messages instead. They are read right here on your device.',
     ]],
@@ -2910,14 +2910,16 @@
     if (!SmsInbox || ui.smsBusy) return;
     ui.smsBusy = true;
     if (!quiet) rerenderKeepScroll();
-    // The first read starts at midnight today, so only messages from the day
-    // SMS access was given are offered, while they're easy to categorise.
-    const since = state.smsReadUntil || Core.parseISO(today()).getTime();
+    // Only today's messages: never earlier days, even ones not reviewed yet,
+    // so old spending is never added.
+    const t = today();
+    const since = Math.max(state.smsReadUntil || 0, Core.parseISO(t).getTime());
     SmsInbox.read({ since, limit: 500 }).then((res) => {
       const msgs = (res.messages || []).filter((m) => /[A-Za-z]/.test(m.address || ''));
       ui.smsMaxDate = (res.messages || []).reduce((mx, m) => Math.max(mx, m.date), since);
+      // A message today about an older payment (its own date is earlier) is left out too.
       const rows = smsRows(msgs.map((m) => ({ text: m.body || '', day: Core.toISO(new Date(m.date)) })))
-        .filter((r) => r.parsed && !r.duplicate && !r.parsed.salary);
+        .filter((r) => r.parsed && !r.duplicate && !r.parsed.salary && r.parsed.date >= t);
       state.smsAuto = true;
       ui.smsBusy = false;
       if (rows.length) {

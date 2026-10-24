@@ -457,6 +457,7 @@
   "On {card} at {rate}% a year. Counted as spent today.": "{card} पर, सालाना {rate}%. आज खर्च में गिना गया.",
   "On. Notifications are off for this app in Android settings, so payments will wait here.": "चालू. Android सेटिंग्स में इस ऐप की सूचनाएँ बंद हैं, इसलिए भुगतान यहाँ इंतज़ार करेंगे.",
   "One month of needs is covered. At {monthly} a month you reach the full target in {months}.": "एक महीने की ज़रूरतें पूरी. हर महीने {monthly} से पूरा लक्ष्य {months} में पहुँचेंगे.",
+  "Only today’s messages are read. Each time you open the app, today’s new messages are checked; earlier days are never added.": "सिर्फ़ आज के मैसेज पढ़े जाते हैं. हर बार ऐप खोलने पर आज के नए मैसेज देखे जाते हैं; पिछले दिनों के कभी नहीं जोड़े जाते.",
   "Optional": "वैकल्पिक",
   "Other": "अन्य",
   "Over-planned by": "योजना में ज़्यादा",
