@@ -11,12 +11,16 @@ android {
         versionCode Integer.parseInt(System.getenv("GITHUB_RUN_NUMBER") ?: "1")
         versionName "0.1." + (System.getenv("GITHUB_RUN_NUMBER") ?: "0")
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        // Phones only (the AI engine is about 13 MB per chip type): no emulator chips.
+        ndk { abiFilters 'arm64-v8a', 'armeabi-v7a' }
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
              // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    // Native libraries compressed in the APK and unpacked on install: a smaller download.
+    packaging { jniLibs { useLegacyPackaging = true } }
     // One shared key for every build, so a new APK can be installed over the old one
     // without losing data. For sideloading only; use a private key for the Play Store.
     signingConfigs {
