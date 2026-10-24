@@ -82,6 +82,14 @@ Backup, restore, example data, erase, and **Clean up SMS imports** (removes SMS-
 - **"This is my new usual pay from now on"** for raises or a new tax slab.
 - Can be changed later from the Plan tab. Changing it undoes the old record, including a bonus entry.
 
+### Payday reset (3 steps)
+Opens once a cycle, right after the payday check-in is saved. **Later** (or Escape) closes it at any step.
+1. **What's already spoken for:** *Payday check-in (₹55,000)*: fixed payments, loan minimums and EMIs, bills that vary (monthly share), yearly costs (monthly share) → **Money free for your month**.
+2. **Pay yourself first:** your plan's set-asides (emergency fund with the Days of Freedom it adds, extra toward your costliest loan, savings / investing), each editable **for this month only**, with a live total and what's left for flexible spending. **Lock in** adds them to your funds and fills the yearly-cost pots.
+3. **Your safe daily runway:** *₹660 / day* until payday, the same number as *Left to spend today*. **Start my month**.
+
+All numbers come from the same plan as the rest of the app. Locked-in money already left on payday, so it isn't taken off the balance again. If you then move it to Jar or a savings account, that SMS joins the locked-in amount instead of counting twice. The Grow tab's *I've moved this money aside* does the same lock-in.
+
 ## 4. Runway tab: where you stand today
 
 ### Zone

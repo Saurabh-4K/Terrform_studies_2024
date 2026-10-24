@@ -325,7 +325,8 @@
     incomes.forEach((t) => { spendByDate[t.date] = (spendByDate[t.date] || 0) - incomeKept(t); });
     const extraIn = sum(incomes.filter((t) => !anchor || t.date >= anchor.date), incomeKept);
     // Bill payments leave the account (less what the pot covers); moves to savings leave too.
-    const others = state.transactions.filter((t) => (isBillPayment(t) || isMove(t)) && inCycle(t.date, cycle) && t.date <= todayIso);
+    // Set-aside moves (t.setAside) record money already taken out on payday, so they're skipped here.
+    const others = state.transactions.filter((t) => (isBillPayment(t) || (isMove(t) && !t.setAside)) && inCycle(t.date, cycle) && t.date <= todayIso);
     others.forEach((t) => {
       const out = isBillPayment(t) ? t.amount - (Number(t.fromPot) || 0) : t.amount;
       spendByDate[t.date] = (spendByDate[t.date] || 0) + out;
@@ -781,14 +782,24 @@
    */
   function allocate(state, todayIso) {
     const sv = state.savings;
-    const savings = sv.auto
-      ? autoSavings(state, todayIso)
-      : {
-        emergencyMonthly: Number(sv.emergencyMonthly) || 0,
-        investMonthly: Number(sv.investMonthly) || 0,
-        debtExtra: Number(sv.debtExtra) || 0,
+    // The payday reset can set this month's set-asides without changing the plan.
+    const slip = todayIso ? (state.payslips || {})[cycleFor(todayIso, Number(state.settings.payday) || 1).start] : null;
+    const override = slip && slip.setAside;
+    const savings = override
+      ? {
+        emergencyMonthly: Number(override.emergency) || 0,
+        investMonthly: Number(override.invest) || 0,
+        debtExtra: Number(override.debtExtra) || 0,
         notes: [],
-      };
+      }
+      : sv.auto
+        ? autoSavings(state, todayIso)
+        : {
+          emergencyMonthly: Number(sv.emergencyMonthly) || 0,
+          investMonthly: Number(sv.investMonthly) || 0,
+          debtExtra: Number(sv.debtExtra) || 0,
+          notes: [],
+        };
     const salary = salaryFor(state, todayIso);
     const fixed = sum(state.fixed, (f) => Number(f.amount) || 0);
     const mins = sum(state.debts.filter((d) => d.balance > 0), (d) => Number(d.minPayment) || 0);
@@ -1131,6 +1142,42 @@
     return { tx, options, recommended: s.use, reason: s.reason, interestSaved: saved };
   }
 
+  // ---------- payday reset ----------
+
+  /*
+   * The three steps of the payday reset, from the same numbers as the rest
+   * of the app: what's committed, what's set aside first, and the safe
+   * daily amount. `setAside` can replace this month's set-asides to preview
+   * an edit before it's saved.
+   */
+  function paydayReset(state, todayIso, setAside) {
+    const cyc = cycleFor(todayIso, Number(state.settings.payday) || 1);
+    let s = state;
+    if (setAside) {
+      const slips = Object.assign({}, state.payslips || {});
+      slips[cyc.start] = Object.assign({}, slips[cyc.start] || {}, { setAside });
+      s = Object.assign({}, state, { payslips: slips });
+    }
+    const p = monthlyPlan(s, todayIso);
+    const committed = [
+      ['Fixed payments (rent, EMIs, subscriptions)', p.fixedTotal],
+      ['Loan minimums and EMIs', p.debtMin],
+      ['Bills that vary (monthly share)', p.variableBills],
+      ['Yearly costs (monthly share)', p.sinking],
+    ].filter((x) => x[1] > 0);
+    const committedTotal = sum(committed, (x) => x[1]);
+    const free = p.salary - committedTotal;
+    const parts = { emergency: p.emergency, debtExtra: p.debtExtra, invest: p.invest };
+    const setAsideTotal = p.emergency + p.debtExtra + p.invest;
+    const r = projectRunway(s, todayIso);
+    return {
+      cycle: cyc, salary: p.salary, committed, committedTotal, free,
+      parts, setAsideTotal, flexible: p.flexTotal,
+      daily: r.dailyAllowance, days: cyc.days - daysBetween(cyc.start, todayIso),
+      freedom: freedomDays(s, todayIso),
+    };
+  }
+
   // ---------- behaviour: the numbers behind the nudges ----------
 
   /*
@@ -1430,7 +1477,7 @@
     insights, simulateDebts, compareDebtPlans, emergencyPlan, parseSms,
     splitSmsBatch, smsKey, categorize, normalizeMerchant, sinkingMonthly, inCycle,
     spendInRange, incomeInRange, incomeKept, isIncome, isMove, isBillPayment, isFlexible, incomeOptions,
-    salaryFor, salaryHistory, suggestUse, freedomDays, interestLeak, nextPaydayPreview,
+    salaryFor, salaryHistory, paydayReset, suggestUse, freedomDays, interestLeak, nextPaydayPreview,
     billShare, billPot, billsMonthly, billPaidIn, billDue, payBill, undoBillPayment, zoneStatus, ESSENTIAL_CATEGORIES,
     isCardTransfer, statementOn, dueAfter, cardOwedAt, cardReserve, cardStatus, emiQuote, revolveQuote, cardBillPlan,
     recordCardPayment, convertCardBalance, undoCardConvert, cardFreeDays, byCategory, DEFAULT_SPLIT,

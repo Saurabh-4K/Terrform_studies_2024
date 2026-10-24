@@ -467,6 +467,35 @@ test('yesterday’s leftover moved today belongs to yesterday', () => {
   assert.ok(after.leftToday < before.leftToday && before.leftToday - after.leftToday < 58);
 });
 
+test('payday reset: committed, set aside first, and the daily amount', () => {
+  const s = baseState({
+    debts: [{ id: 'pl', name: 'Personal loan', balance: 100000, rate: 14, minPayment: 4000, dueDay: 7 }],
+    budgets: [{ id: 'g', name: 'Groceries', amount: 0, auto: true }],
+    savings: { auto: false, emergencyMonthly: 3000, investMonthly: 0, debtExtra: 1000, emergencyBalance: 0, emergencyTargetMonths: 3 },
+  });
+  const r = Core.paydayReset(s, '2026-10-01');
+  assert.equal(r.committedTotal, 15000 + 4000);
+  assert.equal(r.free, 50000 - 19000);
+  assert.equal(r.setAsideTotal, 4000);
+  assert.equal(r.flexible, 31000 - 4000);
+  assert.equal(Math.round(r.daily), Math.round(27000 / 31));
+  // Editing this month's set-aside changes this month only.
+  const e = Core.paydayReset(s, '2026-10-01', { emergency: 5000, debtExtra: 1000, invest: 0 });
+  assert.equal(e.flexible, 25000);
+  s.payslips = { '2026-10-01': { amount: 50000, usual: 50000, setAside: { emergency: 5000, debtExtra: 1000, invest: 0 } } };
+  assert.equal(Core.monthlyPlan(s, '2026-10-05').emergency, 5000);
+  assert.equal(Core.monthlyPlan(s, '2026-11-05').emergency, 3000);
+});
+
+test('locked-in set-asides are not taken off the balance twice', () => {
+  const s = baseState({ savings: { auto: false, emergencyMonthly: 3000, investMonthly: 0, debtExtra: 0, emergencyBalance: 0 } });
+  const before = Core.projectRunway(s, '2026-10-05');
+  s.transactions.push({ id: 'sa', kind: 'move', date: '2026-10-01', amount: 3000, category: 'Savings', note: 'Emergency fund', useFor: 'emergency', setAside: '2026-10-01' });
+  const after = Core.projectRunway(s, '2026-10-05');
+  assert.equal(after.balanceToday, before.balanceToday);
+  assert.equal(Math.round(after.dailyAllowance), Math.round(before.dailyAllowance));
+});
+
 test('debt plans: extra payments finish sooner and save interest', () => {
   const debts = [
     { name: 'Card', balance: 85000, rate: 42, minPayment: 4250 },

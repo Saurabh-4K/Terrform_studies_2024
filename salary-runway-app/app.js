@@ -247,8 +247,12 @@
         '<button data-action="tab" data-tab="' + t + '"' + (t === tab ? ' aria-current="page"' : '') + '>' +
         '<svg viewBox="0 0 24 24" aria-hidden="true">' + ICONS[t] + '</svg>' + TAB_LABELS[t] + '</button>'
       ).join('') +
-      '</div></nav>';
+      '</div></nav>' + resetModal();
     if (tab === 'home') drawRunway();
+    if (ui.reset) {
+      const first = document.querySelector('#reset-card input, #reset-card button.primary');
+      if (first) first.focus();
+    }
     syncWidget();
     syncAlerts();
   }
@@ -475,9 +479,81 @@
     } else {
       toast(amount < usual ? 'Planned this month on ' + inr(amount) : 'Usual pay recorded');
     }
+    if (old && old.setAside) slip.setAside = old.setAside;
+    if (old && old.locked) slip.locked = old.locked;
     state.payslips[cyc.start] = slip;
     ui.paydayOpen = false;
     save();
+    if (!slip.locked) openReset();
+  }
+
+  // ---------- payday reset (3 steps) ----------
+
+  function openReset() {
+    const r = Core.paydayReset(state, today());
+    ui.reset = { step: 1, edit: Object.assign({}, r.parts) };
+  }
+
+  /*
+   * Records this cycle's set-asides as done: the emergency fund and Grow
+   * savings go up, yearly-cost pots fill. These entries are flagged setAside:
+   * the money already left on payday, so they don't lower the balance again,
+   * and a matching Jar SMS later joins them instead of counting twice.
+   */
+  function lockInSetAside(parts) {
+    const t = today();
+    const cyc = Core.cycleFor(t, Number(state.settings.payday) || 1);
+    if (state.savingsRecorded.indexOf(cyc.start) !== -1) return;
+    [['emergency', parts.emergency, 'Emergency fund'], ['grow', parts.invest, 'Savings / investing']].forEach(([use, amount, note]) => {
+      if (!(amount > 0)) return;
+      const tx = { id: uid(), kind: 'move', date: cyc.start, amount: Math.round(amount), category: 'Savings', note, source: 'manual', useFor: null, setAside: cyc.start };
+      state.transactions.push(tx);
+      setIncomeUse(tx, use);
+    });
+    state.sinking.forEach((f) => { f.saved = (Number(f.saved) || 0) + Core.sinkingMonthly(f); });
+    state.savingsRecorded.push(cyc.start);
+    const slip = (state.payslips || {})[cyc.start];
+    if (slip) slip.locked = true;
+  }
+
+  function resetModal() {
+    if (!ui.reset) return '';
+    const t = today();
+    const p = ui.reset.step === 1 ? Core.paydayReset(state, t) : Core.paydayReset(state, t, ui.reset.edit);
+    let body;
+    if (ui.reset.step === 1) {
+      body = '<span class="eyebrow">Step 1 of 3 · What’s already spoken for</span>' +
+        '<h2 id="reset-title">Payday check-in (' + inr(p.salary) + ')</h2>' +
+        '<div class="summary">' + p.committed.map((x) => '<div class="line"><span>' + x[0] + '</span><span>−' + inr(x[1]) + '</span></div>').join('') +
+        '<div class="line total"><span>Money free for your month</span><span class="good">' + inr(p.free) + '</span></div></div>' +
+        '<p class="reset-step-subtext">These leave on their due dates, so they’re set aside first.</p>' +
+        '<div class="row"><button class="primary" data-action="reset-next">Next: protect savings</button><button class="ghost" data-action="reset-later">Later</button></div>';
+    } else if (ui.reset.step === 2) {
+      const f = Core.freedomDays(state, t);
+      const gain = f ? Math.floor((f.fund + (Number(ui.reset.edit.emergency) || 0)) / f.daily) - f.days : 0;
+      const top = state.debts.filter((d) => d.balance > 0 && !d.fromCard).concat(state.debts.filter((d) => d.balance > 0 && d.fromCard)).sort((a, b) => b.rate - a.rate)[0];
+      const field = (key, label, hint) => '<label class="field" for="reset-' + key + '"><span>' + label + '</span>' +
+        '<input id="reset-' + key + '" type="number" inputmode="numeric" min="0" step="100" data-reset="' + key + '" value="' + esc(Math.round(ui.reset.edit[key] || 0)) + '"></label>' +
+        (hint ? '<span class="hint">' + hint + '</span>' : '');
+      body = '<span class="eyebrow">Step 2 of 3 · Pay yourself first</span>' +
+        '<h2 id="reset-title">Set aside before spending</h2>' +
+        '<p class="reset-step-subtext">From your plan, safety first. Change any amount for this month.</p>' +
+        '<div class="stack">' +
+        field('emergency', 'Emergency fund' + (gain > 0 ? ' · +' + plural(gain, 'Day') + ' of Freedom 🛡️' : ''), '') +
+        (top || ui.reset.edit.debtExtra ? field('debtExtra', 'Extra toward ' + (top ? esc(top.name) : 'your loans'), 'Pay it along with the EMI to clear the loan sooner.') : '') +
+        field('invest', 'Savings / investing', '') + '</div>' +
+        '<div class="summary"><div class="line total"><span>Set aside this month</span><span>' + inr(p.setAsideTotal) + '</span></div>' +
+        '<div class="line"><span>Left for flexible spending</span><span>' + inr(p.flexible) + '</span></div></div>' +
+        '<div class="row"><button class="primary" data-action="reset-lock">Lock in & set daily budget</button><button class="ghost" data-action="reset-back">Back</button></div>';
+    } else {
+      body = '<span class="eyebrow">Step 3 of 3 · Your month</span>' +
+        '<h2 id="reset-title">Your safe daily runway</h2>' +
+        '<div class="reset-highlight-number">' + inr(p.daily) + ' / day</div>' +
+        '<p class="reset-step-subtext">Covering groceries, dining, travel and shopping for ' + plural(p.days, 'day') + ', until payday on ' + fmtDate(p.cycle.next) + '. Stay at or under it and you never touch ₹0.</p>' +
+        (p.setAsideTotal ? '<p class="reset-step-subtext good">' + inr(p.setAsideTotal) + ' set aside first. If you move it to Jar or a savings account, that SMS won’t be counted again.</p>' : '') +
+        '<div class="row"><button class="primary" data-action="reset-start">Start my month</button></div>';
+    }
+    return '<div class="reset-modal-overlay" role="presentation"><div class="reset-modal-card" role="dialog" aria-modal="true" aria-labelledby="reset-title" id="reset-card">' + body + '</div></div>';
   }
 
   // The bank's salary SMS: remembered so payday can ask with the right amount.
@@ -1075,6 +1151,10 @@
     const tx = { id: uid(), date: p.date, amount: p.amount, category: o.category || p.category, note: o.note || p.merchant, source: 'sms', smsKey: o.key };
     if (paidFrom !== 'account') tx.paidFrom = paidFrom;
     if (p.type !== 'credit' && tx.category === 'Savings') {
+      // A locked-in set-aside of this amount this cycle? This SMS is that transfer.
+      const cycStart = Core.cycleFor(p.date, Number(state.settings.payday) || 1).start;
+      const locked = state.transactions.find((x) => x.setAside === cycStart && !x.smsKey && x.amount === p.amount);
+      if (locked) { locked.smsKey = o.key; return true; }
       // Already recorded as saved (e.g. "You saved ₹58 → emergency fund")? Join them.
       const twin = savedTwin(p.amount, p.date);
       if (twin) { twin.smsKey = o.key; twin.note = twin.note || tx.note; return true; }
@@ -1104,7 +1184,7 @@
    * decision. Stops one transfer to Jar being counted twice.
    */
   function savedTwin(amount, date, fromSms) {
-    return state.transactions.find((x) => Core.isMove(x) && x.amount === amount &&
+    return state.transactions.find((x) => Core.isMove(x) && !x.setAside && x.amount === amount &&
       Math.abs(Core.daysBetween(x.date, date)) <= 2 &&
       (fromSms ? x.smsKey && (!x.useFor || x.autoUse) : !x.smsKey)) || null;
   }
@@ -1850,6 +1930,23 @@
         state.transactions = state.transactions.filter((x) => x.id !== btn.dataset.id); save(); toast('Deleted'); break;
       }
       case 'tx-kind': ui.txKind = btn.dataset.kind; break;
+      case 'reset-next': ui.reset.step = 2; break;
+      case 'reset-back': ui.reset.step = 1; break;
+      case 'reset-later': ui.reset = null; toast('You can set aside your savings from the Grow tab.'); break;
+      case 'reset-lock': {
+        const cyc = Core.cycleFor(t, Number(state.settings.payday) || 1);
+        const plan = Core.paydayReset(state, t).parts;
+        const e = ui.reset.edit;
+        const changed = ['emergency', 'debtExtra', 'invest'].some((k) => Math.round(e[k] || 0) !== Math.round(plan[k] || 0));
+        state.payslips = state.payslips || {};
+        state.payslips[cyc.start] = state.payslips[cyc.start] || { amount: Number(state.settings.salary) || 0, usual: Number(state.settings.salary) || 0, reason: '', note: '' };
+        // Only an edit becomes this month's own set-aside; otherwise the plan stays in charge.
+        if (changed) state.payslips[cyc.start].setAside = { emergency: Math.round(e.emergency || 0), debtExtra: Math.round(e.debtExtra || 0), invest: Math.round(e.invest || 0) };
+        lockInSetAside(Core.paydayReset(state, t).parts);
+        ui.reset.step = 3;
+        save(); haptic(); break;
+      }
+      case 'reset-start': ui.reset = null; celebrate('Your month has started. Stay at or under your daily amount.'); break;
       case 'saved-dest': {
         const tx = state.transactions.find((x) => x.id === btn.dataset.id);
         if (!tx) return;
@@ -2037,13 +2134,9 @@
         announceAutoSaved(); break;
       }
       case 'record-savings': {
-        const p = Core.monthlyPlan(state, t);
-        const cyc = Core.cycleFor(t, Number(state.settings.payday) || 1);
-        state.savings.emergencyBalance = (Number(state.savings.emergencyBalance) || 0) + p.emergency;
-        state.savings.investSaved = (Number(state.savings.investSaved) || 0) + p.invest;
-        state.sinking.forEach((f) => { f.saved = (Number(f.saved) || 0) + Core.sinkingMonthly(f); });
-        state.savingsRecorded.push(cyc.start);
-        save(); toast('Savings recorded'); break;
+        // Same as the payday reset's lock-in, so a matching Jar SMS joins it instead of counting twice.
+        lockInSetAside(Core.paydayReset(state, t).parts);
+        save(); celebrate('Savings recorded for this month'); break;
       }
       case 'em-apply': applyEmergency(); return;
       case 'balance-open': ui.balanceOpen = true; break;
@@ -2141,6 +2234,19 @@
 
   document.addEventListener('input', (ev) => {
     const el = ev.target;
+    if (el.dataset.reset && ui.reset) {
+      ui.reset.edit[el.dataset.reset] = Math.max(0, Number(el.value) || 0);
+      const card = document.getElementById('reset-card');
+      const pos = el.selectionStart;
+      if (card) {
+        const fresh = document.createElement('div');
+        fresh.innerHTML = resetModal();
+        card.innerHTML = fresh.querySelector('#reset-card').innerHTML;
+        const again = document.getElementById(el.id);
+        if (again) { again.focus(); try { again.setSelectionRange(pos, pos); } catch (e) { /* number inputs */ } }
+      }
+      return;
+    }
     if (el.id === 'pay-amount') {
       const box = document.getElementById('pay-reason');
       const cyc = Core.cycleFor(today(), Number(state.settings.payday) || 1);
@@ -2220,6 +2326,10 @@
   window.addEventListener('resize', () => {
     clearTimeout(resizeTimer);
     resizeTimer = setTimeout(() => { if (tab === 'home') drawRunway(); }, 150);
+  });
+
+  document.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Escape' && ui.reset) { ui.reset = null; rerenderKeepScroll(); }
   });
 
   window.addEventListener('hashchange', () => {
