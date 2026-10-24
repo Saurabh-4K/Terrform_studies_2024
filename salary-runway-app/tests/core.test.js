@@ -58,7 +58,7 @@ test('emergency spending does not inflate the daily pace', () => {
   s.transactions.push({ id: 'e', date: '2026-10-03', amount: 20000, category: 'Emergency', note: 'Medical' });
   s.transactions.push({ id: 'f', date: '2026-10-03', amount: 300, category: 'Food', note: '' });
   const r = Core.projectRunway(s, '2026-10-05');
-  assert.equal(Math.round(r.paceRate), 60); // 300 over 5 days
+  assert.equal(Math.round(r.paceRate), 75); // 300 over the 4 finished days
   assert.equal(r.spentToDate, 20300);
 });
 
@@ -73,10 +73,24 @@ test('a balance check replaces the worked-out balance from that day', () => {
   assert.equal(r.balanceToday, 7800);
   assert.equal(r.points[18].actual, null);
   assert.equal(r.points[19].actual, 8500);
-  // Pace counts only spending from the balance check: 1,200 over 3 days.
-  assert.equal(Math.round(r.paceRate), 400);
+  // Pace counts only spending from the balance check: 1,200 over the 2 finished days.
+  assert.equal(Math.round(r.paceRate), 600);
   // Budget allows 500/day; the account allows 7,800 over 10 days.
   assert.equal(Math.round(r.dailyAllowance), 500);
+});
+
+test('midnight alone doesn’t change the forecast; a day spent under pace does', () => {
+  const s = baseState({ settings: { salary: 45500, payday: 1 }, budgets: [{ id: 'b1', name: 'Food', amount: 0, auto: true }] });
+  for (let d = 1; d <= 20; d++) s.transactions.push({ id: 't' + d, date: '2026-10-' + String(d).padStart(2, '0'), amount: 1000, category: 'Food' });
+  const at = (day) => { const r = Core.projectRunway(s, day); return { pace: Math.round(r.paceRate), end: Math.round(r.endPace), zone: Core.zoneStatus(s, day, r).zone }; };
+  // 11 pm on the 20th, the usual ₹1,000 spent: ₹500 short at payday
+  assert.deepEqual(at('2026-10-20'), { pace: 1000, end: -500, zone: 'amber' });
+  // Just after midnight, nothing done: the same forecast (it used to turn green here)
+  assert.deepEqual(at('2026-10-21'), { pace: 1000, end: -500, zone: 'amber' });
+  // Spending less than usual today helps only once the day is over
+  s.transactions.push({ id: 'x', date: '2026-10-21', amount: 200, category: 'Food' });
+  assert.equal(at('2026-10-21').end, -500);
+  assert.equal(at('2026-10-22').zone, 'green');
 });
 
 test('safe to spend never exceeds what the account can cover', () => {
@@ -901,4 +915,13 @@ test('report for an AI chat: fixed questions, last month in full, two months bef
   assert.equal((t.match(/### Every entry/g) || []).length, 1);
   s.settings.personal = false;
   assert.doesNotMatch(Core.aiReport(s, '2026-11-03', 'en').text, /\n9\. /);
+});
+
+test('a bill with no amount yet isn’t due and sets nothing aside', () => {
+  const s = baseState({ bills: [
+    { id: 'v0', name: '', estimate: 0, everyMonths: 1, nextDue: '2026-10-10' },
+    { id: 'v1', name: 'Electricity', estimate: 1200, everyMonths: 1, nextDue: '2026-10-15' },
+  ] });
+  const events = Core.cycleEvents(s, Core.cycleFor('2026-10-10', 1), '2026-10-10');
+  assert.deepEqual(events.filter((e) => e.kind === 'bill' || e.kind === 'billpot').map((e) => [e.name, e.amount]), [['Electricity', 1200]]);
 });

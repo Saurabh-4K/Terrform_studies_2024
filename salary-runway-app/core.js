@@ -241,7 +241,8 @@
       });
     });
     (state.bills || []).forEach((b) => {
-      if (billPaidIn(state, b, cycle)) return;
+      // A bill with no amount yet (just added, ₹0) has nothing to pay or set aside.
+      if (!((Number(b.estimate) || 0) > 0) || billPaidIn(state, b, cycle)) return;
       if (billDue(b, cycle)) {
         let date = b.nextDue < cycle.start ? cycle.start : b.nextDue;
         if (todayIso && date < todayIso) date = todayIso;
@@ -357,11 +358,19 @@
       pastTxns.filter((t) => NON_PACE_CATEGORIES.indexOf(t.category) === -1 && (!anchor || t.date >= anchor.date)),
       (t) => t.amount
     );
-    const daysElapsed = idxToday - aIdx + 1;
+    /*
+     * The pace is the average over finished days only. Counting today as a
+     * finished day with nothing spent made the forecast jump at midnight
+     * (Careful at 11 pm, Green at 12:05 am with nothing done). Today counts
+     * as at least a usual day until it's over.
+     */
+    const paceToday = sum(pastTxns.filter((t) => t.date === todayIso && NON_PACE_CATEGORIES.indexOf(t.category) === -1), (t) => t.amount);
+    const daysDone = idxToday - aIdx;
     const remainingDays = N - 1 - idxToday;
     // With a balance check, extra money is shared over the days from that check.
     const dailyBudget = plan.flexTotal / N + (anchor ? (extraIn - moved) / (N - aIdx) : 0);
-    const paceRate = daysElapsed >= 3 && paceSpend > 0 ? paceSpend / daysElapsed : plan.flexTotal / N;
+    const paceRate = daysDone >= 2 && paceSpend - paceToday > 0 ? (paceSpend - paceToday) / daysDone : plan.flexTotal / N;
+    const todayRest = Math.max(0, paceRate - paceToday);
     const flexLeft = Math.max(0, plan.flexTotal + extraIn - paceSpend - moved);
     const planRate = anchor ? dailyBudget : remainingDays > 0 ? flexLeft / remainingDays : 0;
 
@@ -376,6 +385,7 @@
         if (anchor && i === aIdx) bal = (Number(anchor.amount) || 0) - cardReserve(state, anchor.date);
         bal -= out + (spendByDate[date] || 0);
         pace = planned = bal;
+        if (i === idxToday) pace -= todayRest;
         points.push({
           date,
           actual: anchor && i < aIdx ? null : bal,

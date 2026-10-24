@@ -133,6 +133,8 @@ A three-part meter, **Green · Careful · Red**, with a headline that says what 
 | **Careful** | Bills and basics are covered, but this pace runs out before payday | The date money runs out, your daily pace, and the daily amount that keeps you safe |
 | **Red** | The money left doesn't cover the bills still to pay plus groceries and health until payday | How much you're short, and ways out with amounts (below) |
 
+**The pace** is your average flexible spending a day over **finished days** only; today counts as at least a usual day until it's over. So the zone doesn't change at midnight by itself: it gets better when a day ends under your usual spending, money comes in, or you move money to savings. (Emergency spending isn't part of the pace.)
+
 **Ways out of the red:**
 1. Use money from the emergency fund. One tap moves it in, rounded up so it really clears the gap.
 2. Pause this month's Grow and extra debt payments until payday.
@@ -237,6 +239,7 @@ For a refund, money from home, money returned, cashback, side income or extra pa
 - The app **learns the usual amount** from the last three payments and moves the next due date on.
 - Overdue bills are counted today. Bill payments aren't flexible spending, so they don't eat into budgets.
 - **Move from fixed payments** converts an existing fixed entry (such as electricity) into a bill that varies.
+- A bill without an amount yet (₹0, such as a row just added in Plan) isn't shown under *Bills to pay* and sets nothing aside.
 
 ## 10. Credit cards
 

@@ -563,7 +563,8 @@
     const t = today();
     const cyc = Core.cycleFor(t, Number(state.settings.payday) || 1);
     const bills = state.bills || [];
-    const due = bills.filter((b) => Core.billDue(b, cyc) && !Core.billPaidIn(state, b, cyc));
+    // Only bills with an amount: a bill just added in Plan starts at ₹0 and isn't asking to be paid.
+    const due = bills.filter((b) => (Number(b.estimate) || 0) > 0 && Core.billDue(b, cyc) && !Core.billPaidIn(state, b, cyc));
     const unlinked = bills.length
       ? state.transactions.filter((x) => Core.isFlexible(x) && x.category === 'Bills' && Core.inCycle(x.date, cyc))
       : [];
