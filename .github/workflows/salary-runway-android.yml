@@ -64,16 +64,13 @@ jobs:
         if: steps.changes.outputs.build == 'true'
         run: npm test
 
-      # The on-phone AI downloads its model from Hugging Face. Show what the
-      # model repositories hold, so a renamed or removed file is spotted here.
-      - name: Check the AI model download
+      # The on-phone AI downloads its model from Hugging Face (LocalAiPlugin.java).
+      # Warn if a model file has been renamed or removed.
+      - name: Check the AI model downloads
         if: steps.changes.outputs.build == 'true'
-        continue-on-error: true
         run: |
-          for repo in litert-community/Qwen2.5-1.5B-Instruct litert-community/Qwen2.5-0.5B-Instruct; do
-            echo "== $repo"
-            curl -sS "https://huggingface.co/api/models/$repo?blobs=true" \
-              | jq -r '"gated: \(.gated)", (.siblings[] | select(.rfilename | test("\\.(task|litertlm)$")) | "\(.size)\t\(.rfilename)")'
+          for path in $(grep -oE 'litert-community/[^"]+\.task' android/app/src/main/java/com/salaryrunway/app/LocalAiPlugin.java); do
+            if curl -sfIL -o /dev/null "https://huggingface.co/$path"; then echo "ok: $path"; else echo "::warning::AI model missing: $path"; fi
           done
 
       - name: Copy the web app into the Android project

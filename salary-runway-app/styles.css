@@ -491,3 +491,14 @@ label.check input { width: 18px; height: 18px; accent-color: var(--accent); }
 .report-sub { grid-column: 1 / -1; color: var(--muted); font-size: 0.8rem; line-height: 1.35; }
 .report-go { width: 100%; margin-top: 6px; }
 .report-card:focus { outline: none; }
+
+/* AI coach */
+.report-section.ai { color: var(--accent); }
+.ai-box { display: grid; gap: 8px; }
+.ai-tips { margin: 0; padding-left: 1.2em; display: grid; gap: 6px; }
+.ai-tips li { line-height: 1.45; }
+.ai-thinking { animation: ai-pulse 1.4s ease-in-out infinite; }
+@keyframes ai-pulse { 50% { opacity: 0.45; } }
+@media (prefers-reduced-motion: reduce) { .ai-thinking { animation: none; } }
+.ai-card progress { width: 100%; height: 10px; accent-color: var(--accent); }
+.hint.bad { color: var(--bad); }

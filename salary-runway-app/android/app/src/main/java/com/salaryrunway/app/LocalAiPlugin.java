@@ -10,10 +10,6 @@ import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 import com.google.mediapipe.tasks.genai.llminference.LlmInference;
 
-import org.json.JSONArray;
-import org.json.JSONObject;
-
-import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
@@ -30,8 +26,11 @@ import java.net.URL;
  */
 @CapacitorPlugin(name = "LocalAi")
 public class LocalAiPlugin extends Plugin {
-    // Qwen2.5 1.5B Instruct (Apache-2.0): small enough for a phone, good at short advice.
-    static final String REPO = "litert-community/Qwen2.5-1.5B-Instruct";
+    // Qwen2.5 Instruct (Apache-2.0), 8-bit, 1280-token context. "large" (1.5B,
+    // about 1.6 GB) writes better tips; "small" (0.5B, about 550 MB) suits a
+    // phone short on space. The CI build checks both files still exist.
+    static final String LARGE = "litert-community/Qwen2.5-1.5B-Instruct/resolve/main/Qwen2.5-1.5B-Instruct_multi-prefill-seq_q8_ekv1280.task";
+    static final String SMALL = "litert-community/Qwen2.5-0.5B-Instruct/resolve/main/Qwen2.5-0.5B-Instruct_multi-prefill-seq_q8_ekv1280.task";
     private static final String PREFS = "local_ai";
 
     // Download progress, shared with status() while the download runs.
@@ -58,7 +57,8 @@ public class LocalAiPlugin extends Plugin {
         File model = modelFile();
         JSObject out = new JSObject();
         out.put("ready", model.exists() && !downloading);
-        out.put("size", model.exists() ? model.length() : prefs().getLong("size", 0));
+        out.put("size", model.exists() ? model.length() : 0);
+        out.put("model", model.exists() ? prefs().getString("model", "large") : null);
         out.put("downloading", downloading);
         out.put("done", done);
         out.put("total", total);
@@ -66,26 +66,11 @@ public class LocalAiPlugin extends Plugin {
         call.resolve(out);
     }
 
-    /** Finds the model file and its size, without downloading it. */
-    @PluginMethod
-    public void info(PluginCall call) {
-        new Thread(() -> {
-            try {
-                JSONObject file = pickFile();
-                JSObject out = new JSObject();
-                out.put("name", file.getString("rfilename"));
-                out.put("size", file.optLong("size", 0));
-                call.resolve(out);
-            } catch (Exception e) {
-                call.reject("Could not reach the model download: " + e.getMessage());
-            }
-        }).start();
-    }
-
-    /** Starts the download in the background; status() reports progress. */
+    /** model: "large" or "small". Starts the download in the background; status() reports progress. */
     @PluginMethod
     public void download(PluginCall call) {
         if (downloading) { call.resolve(); return; }
+        String which = "small".equals(call.getString("model")) ? "small" : "large";
         downloading = true;
         cancelled = false;
         done = 0;
@@ -96,14 +81,12 @@ public class LocalAiPlugin extends Plugin {
             File part = new File(model.getParentFile(), "model.task.part");
             try {
                 model.getParentFile().mkdirs();
-                JSONObject file = pickFile();
-                total = file.optLong("size", 0);
-                URL url = new URL("https://huggingface.co/" + REPO + "/resolve/main/" + file.getString("rfilename"));
+                URL url = new URL("https://huggingface.co/" + ("small".equals(which) ? SMALL : LARGE));
                 HttpURLConnection http = (HttpURLConnection) url.openConnection();
                 http.setConnectTimeout(20000);
                 http.setReadTimeout(60000);
                 if (http.getResponseCode() != 200) throw new Exception("HTTP " + http.getResponseCode());
-                if (total <= 0) total = http.getContentLengthLong();
+                total = http.getContentLengthLong();
                 try (InputStream in = http.getInputStream(); OutputStream out = new FileOutputStream(part)) {
                     byte[] buf = new byte[1 << 16];
                     int n;
@@ -114,12 +97,15 @@ public class LocalAiPlugin extends Plugin {
                     }
                 }
                 if (total > 0 && done < total) throw new Exception("download incomplete");
-                if (model.exists()) model.delete();
-                if (!part.renameTo(model)) throw new Exception("could not save the model");
-                prefs().edit().putLong("size", model.length()).apply();
+                synchronized (LocalAiPlugin.class) {
+                    if (engine != null) { engine.close(); engine = null; enginePath = null; }
+                    if (model.exists()) model.delete();
+                    if (!part.renameTo(model)) throw new Exception("could not save the model");
+                }
+                prefs().edit().putString("model", which).apply();
             } catch (Exception e) {
                 part.delete();
-                error = cancelled ? null : e.getMessage();
+                error = cancelled ? null : (e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName());
             } finally {
                 downloading = false;
             }
@@ -140,7 +126,7 @@ public class LocalAiPlugin extends Plugin {
             if (engine != null) { engine.close(); engine = null; enginePath = null; }
         }
         modelFile().delete();
-        prefs().edit().remove("size").apply();
+        prefs().edit().remove("model").apply();
         call.resolve();
     }
 
@@ -172,28 +158,5 @@ public class LocalAiPlugin extends Plugin {
                 call.reject("The AI couldn't run on this phone: " + e.getMessage());
             }
         }).start();
-    }
-
-    /** The smallest .task file in the model's repository, with its size. */
-    private static JSONObject pickFile() throws Exception {
-        HttpURLConnection http = (HttpURLConnection) new URL("https://huggingface.co/api/models/" + REPO + "?blobs=true").openConnection();
-        http.setConnectTimeout(20000);
-        http.setReadTimeout(30000);
-        if (http.getResponseCode() != 200) throw new Exception("HTTP " + http.getResponseCode());
-        ByteArrayOutputStream body = new ByteArrayOutputStream();
-        try (InputStream in = http.getInputStream()) {
-            byte[] buf = new byte[8192];
-            int n;
-            while ((n = in.read(buf)) > 0) body.write(buf, 0, n);
-        }
-        JSONArray files = new JSONObject(body.toString("UTF-8")).getJSONArray("siblings");
-        JSONObject best = null;
-        for (int i = 0; i < files.length(); i++) {
-            JSONObject f = files.getJSONObject(i);
-            if (!f.getString("rfilename").endsWith(".task")) continue;
-            if (best == null || f.optLong("size", Long.MAX_VALUE) < best.optLong("size", Long.MAX_VALUE)) best = f;
-        }
-        if (best == null) throw new Exception("no model file found");
-        return best;
     }
 }

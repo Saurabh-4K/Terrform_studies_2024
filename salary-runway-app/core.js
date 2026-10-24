@@ -1498,6 +1498,84 @@
     };
   }
 
+  // ---------- AI tips (on the phone) ----------
+
+  const AI_LANGS = { en: 'English', mr: 'Marathi', hi: 'Hindi' };
+
+  /*
+   * The prompt for the AI that runs on the phone. The app works out every
+   * number; the AI only turns them into a few plain tips, so it can't get the
+   * maths wrong. which: 'report' for last month, 'now' for this month so far.
+   * The facts stay in English (small models read it best); the answer comes
+   * in the app's language. Qwen chat format.
+   */
+  function aiPrompt(state, todayIso, which, lang) {
+    const payday = Number(state.settings.payday) || 1;
+    const report = which === 'report' ? monthReport(state, todayIso) : null;
+    const cycle = report ? report.cycle : cycleFor(todayIso, payday);
+    const end = report ? addDays(cycle.next, -1) : todayIso;
+    const txs = state.transactions.filter((t) => inCycle(t.date, cycle) && t.date <= end);
+    const plan = monthlyPlan(state, cycle.start);
+    const facts = [];
+
+    facts.push('Monthly salary: ' + rupees(plan.salary) + '.');
+    if (report) facts.push('This is the report for last month, ' + cycle.start + ' to ' + end + '.');
+    else facts.push('Today is day ' + (daysBetween(cycle.start, todayIso) + 1) + ' of ' + cycle.days + ' until payday (' + cycle.next + ').');
+
+    const spent = byCategory(txs.filter(isFlexible));
+    const budget = {};
+    plan.budgets.forEach((b) => { budget[b.name] = b.amount; });
+    const cats = Object.keys(spent).sort((a, b) => spent[b] - spent[a]).slice(0, 6);
+    if (cats.length) {
+      facts.push('Spending by category:');
+      cats.forEach((c) => {
+        const b = budget[c];
+        facts.push('- ' + c + ': spent ' + rupees(spent[c]) + (b > 0 ? ' of a ' + rupees(b) + ' budget' + (spent[c] > b ? ' (over by ' + rupees(spent[c] - b) + ')' : '') : ''));
+      });
+    } else facts.push('No spending recorded.');
+
+    const small = txs.filter((t) => isFlexible(t) && t.amount < SMALL_PAYMENT && ['Bills', 'Emergency'].indexOf(t.category) === -1);
+    if (small.length) facts.push(small.length + (small.length === 1 ? ' small payment under ' : ' small payments under ') + rupees(SMALL_PAYMENT) + ' added up to ' + rupees(sum(small, (t) => t.amount)) + '.');
+    const cardDays = new Set(txs.filter((t) => isFlexible(t) && t.paidFrom && t.paidFrom !== 'account').map((t) => t.date)).size;
+    if ((state.cards || []).length) facts.push('Days with credit card spending: ' + cardDays + '.');
+    const swept = sum(txs.filter((t) => isMove(t) && !t.setAside), (t) => t.amount);
+    facts.push('Moved from daily leftovers to savings or loans: ' + rupees(swept) + '.');
+
+    if (report) {
+      if (report.debtPaid > 0) facts.push('Extra paid on loans: ' + rupees(report.debtPaid) + (report.interestSaved > 0 ? ', saving about ' + rupees(report.interestSaved) + ' in interest' : '') + '.');
+      if (report.cleared.length) facts.push('Loans cleared: ' + report.cleared.join(', ') + '.');
+    } else {
+      const r = projectRunway(state, todayIso);
+      facts.push('Safe to spend per day until payday: ' + rupees(r.dailyAllowance) + '.');
+      facts.push(r.zeroPace ? 'At this pace the money runs out on ' + r.zeroPace + ', before payday.' : 'At this pace about ' + rupees(r.endPace) + ' is left on payday.');
+    }
+
+    const debts = state.debts.filter((d) => d.balance > 0).sort((a, b) => (Number(b.rate) || 0) - (Number(a.rate) || 0)).slice(0, 4);
+    if (debts.length) {
+      facts.push('Loans:');
+      debts.forEach((d) => facts.push('- ' + d.name + ': ' + rupees(d.balance) + ' left at ' + (Number(d.rate) || 0) + '% a year, EMI ' + rupees(Number(d.minPayment) || 0) + '.'));
+    } else facts.push('No loans.');
+    const f = freedomDays(state, todayIso);
+    if (f) facts.push('Emergency fund: ' + rupees(f.fund) + ', enough for ' + f.days + ' days of bills and basics.');
+
+    const n = lang === 'en' ? 4 : 3;
+    const system = 'You are a friendly money coach in an Indian budgeting app. The user\'s goal: a life free of loans, never reaching zero before payday, saving first. ' +
+      'Use only the facts given and never make up numbers. Never suggest a new loan, credit card, EMI, pay-later or borrowing. ' +
+      'Good tips: trim the category most over budget, stop small payment leaks, build the emergency fund, pay extra on the costliest loan' +
+      (personal(state) ? ', then invest monthly (SIP in an index fund, PPF).' : '. Do not name investment products.') +
+      ' Write exactly ' + n + ' short tips, one per line, each starting with "- ", each under 25 words and using a number from the facts. No title, no extra text. Reply in ' + (AI_LANGS[lang] || 'English') + '.';
+    const user = (report ? 'How did last month go, and what should I do next month?' : 'How is this month going, and what should I do until payday?') + '\n\nFacts:\n' + facts.join('\n');
+    return '<|im_start|>system\n' + system + '<|im_end|>\n<|im_start|>user\n' + user + '<|im_end|>\n<|im_start|>assistant\n';
+  }
+
+  // The tips from the AI's answer: its "- " lines, cleaned, at most five.
+  function aiTips(text) {
+    const lines = String(text || '').replace(/<\|[^|]*\|>/g, '').split(/\n+/).map((l) => l.trim()).filter(Boolean);
+    const bullet = /^(?:[-*•]|\d+[.)])\s*/;
+    const tips = lines.some((l) => bullet.test(l)) ? lines.filter((l) => bullet.test(l)) : lines;
+    return tips.map((l) => l.replace(bullet, '').replace(/\*\*/g, '').trim()).filter((l) => l.length > 3).slice(0, 5);
+  }
+
   // ---------- investing (personal mode) ----------
 
   /*
@@ -1776,7 +1854,7 @@
     isCardTransfer, statementOn, dueAfter, cardOwedAt, cardReserve, cardStatus, emiQuote, revolveQuote, cardBillPlan,
     recordCardPayment, convertCardBalance, undoCardConvert, cardFreeDays, byCategory, DEFAULT_SPLIT,
     isLoanCredit, borrowedThisCycle, borrowCheck, rolloverOptions, personal, investPlan, sipValue, ASSUMED_RETURN, setTranslator,
-    monthReport,
+    monthReport, aiPrompt, aiTips,
   };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = Core;

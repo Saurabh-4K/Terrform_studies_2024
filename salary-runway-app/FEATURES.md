@@ -28,7 +28,7 @@ Everything the app can do today, screen by screen, with the rules it follows. Fo
 ## 1. Privacy and your data
 
 - **Everything stays on your device.** There is no server and no account, and nothing is uploaded.
-- In the Android app, fonts are bundled, so the app makes no network requests. Android's cloud backup and device-to-device transfer are **turned off** for the app's data.
+- In the Android app, fonts are bundled, so the app makes no network requests, except the one-time AI model download if you turn on the AI coach (it fetches the model only and sends nothing about you). Android's cloud backup and device-to-device transfer are **turned off** for the app's data.
 - **Backup:** Plan → Your data → *Show backup* → *Copy backup* gives you your whole data as text. Keep it somewhere safe.
 - **Restore:** paste a backup into *Restore from backup*.
 - **Erase everything**, after a confirmation.
@@ -92,6 +92,7 @@ When a new salary cycle starts (the payday check-in is due, or the bank's salary
   - **Most over budget:** the flexible category furthest over its budget, with spent vs budget.
   - **Small payment leaks:** *7 small payments under ₹200 added up to ₹1,030.* Bills don't count.
 - A watch-out with nothing to report turns green: *Every category stayed within its budget.*
+- **AI coach** (Android, once the AI model is downloaded): *Get AI tips* writes 3–4 short tips on that month. See *AI coach* in the Plan tab.
 - **Take lessons into next month** closes it and opens this month's payday check-in, then the payday reset. Shown once per cycle; Escape closes it for now.
 
 ### Payday reset (3 steps)
@@ -315,6 +316,11 @@ Built from your last three salary cycles, with every point in rupees:
 
 ## 14. Android app extras
 
+- **AI coach** (Plan tab, free, optional): an AI that runs **on the phone** writes short tips on your month.
+  - Turn it on by downloading an open model once: **Better tips · 1.6 GB** (Qwen2.5 1.5B) or **Smaller · 550 MB** (Qwen2.5 0.5B), from Hugging Face's LiteRT community. Use Wi-Fi and keep the app open while it downloads. After that it works offline.
+  - *Get AI tips* on the Plan tab covers this month so far; on the month-end report card it covers the month that ended. Tips are kept for the day (or the month, on the report) in the chosen language; *New tips* writes fresh ones.
+  - The app works out every number (spending vs budget, small payments, card days, loans, emergency fund, safe daily amount) and the AI only turns them into plain tips. It is told never to suggest a loan, credit card, EMI or pay-later. In Personal mode it may name SIPs, index funds or PPF.
+  - Your money data never leaves the phone. Writing tips takes up to a minute and uses a lot of battery. Marathi and Hindi tips are weaker than English. *Remove the AI model* frees the space.
 - **Home-screen widget "Spend today"** (3×2 by default, resizable):
   - A deep-green card with the Salary Runway logo and name, a faint runway line in the corner, **Payday in 8 days**, and a bar showing how much of today's amount is left. Shrunk to one row (Android 12+, or after resizing), it shows a compact version: logo, amount and + Add.
   - Shows what's left to spend today. When you go over: **Over by ₹147 · Tomorrow's safe spend drops to ₹135**, in amber. This updates even for expenses added from the widget or card SMS while the app is closed.
@@ -358,4 +364,5 @@ With Personal mode off:
 - Data lives on one phone or in one browser; use backup and restore to move it.
 - Card SMS detection is built from common bank formats; new formats need real samples.
 - Reminders for due dates show inside the app, not yet as phone notifications.
+- The AI coach is a small model: its tips can be generic or occasionally wrong, and it hasn't been tested on every phone. Only Android has it.
 - Only Android has SMS reading and the widget; iPhone would need Account Aggregator through a licensed partner.

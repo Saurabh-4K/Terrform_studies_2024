@@ -48,6 +48,7 @@
   const SmsInbox = NATIVE ? window.Capacitor.registerPlugin('SmsInbox') : null;
   const SpendWidget = NATIVE ? window.Capacitor.registerPlugin('SpendWidget') : null;
   const Haptics = NATIVE ? window.Capacitor.registerPlugin('Haptics') : null;
+  const LocalAi = NATIVE ? window.Capacitor.registerPlugin('LocalAi') : null;
 
   // A light tap on the phone. Never allowed to break anything.
   function haptic() {
@@ -115,6 +116,7 @@
     report: false,
     reportHidden: false,
     reportFocused: false,
+    ai: { status: null, busy: null, error: '', removeAsk: false },
   };
 
   // ---------- storage ----------
@@ -361,6 +363,12 @@
       'When a loan ends, you’re already used to living without its EMI. Sending that money to your next loan, your emergency fund or savings speeds up your freedom without changing how you live.',
       'The same works for a raise: send half to freedom before spending grows to match it.',
       'Kept amounts are added to your set-asides every payday. Stop any of them from the Plan tab.',
+    ]],
+    ai: ['AI coach', [
+      'The AI runs on your phone. It downloads a free open model (Qwen2.5) once; after that it works offline and your money data never leaves the phone.',
+      'The app works out every number; the AI only turns them into a few plain tips. It can still say something odd, so treat the tips as ideas, not orders.',
+      'Tips in Marathi and Hindi are weaker than in English. Writing them takes up to a minute and uses a lot of battery.',
+      'Not using it? Remove the model to free the space.',
     ]],
     grow: ['Grow', [
       'Check that an adviser is registered on SEBI’s website: <a href="https://www.sebi.gov.in/sebiweb/other/OtherAction.do?doRecognisedFpi=yes&amp;intmId=13" target="_blank" rel="noopener">sebi.gov.in → Intermediaries → Investment Advisers</a>.',
@@ -898,8 +906,108 @@
         ? stat('warn', tr('Small payment leaks'), inr(r.small.total),
           tr(r.small.count === 1 ? '1 small payment under ₹{under} added up to {amount}.' : '{n} small payments under ₹{under} added up to {amount}.', { n: r.small.count, under: r.small.under, amount: inr(r.small.total) }))
         : stat('good', tr('Small payment leaks'), tr('None'), tr('No payments under ₹{under}.', { under: r.small.under }))) +
+      (LocalAi ? '<span class="report-section ai">' + tr('AI coach') + '</span>' + aiTips('report') : '') +
       '<button class="primary report-go" data-action="report-done">' + tr('Take lessons into next month') + '</button>' +
       '</div></div>';
+  }
+
+  // ---------- AI coach (on the phone) ----------
+
+  // Tips are kept for the month they're about (last month's report) or for today.
+  function aiKey(which) {
+    const at = which === 'report' ? Core.monthReport(state, today()).cycle.start : today();
+    return which + ':' + at + ':' + I18N.getLang();
+  }
+
+  function mb(bytes) { return bytes >= 1e9 ? (bytes / 1e9).toFixed(1) + ' GB' : Math.round(bytes / 1e6) + ' MB'; }
+
+  // The AI's tips, the button to get them, or where to set it up.
+  function aiTips(which) {
+    const st = ui.ai.status;
+    const saved = (state.aiTips || {})[which];
+    const tips = saved && saved.key === aiKey(which) ? saved.tips : null;
+    let out;
+    if (ui.ai.busy === which) out = '<p class="hint ai-thinking">' + tr('Thinking… this can take a minute.') + '</p>';
+    else if (tips) {
+      out = '<ul class="ai-tips">' + tips.map((x) => '<li>' + esc(x) + '</li>').join('') + '</ul>' +
+        '<div><button class="link" data-action="ai-run" data-which="' + which + '"' + (ui.ai.busy ? ' disabled' : '') + '>' + tr('New tips') + '</button></div>';
+    } else if (st && st.ready) {
+      out = '<div><button data-action="ai-run" data-which="' + which + '"' + (ui.ai.busy ? ' disabled' : '') + '>✨ ' + tr('Get AI tips') + '</button></div>';
+    } else out = '<p class="hint">' + tr('Turn on the free AI coach on the Plan tab.') + '</p>';
+    if (ui.ai.error && ui.ai.errorFor === which) out += '<p class="hint bad">' + tr('The AI couldn’t write tips.') + ' ' + esc(ui.ai.error) + '</p>';
+    return '<div class="ai-box">' + out + '</div>';
+  }
+
+  function aiCard() {
+    if (!LocalAi) return '';
+    const st = ui.ai.status;
+    let body;
+    if (!st) body = '<p class="hint">' + tr('Checking…') + '</p>';
+    else if (st.downloading) {
+      const pct = st.total ? Math.floor((st.done / st.total) * 100) : 0;
+      body = '<p class="hint">' + tr('Downloading the AI model. Keep the app open.') + '</p>' +
+        '<progress id="ai-progress" max="100" value="' + pct + '"></progress>' +
+        '<p class="hint" id="ai-progress-text">' + aiProgressText(st) + '</p>' +
+        '<div><button class="ghost" data-action="ai-cancel">' + tr('Cancel') + '</button></div>';
+    } else if (st.ready) {
+      body = '<p class="hint">' + tr('Ready on this phone · {size}', { size: mb(st.size) }) + '</p>' +
+        '<span class="report-section ai">' + tr('This month so far') + '</span>' + aiTips('now') +
+        (ui.ai.removeAsk
+          ? '<div class="callout warn"><b>' + tr('Remove the AI model?') + '</b><span class="hint">' + tr('To use it again you’d need to download it again.') + '</span>' +
+            '<div class="row"><button class="primary" data-action="ai-remove">' + tr('Remove') + '</button><button class="ghost" data-action="ai-remove-no">' + tr('Keep') + '</button></div></div>'
+          : '<div><button class="ghost" data-action="ai-remove-ask">' + tr('Remove the AI model') + '</button></div>');
+    } else {
+      body = '<p class="hint">' + tr('Free tips on your month, written by an AI that runs on this phone. Your money data never leaves it.') + '</p>' +
+        '<p class="hint">' + tr('A one-time download. Use Wi-Fi.') + '</p>' +
+        (st.error ? '<p class="hint bad">' + tr('The download stopped.') + ' ' + esc(st.error) + '</p>' : '') +
+        '<div class="row"><button class="primary" data-action="ai-download" data-model="large">' + tr('Better tips · 1.6 GB') + '</button>' +
+        '<button data-action="ai-download" data-model="small">' + tr('Smaller · 550 MB') + '</button></div>';
+    }
+    return '<section class="card ai-card">' + titled('AI coach', 'ai') + body + '</section>';
+  }
+
+  function aiProgressText(st) {
+    return st.total ? tr('{done} of {total}', { done: mb(st.done), total: mb(st.total) }) : mb(st.done);
+  }
+
+  // Asks the phone what the model is doing; follows a download until it ends.
+  let aiTimer = null;
+  function aiRefresh() {
+    if (!LocalAi) return;
+    clearTimeout(aiTimer);
+    Promise.resolve().then(() => LocalAi.status()).then((st) => {
+      const was = ui.ai.status;
+      ui.ai.status = st;
+      if (st.downloading) aiTimer = setTimeout(aiRefresh, 1000);
+      if (!was || was.ready !== st.ready || was.downloading !== st.downloading || was.error !== st.error) {
+        if (tab === 'plan' || ui.report || reportDue()) rerenderKeepScroll();
+      } else if (st.downloading) {
+        const bar = document.getElementById('ai-progress');
+        const text = document.getElementById('ai-progress-text');
+        if (bar && st.total) bar.value = Math.floor((st.done / st.total) * 100);
+        if (text) text.textContent = aiProgressText(st);
+      }
+    }).catch(() => {});
+  }
+
+  function aiRun(which) {
+    if (!LocalAi || ui.ai.busy) return;
+    ui.ai.busy = which;
+    ui.ai.error = '';
+    const key = aiKey(which);
+    const prompt = Core.aiPrompt(state, today(), which, I18N.getLang());
+    Promise.resolve().then(() => LocalAi.generate({ prompt, maxTokens: 1280 })).then((res) => {
+      const tips = Core.aiTips(res && res.text);
+      if (!tips.length) throw new Error(tr('It gave no tips. Try again.'));
+      state.aiTips = Object.assign({}, state.aiTips, { [which]: { key, tips } });
+      save();
+    }).catch((e) => {
+      ui.ai.error = (e && e.message) || '';
+      ui.ai.errorFor = which;
+    }).then(() => {
+      ui.ai.busy = null;
+      rerenderKeepScroll();
+    });
   }
 
   // ---------- before you borrow ----------
@@ -1676,6 +1784,7 @@
       '<section class="card lang-card"><div class="card-head"><h2>' + tr('Language') + '</h2>' +
       '<div class="seg" role="group" aria-label="' + tr('Language') + '">' + I18N.LANGS.map(([code, name]) =>
         '<button data-action="set-lang" data-lang="' + code + '" lang="' + code + '" aria-pressed="' + (I18N.getLang() === code) + '">' + name + '</button>').join('') + '</div></div></section>' +
+      aiCard() +
       (s.salary ? '' : '<div class="callout"><b>' + tr('Start here.') + '</b><span class="hint">' + tr('Enter your salary and payday, then your fixed payments. Everything else can come later.') + '</span></div>') +
       '<section class="card">' + titled('Salary', 'salary') + '<div class="form-grid">' +
       numInput('salary', 'settings.salary', s.salary || '', 'Monthly salary in hand (₹)') +
@@ -2467,6 +2576,17 @@
         // Last month's report card comes first, once.
         if (reportPending()) { ui.report = true; ui.reportFocused = false; ui.reportThenPay = true; } else ui.paydayOpen = true;
         break;
+      case 'ai-download':
+        Promise.resolve().then(() => LocalAi.download({ model: btn.dataset.model })).then(aiRefresh).catch(() => toast('Couldn’t start the download'));
+        return;
+      case 'ai-cancel': Promise.resolve().then(() => LocalAi.cancel()).then(() => setTimeout(aiRefresh, 500)).catch(() => {}); return;
+      case 'ai-run': aiRun(btn.dataset.which); break;
+      case 'ai-remove-ask': ui.ai.removeAsk = true; break;
+      case 'ai-remove-no': ui.ai.removeAsk = false; break;
+      case 'ai-remove':
+        ui.ai.removeAsk = false;
+        Promise.resolve().then(() => LocalAi.remove()).then(() => { toast('AI model removed'); aiRefresh(); }).catch(() => {});
+        return;
       case 'report-open': ui.report = true; ui.reportFocused = false; ui.reportThenPay = false; break;
       case 'report-done': {
         const r = Core.monthReport(state, t);
@@ -3105,6 +3225,7 @@
   state = load();
   assignWaitingSaved();
   if (NATIVE) collectNative();
+  aiRefresh();
   const fromHash = (location.hash || '').replace('#', '');
   tab = TABS.indexOf(fromHash) !== -1 ? fromHash : 'home';
   render();
