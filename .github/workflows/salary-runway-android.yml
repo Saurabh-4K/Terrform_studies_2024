@@ -64,6 +64,18 @@ jobs:
         if: steps.changes.outputs.build == 'true'
         run: npm test
 
+      # The on-phone AI downloads its model from Hugging Face. Show what the
+      # model repositories hold, so a renamed or removed file is spotted here.
+      - name: Check the AI model download
+        if: steps.changes.outputs.build == 'true'
+        continue-on-error: true
+        run: |
+          for repo in litert-community/Qwen2.5-1.5B-Instruct litert-community/Qwen2.5-0.5B-Instruct; do
+            echo "== $repo"
+            curl -sS "https://huggingface.co/api/models/$repo?blobs=true" \
+              | jq -r '"gated: \(.gated)", (.siblings[] | select(.rfilename | test("\\.(task|litertlm)$")) | "\(.size)\t\(.rfilename)")'
+          done
+
       - name: Copy the web app into the Android project
         if: steps.changes.outputs.build == 'true'
         run: npm run android:sync
