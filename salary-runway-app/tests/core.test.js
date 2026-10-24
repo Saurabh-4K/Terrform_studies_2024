@@ -793,3 +793,39 @@ test('rollover: choices and the safety-first suggestion', () => {
   s.savings.emergencyBalance = 40000;
   assert.equal(Core.rolloverOptions(s, 3000, '2026-10-10').recommended, 'debt');
 });
+
+test('where to invest: freedom first, then a split by age and risk comfort', () => {
+  const s = baseState({ debts: [{ id: 'd1', name: 'Card', balance: 50000, rate: 36, minPayment: 2500, dueDay: 7 }] });
+  s.savings.investMonthly = 3000;
+  assert.equal(Core.investPlan(s, '2026-10-10').stage, 'shield');
+  s.savings.emergencyBalance = 30000;
+  const d = Core.investPlan(s, '2026-10-10');
+  assert.equal(d.stage, 'debt');
+  assert.match(d.reason, /Card at 36%/);
+  s.debts[0].balance = 0;
+  assert.equal(Core.investPlan(s, '2026-10-10').stage, 'fund');
+  s.savings.emergencyBalance = 500000;
+  const g = Core.investPlan(s, '2026-10-10');
+  assert.equal(g.stage, 'invest');
+  // No age, medium risk: 60% equity, 30% debt, 10% gold, in whole hundreds.
+  assert.deepEqual([g.equity, g.debt, g.gold], [60, 30, 10]);
+  assert.deepEqual(g.lines.map((l) => l.amount), [1800, 900, 300]);
+  s.settings.age = 40; s.settings.risk = 'low';
+  const low = Core.investPlan(s, '2026-10-10');
+  assert.deepEqual([low.equity, low.debt], [45, 45]);
+  s.settings.age = 25; s.settings.risk = 'high';
+  assert.equal(Core.investPlan(s, '2026-10-10').equity, 85);
+});
+
+test('SIP projection grows monthly investments at the assumed rate', () => {
+  assert.equal(Core.sipValue(1000, 0, 10), 120000);
+  // ₹1,000 a month for 10 years at 12% a year: about ₹2.32 lakh.
+  assert.equal(Math.round(Core.sipValue(1000, 12, 10)), 232339);
+  const s = baseState();
+  s.savings.investMonthly = 2000;
+  s.settings.personal = false;
+  assert.equal(Core.personal(s), false);
+  assert.match(Core.rolloverOptions(s, 1000, '2026-10-10').options.find((o) => o.to === 'grow').detail, /SEBI-registered/);
+  s.settings.personal = true;
+  assert.match(Core.rolloverOptions(s, 1000, '2026-10-10').options.find((o) => o.to === 'grow').detail, /Grow tab/);
+});

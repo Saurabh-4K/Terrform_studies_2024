@@ -315,6 +315,14 @@
       'Medical bills, a car repair, a family function or a tax bill. Enter the cost and see how to absorb it without new debt.',
       'The emergency fund is used first, then this month’s money. Grow and extra debt payments pause and flexible budgets are cut until the gap is made back.',
     ]],
+    invest: ['Where to invest', [
+      '<b>Freedom first:</b> a 30-day emergency shield, then loans at 15%+ interest, then investing alongside the emergency fund until it reaches its target.',
+      '<b>By when you need the money:</b> within a year: savings account, FD or liquid fund. 1–3 years: FD, RD or a short-duration debt fund. 3–5 years: a mix, or a balanced advantage fund. 5+ years: the split shown here.',
+      '<b>The split:</b> equity is 100 minus your age (60% if you leave age empty), lower for low risk comfort and higher for high, plus 10% gold. The rest goes to safe debt like PPF.',
+      '<b>Tax:</b> in the new tax regime (the default), PPF and ELSS give no 80C deduction, so choose them for returns and safety. In the old regime, up to ₹1.5 lakh a year in 80C lowers your tax.',
+      'The projection assumes equity 11%, debt 7% and gold 8% a year. Nothing is guaranteed, and PPF and FD rates change: check before you invest.',
+      'These are general rules of thumb for your own use, not personalised advice. Turn off Personal mode in the Plan tab before sharing the app.',
+    ]],
     borrow: ['Before you borrow', [
       'Enter a big expense to see how to pay it without a loan.',
       '<b>Needed now</b> (a repair, a hospital bill): your emergency fund goes first, since that’s what it’s for. Then this month’s Grow and extra loan payment, then this month’s money down to bills and basics.',
@@ -365,7 +373,9 @@
       'Salary Runway</div><span class="privacy-chip">Data stays on this device</span></header>' +
       banner +
       '<main id="view" class="stack" style="gap:16px">' + views[tab]() + '</main>' +
-      '<p class="disclaimer">Salary Runway is a budgeting tool. It does not give investment advice and is not registered with SEBI or RBI.</p>' +
+      '<p class="disclaimer">' + (Core.personal(state)
+        ? 'Personal mode: investment guidance here is general rules of thumb for your own use, not personalised advice.'
+        : 'Salary Runway is a budgeting tool. It does not give investment advice and is not registered with SEBI or RBI.') + '</p>' +
       '</div>' +
       '<nav class="tabbar" aria-label="Sections"><div class="tabbar-inner">' +
       TABS.map((t) =>
@@ -1618,6 +1628,7 @@
       '<section class="card" id="plan-summary">' + planSummary() + '</section>' +
 
       '<section class="card">' + titled('Your data', 'data') +
+      '<label class="check"><input id="personal-mode" type="checkbox"' + (Core.personal(state) ? ' checked' : '') + '> Personal mode: show where to invest (for my own use)</label>' +
       '<div class="row"><button data-action="backup">' + (ui.backup ? 'Hide backup' : 'Show backup') + '</button>' +
       '<button data-action="restore-toggle">Restore from backup</button>' +
       '<button data-action="load-demo">Load example data</button>' +
@@ -1990,7 +2001,9 @@
       [3, 6].map((m) => '<option value="' + m + '"' + (Number(sv.emergencyTargetMonths) === m ? ' selected' : '') + '>' + m + ' months</option>').join('') + '</select></label></div>' +
       '<div class="bar-row"><div class="bar-top"><span>' + inr(sv.emergencyBalance) + ' of ' + inr(target) + '</span><span class="amt">' + Math.round(fundPct) + '%</span></div>' +
       '<div class="bar"><span style="width:' + fundPct.toFixed(1) + '%"></span></div></div>' +
-      '<p class="hint">' + fundNote + '</p></section>' +
+      '<p class="hint">' + fundNote + '</p>' +
+      (Core.personal(state) ? '<p class="hint"><b>Where to keep it:</b> one month of needs in your savings account, the rest in a sweep-in FD or a liquid fund. Both pay more and give money back within about a day.</p>' : '') +
+      '</section>' +
 
       (state.sinking.length
         ? '<section class="card"><h2>Yearly costs</h2><div class="bars">' + state.sinking.map((f) => {
@@ -2003,17 +2016,47 @@
 
       viewEmergency() +
 
-      '<section class="card"><div class="card-head">' + titled('Grow', 'grow') + '<span class="hint">Money set aside to invest</span></div>' +
+      '<section class="card"><div class="card-head">' + titled('Grow', Core.personal(state) ? 'invest' : 'grow') + '<span class="hint">Money set aside to invest</span></div>' +
       '<div class="tiles" style="grid-template-columns:repeat(2,minmax(0,1fr))">' +
       tile('Set aside so far', inr(sv.investSaved), 'From your Grow budget') +
       tile('Each month', inr(p.invest), p.invest ? 'Grow budget' : 'Not started yet') + '</div>' +
-      '<div class="callout"><b>Ready to invest this money?</b>' +
-      '<span>Talk to a <b>SEBI-registered investment adviser</b> before investing. They can look at your goals and suggest options that suit you. All investments carry risk, and the decision is yours.</span></div>' +
+      (Core.personal(state)
+        ? investGuide()
+        : '<div class="callout"><b>Ready to invest this money?</b>' +
+          '<span>Talk to a <b>SEBI-registered investment adviser</b> before investing. They can look at your goals and suggest options that suit you. All investments carry risk, and the decision is yours.</span></div>') +
       '</section>' +
 
       '<section class="card"><h2>Learn the basics</h2>' + LESSONS.map((l) =>
         '<details class="lesson"><summary>' + l[0] + '</summary><p>' + l[1] + '</p></details>').join('') + '</section>'
     );
+  }
+
+  const STAGE_TITLES = {
+    shield: 'Not yet: build your 30-day shield first',
+    debt: 'Not yet: clear costly loans first',
+    fund: 'Start investing, alongside your fund',
+    invest: 'Ready to invest',
+  };
+
+  // Personal mode: where the Grow budget goes, freedom first.
+  function investGuide() {
+    const g = Core.investPlan(state, today());
+    const ready = g.stage === 'fund' || g.stage === 'invest';
+    return '<div class="callout ' + (ready ? 'good' : 'warn') + '"><b>' + STAGE_TITLES[g.stage] + '</b><span class="hint">' + esc(g.reason) + '</span></div>' +
+      '<div class="form-grid">' + numInput('age', 'settings.age', state.settings.age || '', 'Your age', ' max="100" placeholder="Optional"') +
+      '<div class="field wide"><span>Risk comfort</span><div class="seg" role="group" aria-label="Risk comfort">' +
+      [['low', 'Low'], ['medium', 'Medium'], ['high', 'High']].map((x) =>
+        '<button data-action="set-risk" data-risk="' + x[0] + '" aria-pressed="' + (g.risk === x[0]) + '">' + x[1] + '</button>').join('') + '</div></div></div>' +
+      '<span class="eyebrow">' + (ready ? '' : 'When you’re ready: ') + 'Split for money you won’t need for 5+ years</span>' +
+      '<div class="bars">' + g.lines.map((l) =>
+        '<div class="bar-row invest-line"><div class="bar-top"><span><b>' + l.pct + '%</b> ' + l.title + '</span><span class="amt">' + (g.monthly ? inr(l.amount) + '/mo' : '') + '</span></div>' +
+        '<div class="bar"><span class="k-' + l.key + '" style="width:' + l.pct + '%"></span></div>' +
+        '<p class="hint">' + l.detail + '</p></div>').join('') + '</div>' +
+      (g.projection.length
+        ? '<div class="summary"><span class="eyebrow">' + inr(g.monthly) + ' a month at an assumed ' + g.blended + '% a year</span>' +
+          g.projection.map((x) => '<div class="line"><span>In ' + x.years + ' years<span class="hint line-sub">' + inr(x.invested) + ' put in</span></span><span class="good">' + inr(x.value) + '</span></div>').join('') +
+          '<span class="hint">Assumed, not guaranteed. Markets fall as well as rise.</span></div>'
+        : '<p class="hint">Set a Grow budget in the Plan tab to see monthly amounts.</p>');
   }
 
   const LESSONS = [
@@ -2206,6 +2249,7 @@
       }
       case 'tx-kind': ui.txKind = btn.dataset.kind; break;
       case 'help': ui.help = btn.dataset.help; break;
+      case 'set-risk': state.settings.risk = btn.dataset.risk; save(); break;
       case 'borrow-open': ui.borrow = { amount: Number(btn.dataset.amount) || 0, urgent: true, months: 12, focus: true }; break;
       case 'borrow-mode': ui.borrow.urgent = btn.dataset.urgent === '1'; break;
       case 'borrow-months': ui.borrow.months = Number(btn.dataset.months) || 12; break;
@@ -2484,6 +2528,10 @@
 
   document.addEventListener('change', (ev) => {
     const el = ev.target;
+    if (el.id === 'personal-mode') {
+      state.settings.personal = el.checked;
+      save(); toast(el.checked ? 'Personal mode on: the Grow tab shows where to invest' : 'Personal mode off'); rerenderKeepScroll(); return;
+    }
     if (el.dataset.balance) {
       if (el.value === '') return;
       setBalance(el.value); toast('Balance saved'); return;

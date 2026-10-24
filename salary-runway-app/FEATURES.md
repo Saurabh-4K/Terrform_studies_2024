@@ -261,6 +261,22 @@ The suggestion follows the usual safety-first order. A chosen amount is added to
 
 ## 12. Grow tab: safety nets and saving
 
+### Where to invest (Personal mode)
+The Grow card shows where the Grow budget should go, freedom first:
+1. **Not yet: build your 30-day shield first**, while Days of Freedom are under 30
+2. **Not yet: clear costly loans first**, with a loan at 15%+ ("paying it off is a sure 42% return; no investment reliably beats that")
+3. **Start investing, alongside your fund**, while the emergency fund grows to its target
+4. **Ready to invest**
+
+**The split for money you won't need for 5+ years** comes from your age (optional) and risk comfort (Low / Medium / High). Equity is 100 minus your age, or 60% if age is empty. It's 15 points lower for low risk comfort and 10 higher for high, kept between 20% and 85%. Gold is 10%, and the rest is debt. Each part shows its share of the Grow budget a month:
+- **Nifty 50 index fund, monthly SIP** (direct plan). With high risk comfort, up to a third can go to Nifty Next 50 or flexi-cap.
+- **PPF, or VPF through your employer.** FD or RD for money needed in 1–3 years.
+- **Gold ETF or gold mutual fund**, not jewellery.
+
+**Projection:** what the monthly amount becomes in 5, 10 and 20 years at an assumed blend of equity 11%, debt 7% and gold 8% a year, marked *assumed, not guaranteed*. The emergency fund card adds **where to keep it**: one month in a savings account, the rest in a sweep-in FD or liquid fund. The (i) explains:
+- what to use by when you need the money
+- the tax point: in the new regime, PPF and ELSS give no 80C deduction
+
 - **This month's set-aside:** what to move aside this cycle, with *I've moved this money aside* to add it to your funds.
 - **Saved from daily leftovers** this month.
 - **Days of Freedom:** the emergency fund as time. *6 Days of Freedom 🛡️* means it covers your basics (fixed payments, loan minimums, bills that vary, groceries and health) for that long, at your own daily cost. Badges: **Unprotected** (0 days), **Starter shield** (1–14), **Incident proof** (15–89), **Unshakeable** (90+). At 0 days: *Every ₹1,253 saved buys one day of complete financial security.* Until basics are set up: *Add your fixed payments and budgets to see your Days of Freedom.*
@@ -311,6 +327,9 @@ Built from your last three salary cycles, with every point in rupees:
 
 ## 16. Regulatory design
 
+**Personal mode (on now).** The app is used only by its owner, so it shows where to invest (see *Where to invest* in section 12). Giving investment advice to other people needs SEBI registration. **Turn Personal mode off** (Plan tab → Your data) before anyone else uses the app or it's published. It then works as below.
+
+With Personal mode off:
 - The app does budgeting, debt planning and savings set-asides only.
 - It **never suggests investment products, funds, banks, advisers or risk levels**. It points to SEBI-registered advisers, at the user's own risk.
 - No referral fees or commissions, no moving money, no lending, no Account Aggregator.

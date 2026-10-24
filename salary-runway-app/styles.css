@@ -464,3 +464,9 @@ label.check input { width: 18px; height: 18px; accent-color: var(--accent); }
 .borrow-card .seg { justify-self: start; }
 .borrow-card:focus { outline: none; }
 #borrow-form .field { min-width: 140px; }
+
+/* ---------- where to invest (personal mode) ---------- */
+.invest-line .hint { margin-top: 4px; }
+.bar span.k-equity { background: var(--accent); }
+.bar span.k-debt { background: var(--good); opacity: 0.6; }
+.bar span.k-gold { background: var(--caution); }

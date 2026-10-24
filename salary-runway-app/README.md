@@ -53,7 +53,7 @@ npm run android:apk   # APK at android/app/build/outputs/apk/debug/app-debug.apk
 | **Spend** | Payments and money received (by hand, from bank SMS, or from the home-screen widget), **Needs your check** for SMS payments, bills to pay, the "what should this money do?" card, and *Paid from* (account or card). Categories are learned per shop. |
 | **Plan** | Salary, payday and **pay over the year**, fixed payments, **bills that vary**, yearly costs, monthly set-asides and flexible budgets (worked out automatically; edit any amount and the rest adjust), and your data (backup, restore, SMS cleanup). |
 | **Debts** | **Credit cards** (bill, due date, limit used, pay full / minimum / part / EMI with real costs) and **loans** with a payoff plan: *minimums only*, *highest interest first*, *smallest balance first*. When a loan ends, **keep paying yourself** its EMI. |
-| **Grow** | Savings from daily leftovers, monthly set-aside check-in, emergency fund, yearly costs, **emergency mode**, money set aside to invest (with a pointer to SEBI-registered advisers), and short lessons. |
+| **Grow** | Savings from daily leftovers, monthly set-aside check-in, emergency fund, yearly costs, **emergency mode**, money set aside to invest with **where to invest** (Personal mode) or a pointer to SEBI-registered advisers, and short lessons. |
 
 ### Credit cards: staying out of the card trap
 Card spending doesn't leave your bank account today, so it makes a month look better than it is, and the bill lands on next month's salary. The app closes that gap.
@@ -116,7 +116,9 @@ Enter what happened and what it costs. The app:
 
 ## Regulatory design: no SEBI or RBI licence needed
 
-The prototype is deliberately limited to **budgeting and debt planning**:
+**Personal mode is on now:** the app is for its owner only, so the Grow tab shows where to invest (index fund SIP, PPF/VPF, gold, by age and risk comfort). Advising anyone else needs SEBI registration, so **turn Personal mode off** (Plan tab → Your data) before sharing or publishing. With it off, the rules below apply.
+
+With Personal mode off, the app is limited to **budgeting and debt planning**:
 
 - It **never suggests investment types, products, funds, banks or risk levels**. The Grow budget only sets aside an amount, and the app tells the user to consult a **SEBI-registered investment adviser**, at their own risk.
 - No referral fees or commissions from any financial company.

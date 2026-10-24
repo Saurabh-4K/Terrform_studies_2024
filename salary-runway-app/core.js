@@ -1151,7 +1151,8 @@
     options.push({
       use: 'grow',
       title: 'Set aside to invest',
-      detail: 'Adds to the ' + rupeesIn(Number(state.savings.investSaved) || 0) + ' you’ve set aside to invest. Talk to a SEBI-registered investment adviser before investing it.',
+      detail: 'Adds to the ' + rupeesIn(Number(state.savings.investSaved) || 0) + ' you’ve set aside to invest. ' +
+        (personal(state) ? 'The Grow tab shows how to split it.' : 'Talk to a SEBI-registered investment adviser before investing it.'),
     });
 
     const s = suggestUse(state, todayIso, without.zeroPace ? 'Without this money, at your current pace you run out on ' + shortDate(without.zeroPace) + ', before payday.' : null);
@@ -1421,10 +1422,85 @@
       title: 'Build your emergency fund',
       detail: f ? '+' + Math.floor(amount / f.daily) + ' Days of Freedom every month.' : 'Adds ' + rupeesIn(amount) + ' a month to your emergency fund.',
     });
-    options.push({ to: 'grow', title: 'Set aside to invest', detail: rupeesIn(amount) + ' a month to invest. Talk to a SEBI-registered investment adviser about where.' });
+    options.push({ to: 'grow', title: 'Set aside to invest', detail: rupeesIn(amount) + ' a month to invest. ' + (personal(state) ? 'The Grow tab shows how to split it.' : 'Talk to a SEBI-registered investment adviser about where.') });
     options.push({ to: 'spend', title: 'Spend it', detail: 'Your flexible budgets grow by ' + rupeesIn(amount) + ' a month.' });
     const s = suggestUse(state, todayIso, null);
     return { options, recommended: s.use === 'debt' && !debts.length ? 'emergency' : s.use, reason: s.reason };
+  }
+
+  // ---------- investing (personal mode) ----------
+
+  /*
+   * Personal mode: the app's owner uses it for themselves, so it can say
+   * where to invest. Off, it only sets the amount aside and points to a
+   * SEBI-registered adviser (for sharing or publishing the app).
+   */
+  function personal(state) { return state.settings.personal !== false; }
+
+  // Assumed long-run yearly returns for the projection. Not guaranteed.
+  const ASSUMED_RETURN = { equity: 11, debt: 7, gold: 8 };
+
+  // What `monthly` invested every month grows to after `years` at `rate`% a year.
+  function sipValue(monthly, rate, years) {
+    const i = rate / 1200;
+    const n = years * 12;
+    return i > 0 ? monthly * ((Math.pow(1 + i, n) - 1) / i) * (1 + i) : monthly * n;
+  }
+
+  /*
+   * Where the Grow budget goes, freedom first:
+   * 1. shield: a 30-day emergency fund comes before any investing
+   * 2. debt: loans at 15%+ come next (a sure return no investment beats)
+   * 3. fund: the emergency fund keeps growing to its target alongside
+   * 4. invest: everything is in place
+   * The split for money left 5+ years: equity is 100 minus age (60% without
+   * an age), moved by risk comfort, between 20% and 85%; gold 10%; the rest
+   * debt (PPF, EPF/VPF).
+   */
+  function investPlan(state, todayIso) {
+    const st = state.settings;
+    const risk = st.risk === 'low' || st.risk === 'high' ? st.risk : 'medium';
+    const age = Number(st.age) || 0;
+    const f = freedomDays(state, todayIso);
+    const days = f ? f.days : 0;
+    const p = monthlyPlan(Object.assign({}, state, { adjustment: null }), todayIso);
+    const months = Number(state.savings.emergencyTargetMonths) || 3;
+    const target = months * (p.fixedTotal + p.debtMin + p.variableBills + p.flexTotal);
+    const fund = Number(state.savings.emergencyBalance) || 0;
+    const costly = state.debts.filter((d) => d.balance > 0 && d.rate >= 15).sort((a, b) => b.rate - a.rate);
+
+    let stage = 'invest';
+    if (days < 30) stage = 'shield';
+    else if (costly.length) stage = 'debt';
+    else if (fund < target) stage = 'fund';
+
+    let equity = (age ? Math.min(80, Math.max(30, 100 - age)) : 60) + (risk === 'low' ? -15 : risk === 'high' ? 10 : 0);
+    equity = Math.min(85, Math.max(20, equity));
+    const gold = 10;
+    const debt = 100 - equity - gold;
+
+    const monthly = p.invest;
+    const share = (pct) => Math.floor((monthly * pct) / 100 / 100) * 100;
+    const amounts = { debt: share(debt), gold: share(gold) };
+    amounts.equity = monthly - amounts.debt - amounts.gold;
+    const lines = [
+      { key: 'equity', pct: equity, amount: amounts.equity, title: 'Nifty 50 index fund, monthly SIP',
+        detail: risk === 'high' ? 'Direct plan. With high risk comfort, up to a third can go to a Nifty Next 50 or flexi-cap fund.' : 'Direct plan, low cost. Prices will fall at times: keep the SIP going and stay 5+ years.' },
+      { key: 'debt', pct: debt, amount: amounts.debt, title: 'PPF, or VPF through your employer',
+        detail: 'Government-backed and steady. PPF is tax-free with a 15-year lock-in. Money needed in 1–3 years: FD or RD instead.' },
+      { key: 'gold', pct: gold, amount: amounts.gold, title: 'Gold ETF or gold mutual fund',
+        detail: 'Balances the rest when markets fall. Better than jewellery: no making charges.' },
+    ];
+    const blended = (equity * ASSUMED_RETURN.equity + debt * ASSUMED_RETURN.debt + gold * ASSUMED_RETURN.gold) / 100;
+    const projection = monthly > 0 ? [5, 10, 20].map((y) => ({ years: y, invested: monthly * 12 * y, value: Math.round(sipValue(monthly, blended, y)) })) : [];
+
+    let reason;
+    if (stage === 'shield') reason = 'First, a 30-day emergency shield: you have ' + days + (days === 1 ? ' day' : ' days') + '. Investing before it means the next surprise goes on a card.';
+    else if (stage === 'debt') reason = 'First, clear ' + costly[0].name + ' at ' + costly[0].rate + '% a year. Paying it off is a sure ' + costly[0].rate + '% return; no investment reliably beats that.';
+    else if (stage === 'fund') reason = 'Your 30-day shield is up and there are no costly loans. Invest alongside the emergency fund while it grows to its ' + months + '-month target.';
+    else reason = 'Emergency fund full and no costly loans: you’re ready to invest.';
+
+    return { stage, reason, risk, age, equity, debt, gold, monthly, lines, blended: Math.round(blended * 10) / 10, projection, costly: costly[0] || null };
   }
 
   // ---------- bank SMS parsing ----------
@@ -1629,7 +1705,7 @@
     billShare, billPot, billsMonthly, billPaidIn, billDue, payBill, undoBillPayment, zoneStatus, ESSENTIAL_CATEGORIES,
     isCardTransfer, statementOn, dueAfter, cardOwedAt, cardReserve, cardStatus, emiQuote, revolveQuote, cardBillPlan,
     recordCardPayment, convertCardBalance, undoCardConvert, cardFreeDays, byCategory, DEFAULT_SPLIT,
-    isLoanCredit, borrowedThisCycle, borrowCheck, rolloverOptions,
+    isLoanCredit, borrowedThisCycle, borrowCheck, rolloverOptions, personal, investPlan, sipValue, ASSUMED_RETURN,
   };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = Core;
