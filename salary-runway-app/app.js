@@ -15,6 +15,8 @@
   const LANG_KEY = 'salary-runway-lang';
   // The Runway graph open or closed, remembered on this phone.
   const CHART_KEY = 'salary-runway-chart';
+  // The spending view chosen on the Spend tab (Where, When or Trend).
+  const VIZ_KEY = 'salary-runway-viz';
   const TABS = ['home', 'spend', 'plan', 'debts', 'grow'];
   const EMERGENCY_TYPES = [
     'Medical', 'Vehicle repair', 'Family function', 'Death in family', 'Tax payment',
@@ -174,6 +176,7 @@
     ringOffset: null,
     counted: false,
     chartOpen: false,
+    viz: 'where',
   };
 
   // ---------- storage ----------
@@ -335,6 +338,12 @@
       'Pay isn’t the same every month. Record what came in and why it changed: a bonus, tax, leave or a deduction. This month’s budgets are planned on what actually came in.',
       'A lasting change, like a raise or a new tax slab? Tick <b>This is my new usual pay</b>.',
       'Your pay over the year is on the Plan tab.',
+    ]],
+    viz: ['Your spending, 3 ways', [
+      '<b>Where:</b> each category this month against its budget (coral past the budget line), and how much went on basics (groceries, health, bills) against everything else.',
+      '<b>When:</b> every day this month, darker for more spending; the middle shade is your daily amount. A coral dot marks a day you used a credit card. Below it, your average for each weekday over the last three months.',
+      '<b>Trend:</b> spent, saved and borrowed for each month. This month counts only the days so far.',
+      'Tap a bar or a day to see its amount. <b>See the numbers</b> shows the same thing as a table.',
     ]],
     add: ['Money out, in and saved', [
       '<b>Money out:</b> anything you paid. If you paid by credit card, pick the card in <b>Paid from</b>; it counts as spent today.',
@@ -1580,6 +1589,144 @@
 
   // ---------- spend ----------
 
+  // ---------- spending, three ways ----------
+
+  const pct = (part, whole) => (whole > 0 ? Math.round((part / whole) * 100) : 0);
+
+  // A mark the reader can tap (or hover) to see its exact amount below the chart.
+  function tipAttrs(text) {
+    return ' data-action="viz-tip" data-tip="' + esc(text) + '" aria-label="' + esc(text) + '"';
+  }
+
+  function showVizTip(el) {
+    const tip = document.getElementById('viz-tip');
+    if (!tip || !el.dataset.tip) return;
+    tip.textContent = el.dataset.tip;
+    document.querySelectorAll('.viz-card [data-tip].on').forEach((x) => x.classList.remove('on'));
+    el.classList.add('on');
+  }
+
+  function numbersTable(head, rows) {
+    return '<details class="viz-table"><summary>' + tr('See the numbers') + '</summary><div class="table-wrap"><table><thead><tr>' +
+      head.map((h) => '<th>' + h + '</th>').join('') + '</tr></thead><tbody>' +
+      rows.map((r) => '<tr>' + r.map((c, i) => '<td' + (i ? ' class="amt"' : '') + '>' + c + '</td>').join('') + '</tr>').join('') + '</tbody></table></div></details>';
+  }
+
+  // Where: categories against budget, and basics against everything else.
+  function vizWhere() {
+    const w = Core.spendWhere(state, today());
+    if (!w.total) return '<p class="hint">' + tr('Nothing spent yet this month.') + '</p>';
+    const scale = Math.max.apply(null, w.categories.map((c) => Math.max(c.spent, c.budget)));
+    const rows = w.categories.map((c) => {
+      const within = c.budget ? Math.min(c.spent, c.budget) : c.spent;
+      const over = c.budget ? Math.max(0, c.spent - c.budget) : 0;
+      const tip = label(c.name) + ': ' + (c.budget ? tr('{spent} of {budget}', { spent: inr(c.spent), budget: inr(c.budget) }) : inr(c.spent)) +
+        (over ? ' · ' + tr('{amount} over', { amount: inr(over) }) : '');
+      return '<button class="viz-row"' + tipAttrs(tip) + '><span class="viz-row-top"><span>' + esc(label(c.name)) + '</span><span class="amt">' + inr(c.spent) +
+        (over ? ' <b class="bad">' + tr('+{amount} over', { amount: inr(over) }) + '</b>' : c.budget ? ' <small>' + tr('of {amount}', { amount: inr(c.budget) }) + '</small>' : '') + '</span></span>' +
+        '<span class="viz-track"><span class="viz-fill s1" style="width:' + ((within / scale) * 100).toFixed(1) + '%"></span>' +
+        (over ? '<span class="viz-fill over" style="width:' + ((over / scale) * 100).toFixed(1) + '%"></span>' : '') +
+        (c.budget ? '<i class="viz-budget" style="left:' + ((c.budget / scale) * 100).toFixed(1) + '%"></i>' : '') + '</span></button>';
+    });
+    const b = pct(w.basics, w.total);
+    return '<p class="viz-q">' + tr('Where does my money go?') + '</p>' +
+      '<div class="viz-split" role="img" aria-label="' + esc(tr('Basics {a}, everything else {b}', { a: inr(w.basics), b: inr(w.other) })) + '">' +
+      (w.basics ? '<span class="viz-fill s1" style="flex-grow:' + w.basics + '"' + tipAttrs(tr('Basics: {amount} ({pct}%)', { amount: inr(w.basics), pct: b })) + '></span>' : '') +
+      (w.other ? '<span class="viz-fill s4" style="flex-grow:' + w.other + '"' + tipAttrs(tr('Everything else: {amount} ({pct}%)', { amount: inr(w.other), pct: 100 - b })) + '></span>' : '') + '</div>' +
+      '<div class="viz-legend"><span><i class="s1"></i>' + tr('Basics {amount} ({pct}%)', { amount: inr(w.basics), pct: b }) + '</span>' +
+      '<span><i class="s4"></i>' + tr('Everything else {amount} ({pct}%)', { amount: inr(w.other), pct: 100 - b }) + '</span></div>' +
+      '<div class="viz-rows">' + rows.join('') + '</div>' +
+      '<div class="viz-legend"><span><i class="s1"></i>' + tr('Spent') + '</span><span><i class="over"></i>' + tr('Over budget') + '</span><span><i class="tick"></i>' + tr('Budget') + '</span></div>' +
+      numbersTable([tr('Category'), tr('Spent'), tr('Budget')], w.categories.map((c) => [esc(label(c.name)), inr(c.spent), c.budget ? inr(c.budget) : '–']));
+  }
+
+  // The calendar's shade: the middle one is about your daily amount.
+  function heatLevel(amount, daily) {
+    if (!amount) return 0;
+    const x = daily > 0 ? amount / daily : 1;
+    return x < 0.5 ? 1 : x < 1 ? 2 : x < 1.5 ? 3 : x < 2.5 ? 4 : 5;
+  }
+
+  function weekdayNames() {
+    // 5 Jan 2026 was a Monday.
+    return [0, 1, 2, 3, 4, 5, 6].map((i) => new Date(2026, 0, 5 + i).toLocaleDateString(I18N.locale(), { weekday: 'short' }));
+  }
+
+  // When: this month day by day, and the average for each weekday.
+  function vizWhen() {
+    const w = Core.spendWhen(state, today());
+    const names = weekdayNames();
+    const lead = (Core.parseISO(w.cycle.start).getDay() + 6) % 7;
+    const cells = [];
+    for (let i = 0; i < lead; i++) cells.push('<span class="cal-cell blank"></span>');
+    w.days.forEach((d) => {
+      const tip = fmtDate(d.date) + ': ' + (d.amount ? inr(d.amount) : tr('nothing spent')) + (d.card ? ' · ' + tr('card used') : '');
+      cells.push('<button class="cal-cell lvl-' + heatLevel(d.amount, w.daily) + (d.date === today() ? ' today' : '') + '"' + tipAttrs(tip) + '>' +
+        Core.parseISO(d.date).getDate() + (d.card ? '<i class="cal-card"></i>' : '') + '</button>');
+    });
+    const max = Math.max.apply(null, w.weekdays.concat([1]));
+    const top = w.weekdays.indexOf(Math.max.apply(null, w.weekdays));
+    const bars = w.weekdays.map((v, i) =>
+      '<button class="wk-bar"' + tipAttrs(tr('{day}: about {amount} a day', { day: names[i], amount: inr(v) })) + '>' +
+      (i === top && v ? '<small>' + inr(v) + '</small>' : '') +
+      '<span class="wk-fill s1" style="height:' + Math.max(2, (v / max) * 100).toFixed(1) + '%"></span><span class="wk-name">' + names[i] + '</span></button>');
+    const any = w.weekdays.some((v) => v > 0);
+    return '<p class="viz-q">' + tr('When do I spend?') + '</p>' +
+      '<div class="cal" role="group" aria-label="' + tr('Spending each day this month') + '">' +
+      names.map((n) => '<span class="cal-head">' + n + '</span>').join('') + cells.join('') + '</div>' +
+      '<div class="viz-legend"><span><i class="lvl-0"></i>' + tr('Nothing spent') + '</span>' +
+      '<span class="ramp">' + tr('Less') + ' <i class="lvl-1"></i><i class="lvl-2"></i><i class="lvl-3"></i><i class="lvl-4"></i><i class="lvl-5"></i> ' + tr('More') + '</span>' +
+      '<span><i class="cal-card-key"></i>' + tr('Card used') + '</span></div>' +
+      '<p class="hint">' + tr('The middle shade is about your daily amount ({amount}).', { amount: inr(w.daily) }) + '</p>' +
+      (any
+        ? '<p class="viz-q small">' + tr('Your average day, last 3 months') + '</p><div class="wk">' + bars.join('') + '</div>' +
+          '<p class="viz-insight">' + tr('You spend most on {day}: about {amount} a day.', { day: names[top], amount: inr(w.weekdays[top]) }) + '</p>'
+        : '') +
+      numbersTable([tr('Day'), tr('Average a day')], w.weekdays.map((v, i) => [names[i], inr(v)]));
+  }
+
+  // Trend: spent, saved and borrowed, month by month.
+  function vizTrend() {
+    let months = Core.spendTrend(state, today(), 6);
+    while (months.length > 1 && !months[0].recorded) months = months.slice(1);
+    const max = Math.max.apply(null, months.map((m) => Math.max(m.spent, m.saved, m.borrowed)).concat([1]));
+    const step = niceStep(max, 2);
+    const top = Math.ceil(max / step) * step;
+    const name = (m) => monthName(Core.parseISO(m.start).getMonth());
+    const series = [['spent', 's1', 'Spent'], ['saved', 's2', 'Saved'], ['borrowed', 's3', 'Borrowed']];
+    const groups = months.map((m) =>
+      '<div class="tr-group' + (m.current ? ' current' : '') + '"><div class="tr-bars">' +
+      series.map(([k, cls, nm]) => '<button class="tr-bar ' + cls + '" style="height:' + Math.max(m[k] ? 2 : 0, (m[k] / top) * 100).toFixed(1) + '%"' +
+        tipAttrs(name(m) + (m.current ? ' (' + tr('so far') + ')' : '') + ': ' + tr(nm) + ' ' + inr(m[k]) + ' · ' + tr('pay {amount}', { amount: inr(m.salary) })) + '></button>').join('') +
+      '</div><span class="tr-name">' + name(m) + (m.current ? '*' : '') + '</span></div>');
+    const grid = [top, top / 2, 0].map((v) => '<span class="tr-grid" style="bottom:' + ((v / top) * 100).toFixed(1) + '%"><small>' + (v >= 1000 ? '₹' + Math.round(v / 1000) + 'k' : inr(v)) + '</small></span>').join('');
+    const full = months.filter((m) => !m.current);
+    let insight = '';
+    if (full.length >= 2) {
+      const a = full[full.length - 2];
+      const b = full[full.length - 1];
+      const ch = a.spent ? Math.round(((b.spent - a.spent) / a.spent) * 100) : 0;
+      insight = tr(ch <= 0 ? '{month} spending was {pct}% lower than the month before.' : '{month} spending was {pct}% higher than the month before.', { month: name(b), pct: Math.abs(ch) });
+    }
+    const cur = months[months.length - 1];
+    return '<p class="viz-q">' + tr('Am I getting better?') + '</p>' +
+      '<div class="tr-chart" role="img" aria-label="' + tr('Spent, saved and borrowed each month') + '">' + grid + '<div class="tr-groups">' + groups.join('') + '</div></div>' +
+      '<div class="viz-legend"><span><i class="s1"></i>' + tr('Spent') + '</span><span><i class="s2"></i>' + tr('Saved') + '</span><span><i class="s3"></i>' + tr('Borrowed') + '</span></div>' +
+      '<p class="hint">' + tr('* This month so far: spent {spent}, saved {saved}, borrowed {borrowed}.', { spent: inr(cur.spent), saved: inr(cur.saved), borrowed: inr(cur.borrowed) }) + '</p>' +
+      (insight ? '<p class="viz-insight">' + insight + '</p>' : '') +
+      numbersTable([tr('Month'), tr('Spent'), tr('Saved'), tr('Borrowed')], months.map((m) => [name(m) + (m.current ? '*' : ''), inr(m.spent), inr(m.saved), inr(m.borrowed)]));
+  }
+
+  function vizCard() {
+    if (!state.settings.salary) return '';
+    const views = [['where', 'Where'], ['when', 'When'], ['trend', 'Trend']];
+    const body = ui.viz === 'when' ? vizWhen() : ui.viz === 'trend' ? vizTrend() : vizWhere();
+    return '<section class="card viz-card"><div class="card-head">' + titled('Your spending, 3 ways', 'viz') + '</div>' +
+      '<div class="seg viz-seg" role="group" aria-label="' + tr('View') + '">' + views.map(([k, nm]) =>
+        '<button data-action="viz-view" data-view="' + k + '" aria-pressed="' + (ui.viz === k) + '">' + tr(nm) + '</button>').join('') + '</div>' +
+      body + '<p class="viz-tip" id="viz-tip" aria-live="polite">' + tr('Tap a bar or a day to see its amount.') + '</p></section>';
+  }
+
   function viewSpend() {
     const t = today();
     const cyc = Core.cycleFor(t, Number(state.settings.payday) || 1);
@@ -1612,6 +1759,7 @@
         : '') +
       '<div class="wide"><button class="primary" type="submit">' + tr(moneyIn ? 'Add money received' : 'Add payment') + '</button></div>' +
       '</form>') + '</section>' +
+      vizCard() +
 
       (NATIVE
         ? '<section class="card"><div class="card-head">' + titled('Bank SMS', 'sms') + (state.smsAuto ? modeChip(true) : '') + '</div>' +
@@ -2543,6 +2691,11 @@
         try { localStorage.removeItem(KEY); } catch (e) { /* ignore */ }
         state = emptyState(); ui.confirmWipe = false; ui.backup = null; save(); toast('All data erased'); break;
       case 'backup': ui.backup = ui.backup ? null : JSON.stringify(state); break;
+      case 'viz-view':
+        ui.viz = btn.dataset.view;
+        try { localStorage.setItem(VIZ_KEY, ui.viz); } catch (e) { /* private mode */ }
+        break;
+      case 'viz-tip': showVizTip(btn); return;
       case 'chart-toggle':
         ui.chartOpen = !ui.chartOpen;
         try { localStorage.setItem(CHART_KEY, ui.chartOpen ? '1' : ''); } catch (e) { /* private mode */ }
@@ -3121,6 +3274,12 @@
     resizeTimer = setTimeout(() => { if (tab === 'home') drawRunway(); }, 150);
   });
 
+  // Hovering a chart mark with a mouse shows its amount too (a tap does it on a phone).
+  document.addEventListener('pointerover', (ev) => {
+    const el = ev.pointerType === 'mouse' && ev.target.closest ? ev.target.closest('.viz-card [data-tip]') : null;
+    if (el) showVizTip(el);
+  });
+
   document.addEventListener('keydown', (ev) => {
     if (ev.key === 'Escape' && ui.help) { ui.helpFrom = ui.help; ui.help = null; rerenderKeepScroll(); }
     else if (ev.key === 'Escape' && ui.borrow) { ui.borrow = null; rerenderKeepScroll(); }
@@ -3344,7 +3503,10 @@
   }
 
   setLang(loadLang());
-  try { ui.chartOpen = localStorage.getItem(CHART_KEY) === '1'; } catch (e) { /* private mode */ }
+  try {
+    ui.chartOpen = localStorage.getItem(CHART_KEY) === '1';
+    ui.viz = ['where', 'when', 'trend'].indexOf(localStorage.getItem(VIZ_KEY)) !== -1 ? localStorage.getItem(VIZ_KEY) : 'where';
+  } catch (e) { /* private mode */ }
   state = load();
   assignWaitingSaved();
   if (NATIVE) collectNative();

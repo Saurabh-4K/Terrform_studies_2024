@@ -925,3 +925,36 @@ test('a bill with no amount yet isn’t due and sets nothing aside', () => {
   const events = Core.cycleEvents(s, Core.cycleFor('2026-10-10', 1), '2026-10-10');
   assert.deepEqual(events.filter((e) => e.kind === 'bill' || e.kind === 'billpot').map((e) => [e.name, e.amount]), [['Electricity', 1200]]);
 });
+
+test('spending three ways: where, when and the monthly trend', () => {
+  const s = baseState({
+    budgets: [{ id: 'b1', name: 'Food', amount: 1000 }, { id: 'b2', name: 'Groceries', amount: 3000 }],
+    cards: [{ id: 'c1', name: 'HDFC', last4: '1234', limit: 50000, rate: 42, statementDay: 5, dueDay: 25 }],
+    transactions: [
+      { id: 'a', date: '2026-11-02', amount: 1500, category: 'Food', paidFrom: 'c1' }, // a Monday
+      { id: 'b', date: '2026-11-03', amount: 500, category: 'Groceries' },
+      { id: 'm', kind: 'move', date: '2026-11-03', amount: 300, useFor: 'emergency' },
+      { id: 'l', kind: 'in', date: '2026-10-20', amount: 4000, borrowed: true, category: 'Loan' },
+      { id: 'o', date: '2026-10-12', amount: 700, category: 'Food' }, // a Monday
+    ],
+  });
+  const w = Core.spendWhere(s, '2026-11-03');
+  assert.deepEqual(w.categories, [{ name: 'Food', spent: 1500, budget: 1000 }, { name: 'Groceries', spent: 500, budget: 3000 }]);
+  assert.deepEqual([w.total, w.basics, w.other], [2000, 500, 1500]);
+
+  const h = Core.spendWhen(s, '2026-11-03');
+  assert.deepEqual(h.days, [
+    { date: '2026-11-01', amount: 0, card: false },
+    { date: '2026-11-02', amount: 1500, card: true },
+    { date: '2026-11-03', amount: 500, card: false },
+  ]);
+  // Mondays from 12 Oct (the first entry) to yesterday: 12, 19, 26 Oct and 2 Nov
+  assert.equal(h.weekdays[0], Math.round((700 + 1500) / 4));
+  assert.equal(h.weekdays[1], 0);
+
+  const t = Core.spendTrend(s, '2026-11-03', 2);
+  assert.deepEqual(t.map((m) => [m.start, m.spent, m.saved, m.borrowed, m.current]), [
+    ['2026-10-01', 700, 0, 4000, false],
+    ['2026-11-01', 2000, 300, 1500, true],
+  ]);
+});

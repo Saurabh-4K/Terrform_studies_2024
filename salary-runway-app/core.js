@@ -1508,6 +1508,88 @@
     };
   }
 
+  // ---------- spending, three ways ----------
+
+  // Basics: what has to be paid whatever happens. Everything else is a choice.
+  const BASICS = ['Groceries', 'Health', 'Bills', 'Emergency'];
+
+  // Where: spending by category this cycle (to today), against budget, and basics vs the rest.
+  function spendWhere(state, todayIso) {
+    const cycle = cycleFor(todayIso, Number(state.settings.payday) || 1);
+    const txs = state.transactions.filter((t) => isFlexible(t) && inCycle(t.date, cycle) && t.date <= todayIso);
+    const spent = byCategory(txs);
+    const budgets = {};
+    monthlyPlan(state, todayIso).budgets.forEach((b) => { budgets[b.name] = b.amount; });
+    const categories = Object.keys(spent).map((name) => ({ name, spent: spent[name], budget: budgets[name] || 0 }))
+      .sort((a, b) => b.spent - a.spent);
+    const basics = sum(categories.filter((c) => BASICS.indexOf(c.name) !== -1), (c) => c.spent);
+    const total = sum(categories, (c) => c.spent);
+    return { cycle, categories, total, basics, other: total - basics };
+  }
+
+  /*
+   * When: each day of this cycle so far (amount, card used), and the average
+   * for each weekday over the last three cycles, Monday first. Days with
+   * nothing spent count, so a quiet Sunday pulls Sunday's average down.
+   */
+  function spendWhen(state, todayIso) {
+    const payday = Number(state.settings.payday) || 1;
+    const cycle = cycleFor(todayIso, payday);
+    const flex = state.transactions.filter(isFlexible);
+    const byDate = {};
+    flex.forEach((t) => {
+      const d = byDate[t.date] || (byDate[t.date] = { amount: 0, card: false });
+      d.amount += t.amount;
+      if (t.paidFrom && t.paidFrom !== 'account') d.card = true;
+    });
+    const days = [];
+    for (let d = cycle.start; d <= todayIso && d < cycle.next; d = addDays(d, 1)) {
+      days.push({ date: d, amount: byDate[d] ? byDate[d].amount : 0, card: !!(byDate[d] && byDate[d].card) });
+    }
+    const from = previousCycle(previousCycle(cycle, payday), payday).start;
+    const firstTx = flex.reduce((m, t) => (t.date < m ? t.date : m), todayIso);
+    const start = firstTx > from ? firstTx : from;
+    const totals = [0, 0, 0, 0, 0, 0, 0];
+    const counts = [0, 0, 0, 0, 0, 0, 0];
+    for (let d = start; d < todayIso; d = addDays(d, 1)) {
+      const w = (parseISO(d).getDay() + 6) % 7;
+      totals[w] += byDate[d] ? byDate[d].amount : 0;
+      counts[w]++;
+    }
+    const weekdays = totals.map((x, i) => (counts[i] ? Math.round(x / counts[i]) : 0));
+    const plan = monthlyPlan(state, todayIso);
+    return { cycle, days, weekdays, daily: plan.flexTotal / cycle.days };
+  }
+
+  /*
+   * Trend: the last `n` cycles, oldest first (the current one so far): pay,
+   * spent (flexible and bills), saved (anything moved to savings or loans,
+   * payday set-asides included) and borrowed (card spending and loans).
+   */
+  function spendTrend(state, todayIso, n) {
+    const payday = Number(state.settings.payday) || 1;
+    const pay = salaryHistory(state, todayIso, n || 6);
+    const out = [];
+    let c = cycleFor(todayIso, payday);
+    for (let i = 0; i < (n || 6); i++) {
+      const cyc = c;
+      const txs = state.transactions.filter((t) => inCycle(t.date, cyc) && t.date <= todayIso);
+      out.unshift({
+        start: cyc.start,
+        current: i === 0,
+        salary: 0,
+        spent: sum(txs.filter((t) => isFlexible(t) || isBillPayment(t)), (t) => t.amount),
+        saved: sum(txs.filter(isMove), (t) => t.amount),
+        borrowed: sum(txs.filter((t) => isFlexible(t) && t.paidFrom && t.paidFrom !== 'account'), (t) => t.amount) +
+          sum(txs.filter((t) => isIncome(t) && t.borrowed), (t) => t.amount),
+        recorded: txs.length > 0,
+      });
+      c = previousCycle(c, payday);
+    }
+    out.forEach((m, i) => { m.salary = pay[i] ? pay[i].amount : 0; });
+    return out;
+  }
+
   // ---------- report for an AI chat ----------
 
   /*
@@ -1949,7 +2031,7 @@
     isCardTransfer, statementOn, dueAfter, cardOwedAt, cardReserve, cardStatus, emiQuote, revolveQuote, cardBillPlan,
     recordCardPayment, convertCardBalance, undoCardConvert, cardFreeDays, byCategory, DEFAULT_SPLIT,
     isLoanCredit, borrowedThisCycle, borrowCheck, rolloverOptions, personal, investPlan, sipValue, ASSUMED_RETURN, setTranslator,
-    monthReport, aiReport,
+    monthReport, aiReport, spendWhere, spendWhen, spendTrend, BASICS,
   };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = Core;
