@@ -1,4 +1,4 @@
-name: Salary Runway Android APK
+name: Hisab Se Android APK
 
 # One release a week: Sunday 03:21 UTC (about 8:51 AM in India).
 # Pushes don't build. Use "Run workflow" on the Actions tab for an urgent build,
@@ -102,5 +102,5 @@ jobs:
           gh release create "$TAG" SalaryRunway.apk \
             --target "$GITHUB_SHA" \
             --prerelease \
-            --title "Salary Runway Android (build $GITHUB_RUN_NUMBER)" \
+            --title "Hisab Se Android (build $GITHUB_RUN_NUMBER)" \
             --notes "Open this page on your Android phone and tap SalaryRunway.apk to download. Allow installs from your browser when Android asks. New builds install over the old one and keep your data."

@@ -1,6 +1,6 @@
 {
   "appId": "com.salaryrunway.app",
-  "appName": "Salary Runway",
+  "appName": "Hisab Se",
   "webDir": "www",
   "android": {
     "allowMixedContent": false

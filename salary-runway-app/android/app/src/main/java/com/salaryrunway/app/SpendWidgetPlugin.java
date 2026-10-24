@@ -1,5 +1,8 @@
 package com.salaryrunway.app;
 
+import android.content.Context;
+import android.media.AudioManager;
+
 import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
@@ -55,5 +58,15 @@ public class SpendWidgetPlugin extends Plugin {
         } catch (JSONException e) {
             call.reject("Could not clear widget entries: " + e.getMessage());
         }
+    }
+
+    /** The phone's ring mode, so the app's sounds stay quiet on silent or vibrate: { mode: normal | vibrate | silent }. */
+    @PluginMethod
+    public void ringerMode(PluginCall call) {
+        AudioManager audio = (AudioManager) getContext().getSystemService(Context.AUDIO_SERVICE);
+        int mode = audio != null ? audio.getRingerMode() : AudioManager.RINGER_MODE_NORMAL;
+        JSObject out = new JSObject();
+        out.put("mode", mode == AudioManager.RINGER_MODE_NORMAL ? "normal" : mode == AudioManager.RINGER_MODE_VIBRATE ? "vibrate" : "silent");
+        call.resolve(out);
     }
 }

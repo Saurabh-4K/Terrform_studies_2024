@@ -1,5 +1,5 @@
 /*
- * Salary Runway: core calculations.
+ * Hisab Se (formerly Salary Runway): core calculations.
  *
  * Pure functions only (no DOM, no storage) so they can run in the browser
  * and be tested with Node. Dates are local calendar dates as 'YYYY-MM-DD'.
@@ -1616,7 +1616,7 @@
     const f = freedomDays(state, todayIso);
     const L = [];
 
-    L.push('# Salary Runway: my money report for next month’s plan');
+    L.push('# Hisab Se: my money report for next month’s plan');
     L.push('Made on ' + reportDate(todayIso) + '. Last month: ' + span(last) + '. Next payday: ' + reportDate(now.next) + '.');
     L.push('');
     L.push('## Instructions for the AI (follow exactly)');
@@ -1668,7 +1668,7 @@
       L.push(factsText(sofar, false, state));
       L.push('');
     }
-    return { name: 'salary-runway-report-' + todayIso + '.txt', text: L.join('\n') };
+    return { name: 'hisab-se-report-' + todayIso + '.txt', text: L.join('\n') };
   }
 
   // ---------- investing (personal mode) ----------

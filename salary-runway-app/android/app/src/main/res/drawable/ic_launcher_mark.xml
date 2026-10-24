@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Launcher icon foreground: the Hisab Se logo inside the adaptive icon's safe zone, on cream (ic_launcher_background). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group android:translateX="54" android:translateY="54" android:scaleX="0.06744" android:scaleY="0.06744">
+        <group android:translateX="-966.5" android:translateY="-817.5">
+        <path android:fillColor="#0C3B3D" android:pathData="M741.5,410 A113.5,113.5 0 0 1 855,523.5 L855,1111.5 A113.5,113.5 0 0 1 741.5,1225 A113.5,113.5 0 0 1 628,1111.5 L628,523.5 A113.5,113.5 0 0 1 741.5,410 Z" />
+        <path android:fillColor="#0C3B3D" android:pathData="M1191.5,410 A113.5,113.5 0 0 1 1305,523.5 L1305,1111.5 A113.5,113.5 0 0 1 1191.5,1225 A113.5,113.5 0 0 1 1078,1111.5 L1078,523.5 A113.5,113.5 0 0 1 1191.5,410 Z" />
+        <path android:strokeColor="#F5F1E3" android:strokeWidth="110" android:strokeLineCap="round" android:strokeLineJoin="round" android:pathData="M740,1037 L955,762 L978,893 L1193,602" />
+        <path android:strokeColor="#0C3B3D" android:strokeWidth="46" android:strokeLineCap="round" android:strokeLineJoin="round" android:pathData="M740,1037 L955,762 L978,893 L1193,602" />
+        <path android:fillColor="#F2553A" android:pathData="M674,1037 a66,66 0 1,0 132,0 a66,66 0 1,0 -132,0 Z" />
+        <path android:fillColor="#79E3C3" android:pathData="M1127,602 a66,66 0 1,0 132,0 a66,66 0 1,0 -132,0 Z" />
+        </group>
+    </group>
+</vector>

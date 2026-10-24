@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Hisab Se logo: two pillars, the line from red (debt) up to green (freedom). Drawn on a cream circle in the widget. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="860"
+    android:viewportHeight="860">
+    <group android:translateX="-535" android:translateY="-390">
+        <path android:fillColor="#0C3B3D" android:pathData="M741.5,410 A113.5,113.5 0 0 1 855,523.5 L855,1111.5 A113.5,113.5 0 0 1 741.5,1225 A113.5,113.5 0 0 1 628,1111.5 L628,523.5 A113.5,113.5 0 0 1 741.5,410 Z" />
+        <path android:fillColor="#0C3B3D" android:pathData="M1191.5,410 A113.5,113.5 0 0 1 1305,523.5 L1305,1111.5 A113.5,113.5 0 0 1 1191.5,1225 A113.5,113.5 0 0 1 1078,1111.5 L1078,523.5 A113.5,113.5 0 0 1 1191.5,410 Z" />
+        <path android:strokeColor="#F5F1E3" android:strokeWidth="110" android:strokeLineCap="round" android:strokeLineJoin="round" android:pathData="M740,1037 L955,762 L978,893 L1193,602" />
+        <path android:strokeColor="#0C3B3D" android:strokeWidth="46" android:strokeLineCap="round" android:strokeLineJoin="round" android:pathData="M740,1037 L955,762 L978,893 L1193,602" />
+        <path android:fillColor="#F2553A" android:pathData="M674,1037 a66,66 0 1,0 132,0 a66,66 0 1,0 -132,0 Z" />
+        <path android:fillColor="#79E3C3" android:pathData="M1127,602 a66,66 0 1,0 132,0 a66,66 0 1,0 -132,0 Z" />
+    </group>
+</vector>

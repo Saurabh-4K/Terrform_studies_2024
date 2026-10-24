@@ -1,4 +1,6 @@
-# Salary Runway: complete feature list
+# Hisab Se: complete feature list
+
+*Hisab Se was called Salary Runway until October 2026. The app ID stays `com.salaryrunway.app`, so updates keep your data.*
 
 Everything the app can do today, screen by screen, with the rules it follows. For installing and the code, see [README.md](README.md).
 
@@ -125,7 +127,7 @@ Under the headline: **Borrowed this month: ₹0 ✓** in green, or the amount in
 - **Can wait** (a purchase): whether it fits this month, what the next salary leaves free, and **save first or pay in EMIs** for 3, 6 or 12 months: *Save ₹2,500 a month, ready by Apr 2027, ₹15,000* against *EMI at 16%, ₹15,708*: **saving first keeps ₹708**. "Keep your emergency fund for emergencies."
 
 ### Zone
-A three-part meter, **Green · Careful · Red**, with a headline that says what to do.
+A zone label on the Runway card, **Green · Careful · Red**, with a headline that says what to do.
 
 | Zone | When | What the app says |
 |---|---|---|
@@ -141,17 +143,27 @@ A three-part meter, **Green · Careful · Red**, with a headline that says what 
 3. Spend only on basics (a daily amount for groceries and health).
 4. Avoid the credit card for daily spending.
 
+### The Runway card
+The top of the Runway tab, in the Hisab Se colours (deep teal, cream, mint for good, coral for bad, amber for careful):
+- **A coach line first**, one friendly sentence: *Slow down a little. You're nearly at payday.*, *Today went over. Tomorrow is a fresh start.*, *You're on track. Keep it going.*, or a streak within the daily amount.
+- **The ring:** today's amount left (it empties as you spend; coral and "over today" when you go over), with the zone (Green, Careful, Red), the headline and what to do.
+- **The road to payday:** a line from payday to payday with a dot for today; coral from the day the money would run out at this pace, or "About ₹X left on payday".
+- **Wins:** card-free days in a row (or days within the daily amount, without cards), ₹ borrowed this month (coral if not ₹0), and days of freedom.
+- **A coral + button** (every tab but Spend) opens Spend with the amount ready to type.
+- **Light animation:** the ring moves to the new amount and the amount counts up when the app opens. Nothing loops; the phone's *reduce animations* setting turns it off. A short burst of colour marks a real win.
+- **Sounds** (Plan → Language card, on by default): a tick when an expense is saved, a chime for a win, a low note when today goes over. Made on the spot (no sound files), quiet when the phone is on silent or vibrate.
+
 ### Graph
+One tap away: **Your runway graph → Show** (remembered on the phone).
 - Balance so far (solid line), **if you keep this pace** (dashed), **if you keep to budget** (dotted).
 - **Red band:** what bills and basics still need from each day to payday. If a line dips into it, trouble is coming.
 - Dots for bills and EMIs, a *Today* marker, and the date the pace line crosses ₹0.
 
 ### Tiles
-- **Left to spend today:** today's amount, minus what you've spent today.
+- **Left to spend today** is the ring on the Runway card.
   - Today's amount is the smaller of (a) the flexible budget left divided by the days to payday, and (b) the money in the account after bills still to come, divided by the days to payday.
   - If you go over: "₹147 over today's ₹200. Tomorrow: ₹182."
 - **Balance now:** worked out from your plan, or from your last balance check, with *Update*.
-- **Next salary:** days to payday.
 - **Flexible spending:** spent against the budget, including money received, since the balance check if there is one.
 
 ### Next payday preview
@@ -326,7 +338,7 @@ Built from your last three salary cycles, with every point in rupees:
 ## 14. Android app extras
 
 - **Home-screen widget "Spend today"** (3×2 by default, resizable):
-  - A deep-green card with the Salary Runway logo and name, a faint runway line in the corner, **Payday in 8 days**, and a bar showing how much of today's amount is left. Shrunk to one row (Android 12+, or after resizing), it shows a compact version: logo, amount and + Add.
+  - A deep-teal card with the Hisab Se logo and name, a faint runway line in the corner, **Payday in 8 days**, and a bar showing how much of today's amount is left. Shrunk to one row (Android 12+, or after resizing), it shows a compact version: logo, amount and + Add.
   - Shows what's left to spend today. When you go over: **Over by ₹147 · Tomorrow's safe spend drops to ₹135**, in amber. This updates even for expenses added from the widget or card SMS while the app is closed.
   - **+ Add** opens a small window over the home screen (amount, category, note) to record an expense **without opening the app**. The widget's amount drops straight away, and the app saves the expense next time it opens.
   - After midnight it shows "Open app" until the app works out the new day.

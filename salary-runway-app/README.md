@@ -1,4 +1,6 @@
-# Salary Runway (prototype)
+# Hisab Se (prototype)
+
+*Formerly Salary Runway. The visible name and icon changed; the app ID `com.salaryrunway.app`, the signing key and the saved-data keys did not, so updates keep everyone's data.*
 
 Shows the date your salary runs out and helps you plan your money with budgets, a debt payoff plan and an emergency mode.
 
@@ -19,13 +21,13 @@ It opens with **example numbers** (₹55,000 salary, rent, a bike EMI, a credit 
 
 ## Install on Android
 
-A new APK is released **once a week, on Sunday morning** (about 8:50 AM India time), and only if something changed that week. Pushing code doesn't build anything. For an urgent fix, open the repository's **Actions** tab, choose **Salary Runway Android APK**, then **Run workflow**.
+A new APK is released **once a week, on Sunday morning** (about 8:50 AM India time), and only if something changed that week. Pushing code doesn't build anything. For an urgent fix, open the repository's **Actions** tab, choose **Hisab Se Android APK**, then **Run workflow**.
 
 On your phone:
 
 1. Open **https://github.com/Saurabh-4K/Terrform_studies_2024/releases/tag/salary-runway-latest** and tap **SalaryRunway.apk**.
 2. When Android asks, allow your browser to install apps ("Install unknown apps").
-3. Open **Salary Runway**. On the Spend tab, tap **Read bank SMS** and allow SMS access to record payments from bank and UPI alerts.
+3. Open **Hisab Se**. On the Spend tab, tap **Read bank SMS** and allow SMS access to record payments from bank and UPI alerts.
 
 New builds install over the old one and keep your data, because every build is signed with the same key (`android/app/salary-runway.keystore`). That key is in the repo for convenience, so it only suits personal sideloading. Publishing to the Play Store needs a private key kept out of the repo.
 

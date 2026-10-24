@@ -1,5 +1,5 @@
 /*
- * Salary Runway: user interface.
+ * Hisab Se (formerly Salary Runway): user interface.
  * Everything is stored in this browser's localStorage. Nothing is sent anywhere.
  */
 (function () {
@@ -13,6 +13,8 @@
   Core.setTranslator(tr, (iso) => fmtDate(iso));
   const KEY = 'salary-runway-v1';
   const LANG_KEY = 'salary-runway-lang';
+  // The Runway graph open or closed, remembered on this phone.
+  const CHART_KEY = 'salary-runway-chart';
   const TABS = ['home', 'spend', 'plan', 'debts', 'grow'];
   const EMERGENCY_TYPES = [
     'Medical', 'Vehicle repair', 'Family function', 'Death in family', 'Tax payment',
@@ -58,9 +60,62 @@
     } catch (e) { /* no vibration available */ }
   }
 
+  /*
+   * Three short sounds, made on the spot (no sound files): a tick when an
+   * expense is saved, a chime for a win, a low note when today goes over.
+   * Quiet when sounds are off in Plan, or the phone is on silent or vibrate.
+   */
+  let audio = null;
+  function sound(kind) {
+    if (state.settings.sounds === false) return;
+    const ring = SpendWidget ? Promise.resolve().then(() => SpendWidget.ringerMode()).then((r) => r.mode === 'normal', () => true) : Promise.resolve(true);
+    ring.then((ok) => {
+      if (!ok) return;
+      try {
+        const Ctx = window.AudioContext || window.webkitAudioContext;
+        if (!Ctx) return;
+        audio = audio || new Ctx();
+        const notes = { tick: [[1200, 0, 0.06, 'sine']], chime: [[880, 0, 0.14, 'sine'], [1320, 0.12, 0.2, 'sine']], low: [[220, 0, 0.24, 'triangle']] }[kind] || [];
+        notes.forEach(([freq, at, len, type]) => {
+          const t0 = audio.currentTime + at;
+          const osc = audio.createOscillator();
+          const gain = audio.createGain();
+          osc.type = type;
+          osc.frequency.value = freq;
+          gain.gain.setValueAtTime(0.0001, t0);
+          gain.gain.exponentialRampToValueAtTime(0.06, t0 + 0.01);
+          gain.gain.exponentialRampToValueAtTime(0.0001, t0 + len);
+          osc.connect(gain).connect(audio.destination);
+          osc.start(t0);
+          osc.stop(t0 + len + 0.02);
+        });
+      } catch (e) { /* no sound available */ }
+    });
+  }
+
+  // A short burst of colour for a real win. Gone in a second, never loops.
+  function confetti() {
+    if (REDUCE_MOTION) return;
+    const box = document.createElement('div');
+    box.className = 'confetti';
+    box.setAttribute('aria-hidden', 'true');
+    const colours = ['#79E3C3', '#F2553A', '#F5B83D', '#0C3B3D'];
+    for (let i = 0; i < 16; i++) {
+      const bit = document.createElement('i');
+      bit.style.setProperty('--x', Math.round(Math.cos((i / 16) * 2 * Math.PI) * (90 + (i % 3) * 30)) + 'px');
+      bit.style.setProperty('--y', Math.round(Math.sin((i / 16) * 2 * Math.PI) * (70 + (i % 4) * 20) - 40) + 'px');
+      bit.style.background = colours[i % colours.length];
+      box.appendChild(bit);
+    }
+    document.body.appendChild(box);
+    setTimeout(() => box.remove(), 1100);
+  }
+
   // Positive feedback for moving money to safety, with honest numbers.
   function celebrate(msg) {
     haptic();
+    sound('chime');
+    confetti();
     toast(msg, 'good');
   }
 
@@ -116,6 +171,9 @@
     report: false,
     reportHidden: false,
     reportFocused: false,
+    ringOffset: null,
+    counted: false,
+    chartOpen: false,
   };
 
   // ---------- storage ----------
@@ -371,7 +429,7 @@
     ]],
     grow: ['Grow', [
       'Check that an adviser is registered on SEBI’s website: <a href="https://www.sebi.gov.in/sebiweb/other/OtherAction.do?doRecognisedFpi=yes&amp;intmId=13" target="_blank" rel="noopener">sebi.gov.in → Intermediaries → Investment Advisers</a>.',
-      'Salary Runway doesn’t recommend any adviser, product, bank or fund, and earns nothing from them.',
+      'Hisab Se doesn’t recommend any adviser, product, bank or fund, and earns nothing from them.',
     ]],
   };
 
@@ -393,6 +451,13 @@
       '<div><button class="primary" data-action="help-close">' + tr('Got it') + '</button></div></div></div>';
   }
 
+  // The Hisab Se logo: two pillars, the line from red (debt) up to green (freedom).
+  const LOGO = '<svg class="brand-mark" viewBox="600 390 730 860" aria-hidden="true">' +
+    '<rect x="628" y="410" width="227" height="815" rx="113.5" style="fill:var(--ink)"/><rect x="1078" y="410" width="227" height="815" rx="113.5" style="fill:var(--ink)"/>' +
+    '<path d="M740 1037 L955 762 L978 893 L1193 602" stroke-width="110" fill="none" stroke-linejoin="round" stroke-linecap="round" style="stroke:var(--bg)"/>' +
+    '<path d="M740 1037 L955 762 L978 893 L1193 602" stroke-width="46" fill="none" stroke-linejoin="round" stroke-linecap="round" style="stroke:var(--ink)"/>' +
+    '<circle cx="740" cy="1037" r="66" fill="#F2553A"/><circle cx="1193" cy="602" r="66" fill="#79E3C3"/></svg>';
+
   function render() {
     const app = document.getElementById('app');
     const banner = state.isDemo
@@ -403,21 +468,22 @@
     app.innerHTML =
       '<div class="shell">' +
       '<header class="topbar"><div class="brand">' +
-      '<svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5 L21 19" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" fill="none"/><circle cx="21" cy="19" r="2.5" fill="var(--bad)"/><circle cx="3" cy="5" r="2.5" fill="var(--accent)"/></svg>' +
-      'Salary Runway</div><span class="privacy-chip">' + tr('Data stays on this device') + '</span></header>' +
+      LOGO + 'Hisab Se</div><span class="privacy-chip">' + tr('Data stays on this device') + '</span></header>' +
       banner +
       '<main id="view" class="stack" style="gap:16px">' + views[tab]() + '</main>' +
       '<p class="disclaimer">' + tr(Core.personal(state)
         ? 'Personal mode: investment guidance here is general rules of thumb for your own use, not personalised advice.'
-        : 'Salary Runway is a budgeting tool. It does not give investment advice and is not registered with SEBI or RBI.') + '</p>' +
+        : 'Hisab Se is a budgeting tool. It does not give investment advice and is not registered with SEBI or RBI.') + '</p>' +
       '</div>' +
       '<nav class="tabbar" aria-label="' + tr('Sections') + '"><div class="tabbar-inner">' +
       TABS.map((t) =>
         '<button data-action="tab" data-tab="' + t + '"' + (t === tab ? ' aria-current="page"' : '') + '>' +
         '<svg viewBox="0 0 24 24" aria-hidden="true">' + ICONS[t] + '</svg>' + tr(TAB_LABELS[t]) + '</button>'
       ).join('') +
-      '</div></nav>' + resetModal() + helpModal() + borrowModal() + reportModal();
-    if (tab === 'home') drawRunway();
+      '</div></nav>' +
+      (tab !== 'spend' && state.settings.salary ? '<button class="fab" data-action="fab-add" aria-label="' + tr('Add an expense') + '"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></svg></button>' : '') +
+      resetModal() + helpModal() + borrowModal() + reportModal();
+    if (tab === 'home') { drawRunway(); animateRunway(); }
     if (ui.reset) {
       const first = document.querySelector('#reset-card input, #reset-card button.primary');
       if (first) first.focus();
@@ -473,9 +539,7 @@
       sub = tr('You’re spending about {pace} a day. Keep to <b>{safe} a day</b> until payday and you’ll stay out of the red.', { pace: inr(r.paceRate), safe: inr(z.safeDaily) });
     } else {
       headline = tr('You’re in the green');
-      sub = tr('At this pace you reach payday on {date} with about <b>{amount}</b> left.', { date: fmtDate(cyc.next), amount: inr(r.endPace) }) +
-        (streak >= 2 ? ' ' + tr('{days} in a row within your daily amount. Keep it going.', { days: plural(streak, 'day') }) : '') +
-        (Core.cardFreeDays(state, t) >= 3 ? ' ' + plural(Core.cardFreeDays(state, t), 'card-free day') + '.' : '');
+      sub = tr('At this pace you reach payday on {date} with about <b>{amount}</b> left.', { date: fmtDate(cyc.next), amount: inr(r.endPace) });
     }
 
     // Joined mid-cycle: budgets cover only the days from the balance check.
@@ -500,13 +564,11 @@
       rolloverCard() +
       loanDebtNote() +
       '<section class="hero">' +
-      '<div class="hero-top"><p class="eyebrow">' + tr('Salary cycle · {from} – {to} · day {day} of {days}', { from: fmtDate(cyc.start), to: fmtDate(lastDay), day: r.idxToday + 1, days: cyc.days }) + '</p>' + info('runway') + '</div>' +
-      zoneMeter(z.zone) +
-      '<h1>' + headline + '</h1><p class="sub">' + sub + '</p>' + borrowedLine() +
+      '<p class="eyebrow">' + tr('Salary cycle · {from} – {to} · day {day} of {days}', { from: fmtDate(cyc.start), to: fmtDate(lastDay), day: r.idxToday + 1, days: cyc.days }) + '</p>' +
+      '<p class="coach-line">' + coachLine(z, r, streak, daysToPay) + '</p>' +
+      runwayCard(r, z, cyc, daysToPay, headline, sub) +
       (z.zone === 'red' ? redOptions(z, r) : '') +
-      '<div class="chart-wrap"><div id="runway-chart" role="img" aria-label="' + tr('Balance through this salary cycle') + '"></div>' +
-      '<div class="legend"><span><i></i>' + tr('Balance so far') + '</span><span><i class="pace"></i>' + tr('If you keep this pace') + '</span><span><i class="plan"></i>' + tr('If you keep to budget') + '</span>' +
-      '<span><i class="red-band"></i>' + tr('Red zone: bills and basics still to pay') + '</span><span><svg width="10" height="10" aria-hidden="true"><circle cx="5" cy="5" r="4" class="c-event"/></svg>' + tr('Bill or EMI') + '</span></div></div>' +
+      winsRow(streak) +
       '</section>' +
       savedCard() +
       cardHomeNotes(cyc) +
@@ -521,14 +583,13 @@
         [adj.flexCutPct ? tr('Flexible budgets are {pct}% lower.', { pct: adj.flexCutPct }) : '', adj.pauseInvest ? tr('The Grow budget is paused.') : '', adj.pauseDebtExtra ? tr('Extra debt payments are paused.') : '']
           .filter(Boolean).join(' ') + '</span></div>' : '') +
       '<section class="tiles">' +
-      tile('Left to spend today', inr(r.leftToday), todayTileNote(r), true) +
       tile('Balance now', inr(r.balanceToday),
         (r.anchor ? tr('From your balance on {date}', { date: fmtDate(r.anchor.date) }) : tr('Worked out from your plan')) +
         ' · <button class="link" data-action="balance-open">' + tr('Update') + '</button>') +
-      tile('Next salary', plural(daysToPay, 'day'), fmtDate(cyc.next)) +
       tile('Flexible spending', inr(flexSpent), tr('of {amount} budget', { amount: inr(Math.round((r.plan.flexTotal * share) / 10) * 10) }) +
         (r.extraIn ? ' ' + tr('+ {amount} received', { amount: inr(r.extraIn) }) : '') + (r.anchor ? ' ' + tr('since {date}', { date: fmtDate(r.anchor.date) }) : '')) +
       '</section>' +
+      chartCard() +
       bigExpenseCard() +
       paydayPreviewCard() +
       '<section class="card"><div class="card-head"><h2>' + tr(r.anchor && r.anchorIdx > 0 ? 'You can spend until payday' : 'You can spend this cycle') + '</h2><button class="ghost" data-action="tab" data-tab="plan">' + tr('Adjust') + '</button></div>' +
@@ -894,10 +955,116 @@
     return html + '</section>';
   }
 
-  function zoneMeter(zone) {
-    const seg = (key, name) => '<span class="zone-seg zone-' + key + (zone === key ? ' on' : '') + '">' + tr(name) + '</span>';
-    return '<div class="zone-meter" role="img" aria-label="' + tr('Zone: {zone}', { zone: tr(zone === 'amber' ? 'Careful' : zone === 'red' ? 'Red' : 'Green') }) + '">' +
-      seg('green', 'Green') + seg('amber', 'Careful') + seg('red', 'Red') + '</div>';
+  // ---------- the Runway card ----------
+
+  // One friendly sentence first: what to do, before any number.
+  function coachLine(z, r, streak, daysToPay) {
+    if (r.overToday > 0 && r.savedToday < r.overToday) return tr('Today went over. Tomorrow is a fresh start.');
+    if (z.zone === 'red') return tr('Let’s protect the basics first.');
+    if (z.zone === 'amber') return tr(daysToPay <= 10 ? 'Slow down a little. You’re nearly at payday.' : 'Slow down a little and you’ll reach payday safely.');
+    if (streak >= 2) return tr('{days} in a row within your daily amount. Keep going!', { days: plural(streak, 'day') });
+    return tr('You’re on track. Keep it going.');
+  }
+
+  const RING = 2 * Math.PI * 52;
+
+  // Where the ring was last drawn, so it moves from there to the new amount.
+  function ringTarget(r) {
+    const over = r.overToday > 0 && r.savedToday < r.overToday;
+    const frac = over ? 1 : r.dailyAllowance > 0 ? Math.max(0, Math.min(1, r.leftToday / r.dailyAllowance)) : 0;
+    return RING * (1 - frac);
+  }
+
+  /*
+   * Today's amount as a ring (it empties as you spend), the zone and what to
+   * do, and the road to payday: today, and where the money would run out.
+   */
+  function runwayCard(r, z, cyc, daysToPay, headline, sub) {
+    const over = r.overToday > 0 && r.savedToday < r.overToday;
+    const zoneName = { green: 'Green', amber: 'Careful', red: 'Red' }[z.zone];
+    const from = ui.ringOffset == null ? RING : ui.ringOffset;
+    const pos = (iso) => Math.max(0, Math.min(100, (Core.daysBetween(cyc.start, iso) / cyc.days) * 100));
+    const today = pos(Core.addDays(cyc.start, r.idxToday));
+    const runsOut = r.zeroPace ? pos(r.zeroPace) : null;
+    return '<div class="runway-card zone-' + z.zone + '">' +
+      '<div class="runway-top">' +
+      '<div class="ring' + (over ? ' over' : '') + '"><svg viewBox="0 0 136 136" aria-hidden="true"><circle class="ring-track" cx="68" cy="68" r="52"/>' +
+      '<circle id="ring-fill" class="ring-fill" cx="68" cy="68" r="52" stroke-dasharray="' + RING.toFixed(1) + '" style="stroke-dashoffset:' + from.toFixed(1) + '" transform="rotate(-90 68 68)"/></svg>' +
+      '<div class="ring-text"><b' + (inr(over ? r.overToday : r.leftToday).length > 5 ? ' class="long"' : '') + ' data-count="' + Math.round(over ? r.overToday : r.leftToday) + '">' + inr(over ? r.overToday : r.leftToday) + '</b>' +
+      '<span>' + (over ? tr('over today') : tr('left of {amount} today', { amount: inr(r.dailyAllowance) })) + '</span></div></div>' +
+      '<div class="runway-say"><div class="runway-head"><span class="zone-pill">' + tr(zoneName) + '</span>' + info('runway') + '</div>' +
+      '<h1>' + headline + '</h1></div></div>' +
+      '<p class="runway-sub">' + sub + '</p>' +
+      '<div class="pay-strip">' +
+      '<div class="pay-labels"><span>' + fmtDate(cyc.start) + '</span><span class="' + (runsOut != null ? 'out' : '') + '">' +
+        (runsOut != null ? tr('₹0 on {date} at this pace', { date: fmtDate(r.zeroPace) }) : tr('About {amount} left on payday', { amount: inr(r.endPace) })) + '</span><span>' + fmtDate(cyc.next) + '</span></div>' +
+      '<div class="pay-track" aria-hidden="true"><span class="pay-done" style="width:' + today.toFixed(1) + '%"></span>' +
+        (runsOut != null ? '<span class="pay-out" style="left:' + runsOut.toFixed(1) + '%"></span>' : '') +
+        '<span class="pay-today" style="left:' + today.toFixed(1) + '%"></span></div>' +
+      '<p class="pay-days">' + tr('{days} to payday', { days: '<b>' + plural(daysToPay, 'day') + '</b>' }) + ' · ' + todayTileNote(r) + '</p>' +
+      '</div></div>';
+  }
+
+  // Small wins, in numbers: no card spending, nothing borrowed, the safety fund.
+  function winsRow(streak) {
+    const t = today();
+    const cardsUsed = (state.cards || []).length > 0;
+    const cf = Core.cardFreeDays(state, t);
+    const b = Core.borrowedThisCycle(state, t);
+    const f = Core.freedomDays(state, t);
+    const win = (cls, icon, value, name) => '<div class="win ' + cls + '"><span class="win-icon">' + icon + '</span><span><b>' + value + '</b><small>' + name + '</small></span></div>';
+    const flame = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3c1 3 4 5 4 9a4 4 0 0 1-8 0c0-2 1-3 2-4 0 2 1 3 2 3 0-3-1-5 0-8z" fill="currentColor"/></svg>';
+    const check = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12l4 4 10-10" stroke="currentColor" stroke-width="2.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+    const shield = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l7 3v5c0 5-3 8-7 10-4-2-7-5-7-10V6z" fill="currentColor"/></svg>';
+    return '<div class="wins" aria-label="' + tr('Your wins this month') + '">' +
+      (cardsUsed
+        ? win('w-flame', flame, String(cf), tr(cf === 1 ? 'card-free day' : 'card-free days'))
+        : win('w-flame', flame, String(streak), tr(streak === 1 ? 'day within budget' : 'days within budget'))) +
+      win(b.total ? 'w-bad' : 'w-good', check, inr(b.total), tr('borrowed this month')) +
+      win('w-shield', shield, String(f ? f.days : 0), tr(f && f.days === 1 ? 'day of freedom' : 'days of freedom')) +
+      '</div>';
+  }
+
+  // The full graph, one tap away.
+  function chartCard() {
+    if (!ui.chartOpen) {
+      return '<section class="card chart-card"><div class="card-head"><h2>' + tr('Your runway graph') + '</h2>' +
+        '<button class="ghost" data-action="chart-toggle" aria-expanded="false">' + tr('Show') + '</button></div></section>';
+    }
+    return '<section class="card chart-card"><div class="card-head"><h2>' + tr('Your runway graph') + '</h2>' +
+      '<button class="ghost" data-action="chart-toggle" aria-expanded="true">' + tr('Hide') + '</button></div>' +
+      '<div class="chart-wrap"><div id="runway-chart" role="img" aria-label="' + tr('Balance through this salary cycle') + '"></div>' +
+      '<div class="legend"><span><i></i>' + tr('Balance so far') + '</span><span><i class="pace"></i>' + tr('If you keep this pace') + '</span><span><i class="plan"></i>' + tr('If you keep to budget') + '</span>' +
+      '<span><i class="red-band"></i>' + tr('Red zone: bills and basics still to pay') + '</span><span><svg width="10" height="10" aria-hidden="true"><circle cx="5" cy="5" r="4" class="c-event"/></svg>' + tr('Bill or EMI') + '</span></div></div></section>';
+  }
+
+  const REDUCE_MOTION = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+
+  /*
+   * Light animation, once per change: the ring moves to today's amount, and
+   * on opening the app the amount counts up. Nothing loops, so it costs
+   * almost no battery; the phone's "reduce animations" setting turns it off.
+   */
+  function animateRunway() {
+    const fill = document.getElementById('ring-fill');
+    if (!fill) return;
+    const r = Core.projectRunway(state, today());
+    const target = ringTarget(r);
+    ui.ringOffset = target;
+    if (REDUCE_MOTION) { fill.style.strokeDashoffset = target.toFixed(1); return; }
+    requestAnimationFrame(() => requestAnimationFrame(() => { fill.style.strokeDashoffset = target.toFixed(1); }));
+    if (ui.counted) return;
+    ui.counted = true;
+    const el = document.querySelector('.ring-text [data-count]');
+    const end = Number(el && el.dataset.count) || 0;
+    if (!el || end <= 0) return;
+    const t0 = performance.now();
+    const step = (now) => {
+      const k = Math.min(1, (now - t0) / 700);
+      el.textContent = inr(end * (1 - Math.pow(1 - k, 3)));
+      if (k < 1) requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
   }
 
   // Ways out of the red, each with its amount.
@@ -965,14 +1132,6 @@
   }
 
   // ---------- before you borrow ----------
-
-  function borrowedLine() {
-    const b = Core.borrowedThisCycle(state, today());
-    let detail = ' ✓';
-    if (b.card && b.loans) detail = ' (' + tr('{card} on cards, {loans} in loans', { card: inr(b.card), loans: inr(b.loans) }) + ')';
-    else if (b.total) detail = ' ' + tr(b.card ? 'on cards' : 'in loans');
-    return '<p class="borrowed-line ' + (b.total ? 'bad' : 'good') + '">' + tr('Borrowed this month:') + ' <b>' + inr(b.total) + '</b>' + detail + '</p>';
-  }
 
   function bigExpenseCard() {
     return '<section class="card"><div class="card-head">' + titled('Big expense coming?', 'borrow') + '</div>' +
@@ -1737,7 +1896,8 @@
       rolloverCard() +
       '<section class="card lang-card"><div class="card-head"><h2>' + tr('Language') + '</h2>' +
       '<div class="seg" role="group" aria-label="' + tr('Language') + '">' + I18N.LANGS.map(([code, name]) =>
-        '<button data-action="set-lang" data-lang="' + code + '" lang="' + code + '" aria-pressed="' + (I18N.getLang() === code) + '">' + name + '</button>').join('') + '</div></div></section>' +
+        '<button data-action="set-lang" data-lang="' + code + '" lang="' + code + '" aria-pressed="' + (I18N.getLang() === code) + '">' + name + '</button>').join('') + '</div></div>' +
+      '<label class="check"><input id="sounds-on" type="checkbox"' + (s.sounds === false ? '' : ' checked') + '> ' + tr('Sounds (quiet when the phone is on silent)') + '</label></section>' +
       (s.salary ? '' : '<div class="callout"><b>' + tr('Start here.') + '</b><span class="hint">' + tr('Enter your salary and payday, then your fixed payments. Everything else can come later.') + '</span></div>') +
       '<section class="card">' + titled('Salary', 'salary') + '<div class="form-grid">' +
       numInput('salary', 'settings.salary', s.salary || '', 'Monthly salary in hand (₹)') +
@@ -2383,6 +2543,15 @@
         try { localStorage.removeItem(KEY); } catch (e) { /* ignore */ }
         state = emptyState(); ui.confirmWipe = false; ui.backup = null; save(); toast('All data erased'); break;
       case 'backup': ui.backup = ui.backup ? null : JSON.stringify(state); break;
+      case 'chart-toggle':
+        ui.chartOpen = !ui.chartOpen;
+        try { localStorage.setItem(CHART_KEY, ui.chartOpen ? '1' : ''); } catch (e) { /* private mode */ }
+        break;
+      case 'fab-add':
+        ui.txKind = 'out';
+        setTab('spend');
+        { const amount = document.getElementById('tx-amount'); if (amount) { amount.scrollIntoView({ block: 'center' }); amount.focus(); } }
+        return;
       case 'ai-report-share': shareAiReport(); return;
       case 'ai-report-copy': copyAiReport(); return;
       case 'backup-copy': {
@@ -2403,7 +2572,7 @@
           ui.restoreOpen = false; ui.restoreError = '';
           save(); toast('Backup restored');
         } catch (e) {
-          ui.restoreError = tr('That doesn’t look like a Salary Runway backup. Paste the full text from “Show backup”.');
+          ui.restoreError = tr('That doesn’t look like a Hisab Se backup. Paste the full text from “Show backup”.');
         }
         break;
       }
@@ -2731,6 +2900,12 @@
 
   document.addEventListener('change', (ev) => {
     const el = ev.target;
+    if (el.id === 'sounds-on') {
+      state.settings.sounds = el.checked;
+      save();
+      if (el.checked) sound('chime');
+      return;
+    }
     if (el.id === 'personal-mode') {
       state.settings.personal = el.checked;
       save(); toast(el.checked ? 'Personal mode on: the Grow tab shows where to invest' : 'Personal mode off'); rerenderKeepScroll(); return;
@@ -2924,8 +3099,10 @@
     }
     const from = document.getElementById('tx-from');
     if (ui.txKind !== 'in' && from && from.value !== 'account') tx.paidFrom = from.value;
+    const wasOver = Core.projectRunway(state, today()).overToday > 0;
     state.transactions.push(tx);
     save();
+    sound(ui.txKind !== 'in' && !wasOver && tx.date === today() && Core.projectRunway(state, today()).overToday > 0 ? 'low' : 'tick');
     toast(ui.txKind === 'in' ? (tx.borrowed ? tr('{amount} added as borrowed money', { amount: inr(amount) }) : tr('{amount} received. Choose what it should do.', { amount: inr(amount) }))
       : tx.paidFrom ? cardSpendWarning(tx) : tr('{amount} added to {category}', { amount: inr(amount), category: label(category) }));
     if (ui.txKind === 'in') window.scrollTo(0, 0);
@@ -3167,6 +3344,7 @@
   }
 
   setLang(loadLang());
+  try { ui.chartOpen = localStorage.getItem(CHART_KEY) === '1'; } catch (e) { /* private mode */ }
   state = load();
   assignWaitingSaved();
   if (NATIVE) collectNative();

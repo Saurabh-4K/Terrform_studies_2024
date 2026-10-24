@@ -18,7 +18,7 @@
         android:background="@drawable/widget_logo_bg"
         android:importantForAccessibility="no"
         android:padding="6dp"
-        android:src="@drawable/ic_stat_runway" />
+        android:src="@drawable/ic_logo" />
 
     <LinearLayout
         android:layout_width="0dp"
@@ -57,7 +57,7 @@
         android:paddingEnd="14dp"
         android:paddingBottom="8dp"
         android:text="@string/widget_add"
-        android:textColor="#0D6B58"
+        android:textColor="#0C3B3D"
         android:textSize="13sp"
         android:textStyle="bold" />
 </LinearLayout>

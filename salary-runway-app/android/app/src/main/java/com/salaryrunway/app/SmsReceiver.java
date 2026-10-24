@@ -97,7 +97,7 @@ public class SmsReceiver extends BroadcastReceiver {
 
         NotificationCompat.Builder n = new NotificationCompat.Builder(app, CHANNEL)
             .setSmallIcon(R.drawable.ic_stat_runway)
-            .setColor(0xFF0D6B58)
+            .setColor(0xFF0C3B3D)
             .setContentTitle(title)
             .setContentText(text)
             .setContentIntent(tap)

@@ -23,8 +23,8 @@
     <!-- The "Add an expense" window opened from the widget. -->
     <style name="QuickAddTheme" parent="Theme.AppCompat.DayNight.Dialog">
         <item name="windowNoTitle">true</item>
-        <item name="colorPrimary">#0D6B58</item>
-        <item name="colorAccent">#0D6B58</item>
+        <item name="colorPrimary">#0C3B3D</item>
+        <item name="colorAccent">#0C3B3D</item>
         <item name="android:windowMinWidthMajor">90%</item>
         <item name="android:windowMinWidthMinor">90%</item>
     </style>

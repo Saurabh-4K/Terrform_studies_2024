@@ -897,7 +897,7 @@ test('report for an AI chat: fixed questions, last month in full, two months bef
     ],
   });
   const r = Core.aiReport(s, '2026-11-03', 'hi');
-  assert.equal(r.name, 'salary-runway-report-2026-11-03.txt');
+  assert.equal(r.name, 'hisab-se-report-2026-11-03.txt');
   const t = r.text;
   assert.match(t, /Reply in Hindi/);
   assert.match(t, /Never suggest a new loan, credit card/);
