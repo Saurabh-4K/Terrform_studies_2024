@@ -867,35 +867,3 @@ test('month-end report card: wins and watch-outs for the cycle that just ended',
   assert.equal(r.active, true);
   assert.equal(Core.monthReport(s, '2026-10-15').active, false);
 });
-
-test('AI tips: the prompt carries the app’s numbers, the answer becomes a short list', () => {
-  const s = baseState({
-    debts: [{ id: 'd1', name: 'Card loan', balance: 40000, rate: 36, minPayment: 2000, dueDay: 7 }],
-    transactions: [
-      { id: 't1', date: '2026-10-09', amount: 16000, category: 'Food' },
-      { id: 't2', date: '2026-10-12', amount: 120, category: 'Food' },
-      { id: 't3', date: '2026-11-02', amount: 50, category: 'Food' },
-    ],
-  });
-  const p = Core.aiPrompt(s, '2026-11-03', 'report', 'mr');
-  assert.match(p, /^<\|im_start\|>system\n/);
-  assert.match(p, /<\|im_start\|>assistant\n$/);
-  assert.match(p, /Reply in Marathi\./);
-  assert.match(p, /Food: spent ₹16,120 of a ₹15,500 budget \(over by ₹620\)/);
-  assert.match(p, /1 small payment under ₹200 added up to ₹120\./);
-  assert.match(p, /Card loan: ₹40,000 left at 36% a year, EMI ₹2,000\./);
-  assert.match(p, /Never suggest a new loan, credit card/);
-  assert.match(p, /exactly 3 short tips/);
-  // This month so far: only November, with the runway
-  const now = Core.aiPrompt(s, '2026-11-03', 'now', 'en');
-  assert.match(now, /Food: spent ₹50/);
-  assert.match(now, /Safe to spend per day until payday/);
-  assert.match(now, /exactly 4 short tips/);
-  s.settings.personal = false;
-  assert.match(Core.aiPrompt(s, '2026-11-03', 'now', 'en'), /Do not name investment products/);
-
-  assert.deepEqual(Core.aiTips('Here are your tips:\n- **Cut food** by ₹620.\n2. Stop small leaks.\n\n* Pay ₹500 extra on Card loan.<|im_end|>'),
-    ['Cut food by ₹620.', 'Stop small leaks.', 'Pay ₹500 extra on Card loan.']);
-  assert.deepEqual(Core.aiTips('Save ₹100 a day.\nSkip takeaways.'), ['Save ₹100 a day.', 'Skip takeaways.']);
-  assert.deepEqual(Core.aiTips(''), []);
-});

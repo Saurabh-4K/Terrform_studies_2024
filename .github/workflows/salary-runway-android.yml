@@ -64,15 +64,6 @@ jobs:
         if: steps.changes.outputs.build == 'true'
         run: npm test
 
-      # The on-phone AI downloads its model from Hugging Face (LocalAiPlugin.java).
-      # Warn if a model file has been renamed or removed.
-      - name: Check the AI model downloads
-        if: steps.changes.outputs.build == 'true'
-        run: |
-          for path in $(grep -oE 'litert-community/[^"]+\.task' android/app/src/main/java/com/salaryrunway/app/LocalAiPlugin.java); do
-            if curl -sfIL -o /dev/null "https://huggingface.co/$path"; then echo "ok: $path"; else echo "::warning::AI model missing: $path"; fi
-          done
-
       - name: Copy the web app into the Android project
         if: steps.changes.outputs.build == 'true'
         run: npm run android:sync

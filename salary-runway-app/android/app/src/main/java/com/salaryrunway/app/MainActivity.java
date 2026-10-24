@@ -9,7 +9,6 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(SmsInboxPlugin.class);
         registerPlugin(SpendWidgetPlugin.class);
-        registerPlugin(LocalAiPlugin.class);
         super.onCreate(savedInstanceState);
     }
 }

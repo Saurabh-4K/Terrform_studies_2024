@@ -36,8 +36,7 @@ Uninstalling the app deletes its data. Copy a backup from the Plan tab first.
 - Only messages from named senders (such as `VM-HDFCBK`) are read for payments. Only today's messages are read: each time you open the app it checks today's new messages, never earlier days, and you review each payment before it is added.
 - **Notifications for new bank SMS** (optional, Spend tab): each bank or UPI SMS is recorded as it arrives and a notification asks you to check its category. Tapping it opens a small "Check this payment" window (change category, or mark *Not a payment*). Payments you don't check are recorded anyway and highlighted under **Needs your check** until you confirm them. Messages are matched by their text, so one SMS is never recorded twice. The Android side (`SmsReceiver`, `SmsParser.java`) mirrors the app's own SMS reader; `tests/` pins the shared message key.
 - **Home-screen widget** "Spend today": what's left to spend today, and **+ Add** to record an expense from a small window without opening the app.
-- **AI coach** (optional, Plan tab): `LocalAiPlugin.java` downloads an open model once (Qwen2.5 1.5B, 1.6 GB, or 0.5B, 550 MB, in MediaPipe's `.task` format from `litert-community` on Hugging Face) and runs it on the phone with MediaPipe LLM Inference (`com.google.mediapipe:tasks-genai`). `Core.aiPrompt()` builds the prompt from the app's own numbers and `Core.aiTips()` reads the answer, so nothing about your money leaves the phone. The CI build warns if a model file disappears.
-- Fonts are bundled. The app makes no network requests apart from that optional model download, and Android cloud backup is turned off for its data.
+- Fonts are bundled. The app makes no network requests, and Android cloud backup is turned off for its data.
 
 To build locally (needs the Android SDK and JDK 21):
 
@@ -157,7 +156,6 @@ android/app/src/main/java/com/salaryrunway/app/
   QuickAddActivity.java           the widget's "Add an expense" window
   SpendWidgetPlugin.java, WidgetStore.java   widget data shared with the app
   Lang.java                       the app's language for the widget, notification and pop-ups
-  LocalAiPlugin.java              the AI coach: downloads the model, writes tips on the phone
 .github/workflows/salary-runway-android.yml  weekly APK build (Sunday morning)
 ```
 
