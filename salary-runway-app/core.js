@@ -1281,7 +1281,7 @@
   /*
    * Next payday, after what this month's money can't cover. Card spending
    * was already taken from this month, so only these are subtracted:
-   * - this month's shortfall at the current pace (it ends up borrowed)
+   * - this month's shortfall at the current pace (a forecast: whatever covers it is borrowed)
    * - card bills from before the card was added that fall due next month
    * - card EMIs and carried card balances that start next month
    * Fixed payments, loan minimums and bills are then shown as what's committed.

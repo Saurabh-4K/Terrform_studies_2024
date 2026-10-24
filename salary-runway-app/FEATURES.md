@@ -146,8 +146,8 @@ A three-part meter, **Green · Careful · Red**, with a headline that says what 
 - **Flexible spending:** spent against the budget, including money received, since the balance check if there is one.
 
 ### Next payday preview
-- **"Effective payday: ₹50,742"**: your usual pay minus what's **already borrowed against it**:
-  - this month's shortfall at your current pace (it ends up borrowed)
+- **"Effective payday: ₹50,742"**: your usual pay minus what's **already borrowed against it, or about to be**:
+  - **Short before payday at this pace (not borrowed yet):** a forecast. At today's pace the money runs out before payday by this much, and whatever covers the gap (card, loan, friend) comes out of the next salary. A line under it says *Nothing is borrowed yet. Keep to ₹X a day until payday and this disappears.* When this is the only item, the line under the amount says *you're on track to run short*, not *borrowed*.
   - card bills from before you added the card that fall due next month
   - card EMIs and carried card balances starting next month
 - This month's card spending is **not** subtracted again, because it was already counted when it happened.

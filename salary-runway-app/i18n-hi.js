@@ -677,7 +677,6 @@
   "This month’s budgets will be planned on {amount}.": "इस महीने का बजट {amount} पर बनेगा.",
   "This month’s pay": "इस महीने की सैलरी",
   "This month’s set-aside": "इस महीने अलग रखना",
-  "This month’s shortfall at your pace (ends up borrowed)": "आपकी रफ़्तार से इस महीने की कमी (आख़िर में उधार ही बनती है)",
   "To pay by {date}": "{date} तक भरना है",
   "Today": "आज",
   "Today’s share of your budget": "आपके बजट में आज का हिस्सा",
@@ -907,4 +906,9 @@
   "{sms} recorded": "{sms} दर्ज किए",
   "{spent} spent of a {budget} budget.": "{budget} के बजट में से {spent} खर्च.",
   "₹0 on {date}": "{date} को ₹0",
+  "Short before payday at this pace (not borrowed yet)": "इस रफ़्तार से सैलरी से पहले कमी (अभी उधार नहीं)",
+  "(Usual pay {pay} − {amount} you’re on track to run short before payday)": "(सामान्य सैलरी {pay} − इस रफ़्तार से सैलरी से पहले कम पड़ने वाले {amount})",
+  "(Usual pay {pay} − {borrowed}: card bills already owed, plus the shortfall at this pace)": "(सामान्य सैलरी {pay} − {borrowed}: पहले से बकाया कार्ड बिल और इस रफ़्तार से होने वाली कमी)",
+  "Nothing is borrowed yet. Keep to {amount} a day until payday and this disappears.": "अभी कुछ भी उधार नहीं लिया है. सैलरी तक रोज़ {amount} तक खर्च रखें, यह कमी खत्म हो जाएगी.",
+  "Nothing is borrowed yet. Spend only on basics until payday to shrink it.": "अभी कुछ भी उधार नहीं लिया है. इस कमी को घटाने के लिए सैलरी तक सिर्फ़ ज़रूरी चीज़ों पर खर्च करें.",
 };

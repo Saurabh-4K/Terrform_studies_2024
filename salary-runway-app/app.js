@@ -809,7 +809,7 @@
     if (!p.nominal) return '';
     const tone = p.percent > 50 ? 'bad' : p.percent > 20 ? 'warn' : '';
     const parts = [];
-    if (p.shortfall) parts.push(['This month’s shortfall at your pace (ends up borrowed)', p.shortfall]);
+    if (p.shortfall) parts.push(['Short before payday at this pace (not borrowed yet)', p.shortfall]);
     if (p.fromBefore) parts.push(['Card bills from before you added the card', p.fromBefore]);
     if (p.newCardDebt) parts.push(['Card EMIs and balances starting next month', p.newCardDebt]);
     let html = '<section class="card preview"><span class="eyebrow">' + tr('Next payday · {date}', { date: fmtDate(p.date) }) + '</span>';
@@ -821,10 +821,19 @@
         '<span class="sub">' + tr('Nothing borrowed against your next salary. Keep it that way.') + '</span>';
     } else {
       html += '<span class="big">' + tr('Effective payday: {amount}', { amount: inr(p.effective) }) + '</span>' +
-        '<span class="sub ' + tone + '">' + tr('(Usual pay {pay} − {borrowed} already borrowed against it)', { pay: inr(p.nominal), borrowed: inr(p.borrowed) }) + '</span>';
+        '<span class="sub ' + tone + '">' + (p.borrowed === p.shortfall
+          // Only a forecast: at this pace the money runs out before payday.
+          ? tr('(Usual pay {pay} − {amount} you’re on track to run short before payday)', { pay: inr(p.nominal), amount: inr(p.shortfall) })
+          : tr(p.shortfall ? '(Usual pay {pay} − {borrowed}: card bills already owed, plus the shortfall at this pace)' : '(Usual pay {pay} − {borrowed} already borrowed against it)', { pay: inr(p.nominal), borrowed: inr(p.borrowed) })) + '</span>';
     }
     if (parts.length) {
       html += '<div class="summary">' + parts.map((x) => '<div class="line"><span>' + tr(x[0]) + '</span><span class="' + (tone || 'warn') + '">−' + inr(x[1]) + '</span></div>').join('') + '</div>';
+    }
+    if (p.shortfall && !p.depleted) {
+      const safe = Core.zoneStatus(state, today(), Core.projectRunway(state, today())).safeDaily;
+      html += '<span class="hint">' + (safe >= 1
+        ? tr('Nothing is borrowed yet. Keep to {amount} a day until payday and this disappears.', { amount: inr(safe) })
+        : tr('Nothing is borrowed yet. Spend only on basics until payday to shrink it.')) + '</span>';
     }
     if (!p.depleted) {
       html += '<span class="sub">' + tr('After fixed payments, loan minimums and bills ({amount}):', { amount: inr(p.committed) }) + ' ' +
