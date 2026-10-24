@@ -7,6 +7,14 @@
 (function (root) {
   'use strict';
 
+  /*
+   * Messages are written in English with {named} values. The app sets a
+   * translator (see i18n.js) and a date format; tests use these defaults.
+   */
+  let tr = (s, v) => (v ? String(s).replace(/\{(\w+)\}/g, (m, k) => (Object.prototype.hasOwnProperty.call(v, k) ? v[k] : m)) : s);
+  let dateLabel = null;
+  function setTranslator(fn, dateFn) { tr = fn; dateLabel = dateFn || null; }
+
   // ---------- dates ----------
 
   function pad(n) { return String(n).padStart(2, '0'); }
@@ -239,7 +247,7 @@
         if (todayIso && date < todayIso) date = todayIso;
         events.push({ date, name: b.name, amount: Math.max(0, (Number(b.estimate) || 0) - billPot(b)), kind: 'bill', billId: b.id });
       } else if (billShare(b) > 0) {
-        events.push({ date: cycle.start, name: 'Set aside for ' + b.name, amount: billShare(b), kind: 'billpot', billId: b.id });
+        events.push({ date: cycle.start, name: tr('Set aside for {name}', { name: b.name }), amount: billShare(b), kind: 'billpot', billId: b.id });
       }
     });
     state.fixed.forEach((f) => {
@@ -642,17 +650,17 @@
     let suggested, reason;
     if (due === 0) {
       suggested = null;
-      reason = 'Nothing to pay on this bill.';
+      reason = tr('Nothing to pay on this bill.');
     } else if (!short) {
       suggested = 'full';
-      reason = 'You’ve already kept this money aside: card spending was counted when it happened. Paying in full costs no interest.';
+      reason = tr('You’ve already kept this money aside: card spending was counted when it happened. Paying in full costs no interest.');
     } else if (compare && compare.emiSaves >= Math.max(200, compare.revolve.cost * 0.1)) {
       suggested = 'emi';
-      reason = 'You’re ' + rupees(short) + ' short this month. Pay ' + rupees(payNow) + ' now and convert ' + rupees(rest) +
-        ' to an EMI: it costs about ' + rupees(compare.emiSaves) + ' less than carrying it on the card. It’s still a loan, so clear it as early as you can.';
+      reason = tr('You’re {short} short this month. Pay {now} now and convert {rest} to an EMI: it costs about {saves} less than carrying it on the card. It’s still a loan, so clear it as early as you can.',
+        { short: rupees(short), now: rupees(payNow), rest: rupees(rest), saves: rupees(compare.emiSaves) });
     } else {
       suggested = 'part';
-      reason = 'You’re ' + rupees(short) + ' short this month. Pay ' + rupees(payNow) + ' now and the rest as soon as you can; an EMI wouldn’t save much here.';
+      reason = tr('You’re {short} short this month. Pay {now} now and the rest as soon as you can; an EMI wouldn’t save much here.', { short: rupees(short), now: rupees(payNow) });
     }
     return { card, status: st, rate, due, payNow, rest, short, minPlan, compare, emi: e, suggested, reason };
   }
@@ -746,7 +754,7 @@
     const available = salary - fixed - mins - sinking;
     const notes = [];
     if (available <= 0) {
-      if (salary > 0) notes.push('Fixed payments, debt minimums and yearly costs already use the whole salary, so nothing can be set aside yet. The Debts tab shows what clearing the costliest loan frees up.');
+      if (salary > 0) notes.push(tr('Fixed payments, debt minimums and yearly costs already use the whole salary, so nothing can be set aside yet. The Debts tab shows what clearing the costliest loan frees up.'));
       return { emergencyMonthly: 0, investMonthly: 0, debtExtra: 0, notes, emergencyTarget: 0 };
     }
 
@@ -762,15 +770,14 @@
     if (expensive.length) {
       debtExtra = pool - emergency;
       const monthlyInterest = sum(expensive, (d) => (d.balance * d.rate) / 1200);
-      notes.push(
-        'Your ' + expensive.map((d) => d.name).join(' and ') + (expensive.length > 1 ? ' cost' : ' costs') + ' about ₹' +
-        Math.round(monthlyInterest).toLocaleString('en-IN') +
-        ' a month in interest, so the extra goes there first. The Grow budget starts once ' + (expensive.length > 1 ? 'they are' : 'it is') + ' cleared.'
-      );
+      notes.push(tr(expensive.length > 1
+        ? 'Your {names} cost about {amount} a month in interest, so the extra goes there first. The Grow budget starts once they are cleared.'
+        : 'Your {names} costs about {amount} a month in interest, so the extra goes there first. The Grow budget starts once it is cleared.',
+      { names: expensive.map((d) => d.name).join(tr(' and ')), amount: rupees(monthlyInterest) }));
     } else {
       invest = pool - emergency;
     }
-    if (!fundFull) notes.push('The emergency fund gets money until it reaches ₹' + Math.round(target).toLocaleString('en-IN') + ' (' + months + ' months of needs).');
+    if (!fundFull) notes.push(tr('The emergency fund gets money until it reaches {amount} ({months} months of needs).', { amount: rupees(target), months }));
     return { emergencyMonthly: emergency, investMonthly: invest, debtExtra, notes, emergencyTarget: target };
   }
 
@@ -873,14 +880,14 @@
       if (interest >= 100) {
         out.push({
           level: d.rate >= 15 ? 'warn' : 'info',
-          title: d.name + ' costs about ' + rupees(interest) + ' a month in interest',
-          body: 'That is ' + rupees(interest * 12) + ' a year at ' + d.rate + '% a year. The Debts tab shows how much an extra payment saves.',
+          title: tr('{name} costs about {amount} a month in interest', { name: d.name, amount: rupees(interest) }),
+          body: tr('That is {year} a year at {rate}% a year. The Debts tab shows how much an extra payment saves.', { year: rupees(interest * 12), rate: d.rate }),
         });
       }
     });
 
     if (!cycles.length) {
-      out.push({ level: 'info', title: 'Trends appear after your first full month', body: 'Keep adding spending (or import bank SMS) and this section will show where your money goes.' });
+      out.push({ level: 'info', title: tr('Trends appear after your first full month'), body: tr('Keep adding spending (or import bank SMS) and this section will show where your money goes.') });
       return out;
     }
 
@@ -898,8 +905,8 @@
       if (budget && avg > budget * 1.1) {
         out.push({
           level: 'warn',
-          title: cat + ' averages ' + rupees(avg) + ' a month against a ' + rupees(budget) + ' budget',
-          body: 'That is ' + rupees(avg - budget) + ' more each month, or ' + rupees((avg - budget) * 12) + ' a year.',
+          title: tr('{category} averages {avg} a month against a {budget} budget', { category: tr(cat), avg: rupees(avg), budget: rupees(budget) }),
+          body: tr('That is {more} more each month, or {year} a year.', { more: rupees(avg - budget), year: rupees((avg - budget) * 12) }),
         });
       }
     });
@@ -910,8 +917,9 @@
         return under && used && b.amount > 0;
       }).map((b) => b.name);
       if (steady.length) {
-        const names = steady.length > 1 ? steady.slice(0, -1).join(', ') + ' and ' + steady[steady.length - 1] : steady[0];
-        out.push({ level: 'good', title: names + ' stayed within budget for ' + n + ' months', body: 'Whatever is left in these at month end can go to a goal.' });
+        const shown = steady.map((x) => tr(x));
+        const names = shown.length > 1 ? shown.slice(0, -1).join(', ') + tr(' and ') + shown[shown.length - 1] : shown[0];
+        out.push({ level: 'good', title: tr('{names} stayed within budget for {n} months', { names, n }), body: tr('Whatever is left in these at month end can go to a goal.') });
       }
     }
 
@@ -922,8 +930,8 @@
       if (perMonth >= 8) {
         out.push({
           level: 'info',
-          title: Math.round(perMonth) + ' small ' + cat + ' payments a month add up to ' + rupees(sum(small, (t) => t.amount) / n),
-          body: 'Payments under ₹300 are easy to miss. Halving them would free about ' + rupees(sum(small, (t) => t.amount) / n / 2) + ' a month.',
+          title: tr('{n} small {category} payments a month add up to {amount}', { n: Math.round(perMonth), category: tr(cat), amount: rupees(sum(small, (t) => t.amount) / n) }),
+          body: tr('Payments under ₹300 are easy to miss. Halving them would free about {amount} a month.', { amount: rupees(sum(small, (t) => t.amount) / n / 2) }),
         });
       }
     });
@@ -948,8 +956,8 @@
       if (amounts.every((a) => Math.abs(a - median) <= median * 0.1)) {
         out.push({
           level: 'info',
-          title: g[0].t.note + ' looks like a subscription: ' + rupees(median) + ' a month',
-          body: 'That is ' + rupees(median * 12) + ' a year. Still using it?',
+          title: tr('{name} looks like a subscription: {amount} a month', { name: g[0].t.note, amount: rupees(median) }),
+          body: tr('That is {amount} a year. Still using it?', { amount: rupees(median * 12) }),
         });
       }
     });
@@ -972,8 +980,8 @@
       if (ratio >= 1.4) {
         out.push({
           level: 'info',
-          title: 'A weekend day costs ' + ratio.toFixed(1) + '× a weekday',
-          body: 'Average ' + rupees(weekendSpend / weekendDays) + ' per weekend day vs ' + rupees(weekdaySpend / weekdayDays) + ' on weekdays.',
+          title: tr('A weekend day costs {ratio}× a weekday', { ratio: ratio.toFixed(1) }),
+          body: tr('Average {weekend} per weekend day vs {weekday} on weekdays.', { weekend: rupees(weekendSpend / weekendDays), weekday: rupees(weekdaySpend / weekdayDays) }),
         });
       }
     }
@@ -987,8 +995,8 @@
     if (allTotal > 0 && firstWeek / allTotal >= 0.4) {
       out.push({
         level: 'info',
-        title: Math.round((firstWeek / allTotal) * 100) + '% of your spending happens in the week after payday',
-        body: 'Spending feels easy when the account is full. The daily "safe to spend" figure on this screen helps even it out.',
+        title: tr('{pct}% of your spending happens in the week after payday', { pct: Math.round((firstWeek / allTotal) * 100) }),
+        body: tr('Spending feels easy when the account is full. The daily "safe to spend" figure on this screen helps even it out.'),
       });
     }
 
@@ -1090,6 +1098,7 @@
   function rupeesIn(n) { return '₹' + Math.round(n).toLocaleString('en-IN'); }
 
   function shortDate(iso) {
+    if (dateLabel) return dateLabel(iso);
     const d = parseISO(iso);
     return d.getDate() + ' ' + MONTHS[d.getMonth()].replace(/^./, (c) => c.toUpperCase());
   }
@@ -1118,16 +1127,20 @@
     const top = debts.slice().sort((a, b) => b.rate - a.rate)[0];
     const options = [];
 
-    const lasts = (r) => (r.zeroPace ? 'lasts until ' + shortDate(r.zeroPace) : 'lasts until payday');
-    let spendDetail = 'Adds ' + rupeesIn(amount) + ' to this month’s spending money. Today’s amount goes from ' +
-      rupeesIn(without.dailyAllowance) + ' to ' + rupeesIn(kept.dailyAllowance) + '.';
-    if (without.zeroPace !== kept.zeroPace) spendDetail += ' At this pace your money ' + lasts(kept) + ' instead of ' + (without.zeroPace ? shortDate(without.zeroPace) : 'payday') + '.';
-    options.push({ use: 'spend', title: 'Keep it for this month', detail: spendDetail });
+    let spendDetail = tr('Adds {amount} to this month’s spending money. Today’s amount goes from {from} to {to}.',
+      { amount: rupeesIn(amount), from: rupeesIn(without.dailyAllowance), to: rupeesIn(kept.dailyAllowance) });
+    if (without.zeroPace !== kept.zeroPace) {
+      const v = { date: kept.zeroPace ? shortDate(kept.zeroPace) : '', before: without.zeroPace ? shortDate(without.zeroPace) : '' };
+      spendDetail += ' ' + tr(kept.zeroPace
+        ? (without.zeroPace ? 'At this pace your money lasts until {date} instead of {before}.' : 'At this pace your money lasts until {date} instead of payday.')
+        : 'At this pace your money lasts until payday instead of {before}.', v);
+    }
+    options.push({ use: 'spend', title: tr('Keep it for this month'), detail: spendDetail });
 
     options.push({
       use: 'emergency',
-      title: 'Add to emergency fund',
-      detail: 'Emergency fund goes from ' + rupeesIn(fund) + ' to ' + rupeesIn(fund + amount) + ' of your ' + rupeesIn(target) + ' target.',
+      title: tr('Add to emergency fund'),
+      detail: tr('Emergency fund goes from {from} to {to} of your {target} target.', { from: rupeesIn(fund), to: rupeesIn(fund + amount), target: rupeesIn(target) }),
     });
 
     let saved = null;
@@ -1140,24 +1153,26 @@
       const sooner = before.months - after.months;
       options.push({
         use: 'debt',
-        title: 'Pay off ' + top.name,
+        title: tr('Pay off {name}', { name: top.name }),
         debtId: top.id,
-        detail: 'Pays ' + rupeesIn(paid) + ' off ' + top.name + ' (' + top.rate + '% a year)' +
-          (before.neverPaysOff ? '.' : '. Saves about ' + rupeesIn(saved) + ' in interest' + (sooner > 0 ? ' and you’re debt-free ' + sooner + (sooner === 1 ? ' month' : ' months') + ' sooner.' : '.')) +
-          (paid < amount ? ' The other ' + rupeesIn(amount - paid) + ' stays for this month.' : ''),
+        detail: tr('Pays {amount} off {name} ({rate}% a year).', { amount: rupeesIn(paid), name: top.name, rate: top.rate }) +
+          (before.neverPaysOff ? '' : ' ' + (sooner > 0
+            ? tr(sooner === 1 ? 'Saves about {saved} in interest and you’re debt-free {n} month sooner.' : 'Saves about {saved} in interest and you’re debt-free {n} months sooner.', { saved: rupeesIn(saved), n: sooner })
+            : tr('Saves about {saved} in interest.', { saved: rupeesIn(saved) }))) +
+          (paid < amount ? ' ' + tr('The other {amount} stays for this month.', { amount: rupeesIn(amount - paid) }) : ''),
       });
     }
 
     options.push({
       use: 'grow',
-      title: 'Set aside to invest',
-      detail: 'Adds to the ' + rupeesIn(Number(state.savings.investSaved) || 0) + ' you’ve set aside to invest. ' +
-        (personal(state) ? 'The Grow tab shows how to split it.' : 'Talk to a SEBI-registered investment adviser before investing it.'),
+      title: tr('Set aside to invest'),
+      detail: tr('Adds to the {amount} you’ve set aside to invest.', { amount: rupeesIn(Number(state.savings.investSaved) || 0) }) + ' ' +
+        tr(personal(state) ? 'The Grow tab shows how to split it.' : 'Talk to a SEBI-registered investment adviser before investing it.'),
     });
 
-    const s = suggestUse(state, todayIso, without.zeroPace ? 'Without this money, at your current pace you run out on ' + shortDate(without.zeroPace) + ', before payday.' : null);
+    const s = suggestUse(state, todayIso, without.zeroPace ? tr('Without this money, at your current pace you run out on {date}, before payday.', { date: shortDate(without.zeroPace) }) : null);
     // Keeping it while an expensive loan is open has a cost worth seeing.
-    if (top && top.rate >= 15) options[0].badge = 'Extends this month’s budget, but delays your debt-free date';
+    if (top && top.rate >= 15) options[0].badge = tr('Extends this month’s budget, but delays your debt-free date');
     return { tx, options, recommended: s.use, reason: s.reason, interestSaved: saved };
   }
 
@@ -1214,17 +1229,17 @@
     const days = f ? f.days : 0;
     const top = state.debts.filter((d) => d.balance > 0).sort((a, b) => b.rate - a.rate)[0];
     if (days < 30) {
-      return { use: 'emergency', reason: 'Your emergency fund covers ' + days + (days === 1 ? ' day' : ' days') + ' of basics. A 30-day shield comes first, so the next surprise doesn’t go on a card.' };
+      return { use: 'emergency', reason: tr(days === 1 ? 'Your emergency fund covers {n} day of basics. A 30-day shield comes first, so the next surprise doesn’t go on a card.' : 'Your emergency fund covers {n} days of basics. A 30-day shield comes first, so the next surprise doesn’t go on a card.', { n: days }) };
     }
     if (top && top.rate >= 15) {
-      return { use: 'debt', reason: top.name + ' charges ' + top.rate + '% a year. Paying it down saves that interest for certain.', debtId: top.id };
+      return { use: 'debt', reason: tr('{name} charges {rate}% a year. Paying it down saves that interest for certain.', { name: top.name, rate: top.rate }), debtId: top.id };
     }
     const p = monthlyPlan(Object.assign({}, state, { adjustment: null }), todayIso);
     const target = (Number(state.savings.emergencyTargetMonths) || 3) * (p.fixedTotal + p.debtMin + p.variableBills + p.flexTotal);
     if ((Number(state.savings.emergencyBalance) || 0) < target) {
-      return { use: 'emergency', reason: 'Your emergency fund is still below its ' + (state.savings.emergencyTargetMonths || 3) + '-month target.' };
+      return { use: 'emergency', reason: tr('Your emergency fund is still below its {months}-month target.', { months: state.savings.emergencyTargetMonths || 3 }) };
     }
-    return { use: 'grow', reason: 'This month is covered, your emergency fund is full and there are no expensive loans.' };
+    return { use: 'grow', reason: tr('This month is covered, your emergency fund is full and there are no expensive loans.') };
   }
 
   /*
@@ -1256,7 +1271,7 @@
     });
     (state.cards || []).forEach((c) => {
       const st = cardStatus(state, c, todayIso);
-      if (st.overdue) items.push({ name: c.name + ' (overdue bill)', balance: st.remaining, rate: Number(c.rate) || 42 });
+      if (st.overdue) items.push({ name: tr('{name} (overdue bill)', { name: c.name }), balance: st.remaining, rate: Number(c.rate) || 42 });
     });
     items.forEach((x) => { x.daily = (x.balance * x.rate) / 36500; });
     const daily = sum(items, (x) => x.daily);
@@ -1410,20 +1425,21 @@
       const sooner = before.months - after.months;
       options.push({
         to: 'debt',
-        title: 'Pay off your other loans faster',
+        title: tr('Pay off your other loans faster'),
         detail: before.neverPaysOff
-          ? 'Gets your loans paying down instead of growing.'
-          : 'Debt-free ' + (sooner > 0 ? sooner + (sooner === 1 ? ' month' : ' months') + ' sooner' : 'sooner') + ', about ' + rupeesIn(before.totalInterest - after.totalInterest) + ' less interest.',
+          ? tr('Gets your loans paying down instead of growing.')
+          : tr(sooner > 1 ? 'Debt-free {n} months sooner, about {amount} less interest.' : sooner === 1 ? 'Debt-free {n} month sooner, about {amount} less interest.' : 'Debt-free sooner, about {amount} less interest.',
+            { n: sooner, amount: rupeesIn(before.totalInterest - after.totalInterest) }),
       });
     }
     const f = freedomDays(state, todayIso);
     options.push({
       to: 'emergency',
-      title: 'Build your emergency fund',
-      detail: f ? '+' + Math.floor(amount / f.daily) + ' Days of Freedom every month.' : 'Adds ' + rupeesIn(amount) + ' a month to your emergency fund.',
+      title: tr('Build your emergency fund'),
+      detail: f ? tr('+{n} Days of Freedom every month.', { n: Math.floor(amount / f.daily) }) : tr('Adds {amount} a month to your emergency fund.', { amount: rupeesIn(amount) }),
     });
-    options.push({ to: 'grow', title: 'Set aside to invest', detail: rupeesIn(amount) + ' a month to invest. ' + (personal(state) ? 'The Grow tab shows how to split it.' : 'Talk to a SEBI-registered investment adviser about where.') });
-    options.push({ to: 'spend', title: 'Spend it', detail: 'Your flexible budgets grow by ' + rupeesIn(amount) + ' a month.' });
+    options.push({ to: 'grow', title: tr('Set aside to invest'), detail: tr('{amount} a month to invest.', { amount: rupeesIn(amount) }) + ' ' + tr(personal(state) ? 'The Grow tab shows how to split it.' : 'Talk to a SEBI-registered investment adviser about where.') });
+    options.push({ to: 'spend', title: tr('Spend it'), detail: tr('Your flexible budgets grow by {amount} a month.', { amount: rupeesIn(amount) }) });
     const s = suggestUse(state, todayIso, null);
     return { options, recommended: s.use === 'debt' && !debts.length ? 'emergency' : s.use, reason: s.reason };
   }
@@ -1484,21 +1500,21 @@
     const amounts = { debt: share(debt), gold: share(gold) };
     amounts.equity = monthly - amounts.debt - amounts.gold;
     const lines = [
-      { key: 'equity', pct: equity, amount: amounts.equity, title: 'Nifty 50 index fund, monthly SIP',
-        detail: risk === 'high' ? 'Direct plan. With high risk comfort, up to a third can go to a Nifty Next 50 or flexi-cap fund.' : 'Direct plan, low cost. Prices will fall at times: keep the SIP going and stay 5+ years.' },
-      { key: 'debt', pct: debt, amount: amounts.debt, title: 'PPF, or VPF through your employer',
-        detail: 'Government-backed and steady. PPF is tax-free with a 15-year lock-in. Money needed in 1–3 years: FD or RD instead.' },
-      { key: 'gold', pct: gold, amount: amounts.gold, title: 'Gold ETF or gold mutual fund',
-        detail: 'Balances the rest when markets fall. Better than jewellery: no making charges.' },
+      { key: 'equity', pct: equity, amount: amounts.equity, title: tr('Nifty 50 index fund, monthly SIP'),
+        detail: tr(risk === 'high' ? 'Direct plan. With high risk comfort, up to a third can go to a Nifty Next 50 or flexi-cap fund.' : 'Direct plan, low cost. Prices will fall at times: keep the SIP going and stay 5+ years.') },
+      { key: 'debt', pct: debt, amount: amounts.debt, title: tr('PPF, or VPF through your employer'),
+        detail: tr('Government-backed and steady. PPF is tax-free with a 15-year lock-in. Money needed in 1–3 years: FD or RD instead.') },
+      { key: 'gold', pct: gold, amount: amounts.gold, title: tr('Gold ETF or gold mutual fund'),
+        detail: tr('Balances the rest when markets fall. Better than jewellery: no making charges.') },
     ];
     const blended = (equity * ASSUMED_RETURN.equity + debt * ASSUMED_RETURN.debt + gold * ASSUMED_RETURN.gold) / 100;
     const projection = monthly > 0 ? [5, 10, 20].map((y) => ({ years: y, invested: monthly * 12 * y, value: Math.round(sipValue(monthly, blended, y)) })) : [];
 
     let reason;
-    if (stage === 'shield') reason = 'First, a 30-day emergency shield: you have ' + days + (days === 1 ? ' day' : ' days') + '. Investing before it means the next surprise goes on a card.';
-    else if (stage === 'debt') reason = 'First, clear ' + costly[0].name + ' at ' + costly[0].rate + '% a year. Paying it off is a sure ' + costly[0].rate + '% return; no investment reliably beats that.';
-    else if (stage === 'fund') reason = 'Your 30-day shield is up and there are no costly loans. Invest alongside the emergency fund while it grows to its ' + months + '-month target.';
-    else reason = 'Emergency fund full and no costly loans: you’re ready to invest.';
+    if (stage === 'shield') reason = tr(days === 1 ? 'First, a 30-day emergency shield: you have {n} day. Investing before it means the next surprise goes on a card.' : 'First, a 30-day emergency shield: you have {n} days. Investing before it means the next surprise goes on a card.', { n: days });
+    else if (stage === 'debt') reason = tr('First, clear {name} at {rate}% a year. Paying it off is a sure {rate}% return; no investment reliably beats that.', { name: costly[0].name, rate: costly[0].rate });
+    else if (stage === 'fund') reason = tr('Your 30-day shield is up and there are no costly loans. Invest alongside the emergency fund while it grows to its {months}-month target.', { months });
+    else reason = tr('Emergency fund full and no costly loans: you’re ready to invest.');
 
     return { stage, reason, risk, age, equity, debt, gold, monthly, lines, blended: Math.round(blended * 10) / 10, projection, costly: costly[0] || null };
   }
@@ -1705,7 +1721,7 @@
     billShare, billPot, billsMonthly, billPaidIn, billDue, payBill, undoBillPayment, zoneStatus, ESSENTIAL_CATEGORIES,
     isCardTransfer, statementOn, dueAfter, cardOwedAt, cardReserve, cardStatus, emiQuote, revolveQuote, cardBillPlan,
     recordCardPayment, convertCardBalance, undoCardConvert, cardFreeDays, byCategory, DEFAULT_SPLIT,
-    isLoanCredit, borrowedThisCycle, borrowCheck, rolloverOptions, personal, investPlan, sipValue, ASSUMED_RETURN,
+    isLoanCredit, borrowedThisCycle, borrowCheck, rolloverOptions, personal, investPlan, sipValue, ASSUMED_RETURN, setTranslator,
   };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = Core;

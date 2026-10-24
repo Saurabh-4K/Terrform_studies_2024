@@ -1,5 +1,6 @@
 package com.salaryrunway.app;
 
+import android.content.Context;
 import android.os.Bundle;
 import android.view.WindowManager;
 import android.widget.ArrayAdapter;
@@ -23,14 +24,21 @@ public class QuickAddActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_quick_add);
         setFinishOnTouchOutside(true);
+        // Labels in the app's language (the layout's own text follows the phone).
+        Context text = Lang.wrap(this);
+        ((TextView) findViewById(R.id.quick_title)).setText(text.getString(R.string.quick_title));
+        ((TextView) findViewById(R.id.quick_cancel)).setText(text.getString(R.string.quick_cancel));
+        ((TextView) findViewById(R.id.quick_save)).setText(text.getString(R.string.quick_save));
 
         EditText amount = findViewById(R.id.quick_amount);
         Spinner category = findViewById(R.id.quick_category);
         EditText note = findViewById(R.id.quick_note);
         TextView left = findViewById(R.id.quick_left);
+        amount.setHint(text.getString(R.string.quick_amount));
+        note.setHint(text.getString(R.string.quick_note));
 
         String[] categories = WidgetStore.categories(this);
-        ArrayAdapter<String> adapter = new ArrayAdapter<>(this, android.R.layout.simple_spinner_item, categories);
+        ArrayAdapter<String> adapter = new ArrayAdapter<>(this, android.R.layout.simple_spinner_item, WidgetStore.categoryLabels(this));
         adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
         category.setAdapter(adapter);
         int food = Arrays.asList(categories).indexOf("Food & dining");
@@ -40,9 +48,9 @@ public class QuickAddActivity extends AppCompatActivity {
         if (leftToday == null) {
             left.setText("");
         } else if (leftToday >= 0) {
-            left.setText(getString(R.string.quick_left, WidgetStore.rupees(leftToday)));
+            left.setText(text.getString(R.string.quick_left, WidgetStore.rupees(leftToday)));
         } else {
-            left.setText(getString(R.string.quick_over, WidgetStore.rupees(-leftToday)));
+            left.setText(text.getString(R.string.quick_over, WidgetStore.rupees(-leftToday)));
         }
 
         findViewById(R.id.quick_cancel).setOnClickListener(v -> finish());
@@ -54,12 +62,12 @@ public class QuickAddActivity extends AppCompatActivity {
                 value = 0;
             }
             if (value <= 0) {
-                amount.setError(getString(R.string.quick_amount_error));
+                amount.setError(text.getString(R.string.quick_amount_error));
                 return;
             }
-            WidgetStore.queueExpense(this, value, (String) category.getSelectedItem(), note.getText().toString().trim());
+            WidgetStore.queueExpense(this, value, categories[category.getSelectedItemPosition()], note.getText().toString().trim());
             SpendWidgetProvider.updateAll(this);
-            Toast.makeText(this, getString(R.string.quick_added, WidgetStore.rupees(value)), Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, text.getString(R.string.quick_added, WidgetStore.rupees(value)), Toast.LENGTH_SHORT).show();
             finish();
         });
 

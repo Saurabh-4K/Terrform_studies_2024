@@ -84,15 +84,18 @@ public class SmsInboxPlugin extends Plugin {
         call.resolve();
     }
 
-    /** categories, incomeCategories: names for the pop-up; rules: learned shop categories. */
+    /** categories, incomeCategories: names for the pop-up, with labels in the app's language; rules: learned shop categories. */
     @PluginMethod
     public void syncAlerts(PluginCall call) {
         JSObject rules = call.getObject("rules", new JSObject());
         SmsAlertStore.setLists(getContext(),
             call.getArray("categories", new JSArray()),
             call.getArray("incomeCategories", new JSArray()),
+            call.getArray("categoryLabels", new JSArray()),
+            call.getArray("incomeCategoryLabels", new JSArray()),
             rules == null ? new JSObject() : rules,
             call.getArray("cards", new JSArray()));
+        Lang.set(getContext(), call.getString("lang"));
         call.resolve();
     }
 

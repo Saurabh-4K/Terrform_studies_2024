@@ -20,8 +20,8 @@
   --caution: #E67E22;
   --card-borrow-bg: #FFF5F5;
   --shadow: 0 1px 2px rgba(19, 32, 28, 0.06), 0 6px 24px rgba(19, 32, 28, 0.06);
-  --font-display: 'Bricolage Grotesque', 'Avenir Next', 'Segoe UI', system-ui, sans-serif;
-  --font-body: 'Instrument Sans', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --font-display: 'Bricolage Grotesque', 'Noto Sans Devanagari', 'Avenir Next', 'Segoe UI', system-ui, sans-serif;
+  --font-body: 'Instrument Sans', 'Noto Sans Devanagari', 'Segoe UI', system-ui, -apple-system, sans-serif;
   --radius: 14px;
   --nav-h: 64px;
 }

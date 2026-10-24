@@ -8,12 +8,14 @@ const out = path.join(root, 'www');
 fs.rmSync(out, { recursive: true, force: true });
 fs.mkdirSync(path.join(out, 'fonts'), { recursive: true });
 
-['core.js', 'demo.js', 'app.js', 'styles.css'].forEach((f) => fs.copyFileSync(path.join(root, f), path.join(out, f)));
+['i18n.js', 'i18n-mr.js', 'i18n-hi.js', 'core.js', 'demo.js', 'app.js', 'styles.css'].forEach((f) => fs.copyFileSync(path.join(root, f), path.join(out, f)));
 fs.copyFileSync(path.join(root, 'node_modules/@capacitor/core/dist/capacitor.js'), path.join(out, 'capacitor.js'));
 
 const fonts = [
   ['Bricolage Grotesque', '@fontsource-variable/bricolage-grotesque', 'bricolage-grotesque-latin-wght-normal.woff2', '200 800'],
   ['Instrument Sans', '@fontsource-variable/instrument-sans', 'instrument-sans-latin-wght-normal.woff2', '400 700'],
+  // Marathi and Hindi.
+  ['Noto Sans Devanagari', '@fontsource-variable/noto-sans-devanagari', 'noto-sans-devanagari-devanagari-wght-normal.woff2', '100 900'],
 ];
 const faces = fonts.map(([family, pkg, file, weight]) => {
   fs.copyFileSync(path.join(root, 'node_modules', pkg, 'files', file), path.join(out, 'fonts', file));
@@ -27,6 +29,6 @@ html = html
   .filter((line) => !/fonts\.(googleapis|gstatic)\.com/.test(line))
   .join('\n')
   .replace('<link rel="stylesheet" href="styles.css">', '<link rel="stylesheet" href="fonts.css">\n  <link rel="stylesheet" href="styles.css">')
-  .replace('<script src="core.js"></script>', '<script src="capacitor.js"></script>\n  <script src="core.js"></script>');
+  .replace('<script src="i18n-mr.js"></script>', '<script src="capacitor.js"></script>\n  <script src="i18n-mr.js"></script>');
 fs.writeFileSync(path.join(out, 'index.html'), html);
 console.log('www/ ready');

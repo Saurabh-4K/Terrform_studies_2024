@@ -37,11 +37,12 @@ final class WidgetStore {
      * left: rupees left today (negative when over). pool and daysAfter work out
      * tomorrow's safe amount: pool / daysAfter, lowered by spending added later.
      */
-    static void setSummary(Context context, long left, String date, JSONArray categories, long pool, int daysAfter) {
+    static void setSummary(Context context, long left, String date, JSONArray categories, JSONArray categoryLabels, long pool, int daysAfter) {
         prefs(context).edit()
             .putLong("left", left)
             .putString("date", date)
             .putString("categories", categories.toString())
+            .putString("categoryLabels", categoryLabels.toString())
             .putLong("pool", pool)
             .putInt("daysAfter", daysAfter)
             .apply();
@@ -61,6 +62,20 @@ final class WidgetStore {
         SharedPreferences p = prefs(context);
         if (!today().equals(p.getString("date", ""))) return null;
         return p.getLong("left", 0);
+    }
+
+    /** Labels for categories(), in the app's language: the same order, falling back to the names. */
+    static String[] categoryLabels(Context context) {
+        String[] names = categories(context);
+        try {
+            JSONArray list = new JSONArray(prefs(context).getString("categoryLabels", "[]"));
+            if (list.length() != names.length) return names;
+            String[] out = new String[names.length];
+            for (int i = 0; i < names.length; i++) out[i] = list.getString(i);
+            return out;
+        } catch (JSONException e) {
+            return names;
+        }
     }
 
     static String[] categories(Context context) {

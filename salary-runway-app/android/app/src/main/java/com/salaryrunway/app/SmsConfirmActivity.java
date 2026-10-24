@@ -1,5 +1,6 @@
 package com.salaryrunway.app;
 
+import android.content.Context;
 import android.content.Intent;
 import android.os.Bundle;
 import android.widget.ArrayAdapter;
@@ -24,6 +25,7 @@ import java.util.List;
  */
 public class SmsConfirmActivity extends AppCompatActivity {
     static final String EXTRA_KEY = "key";
+    private Context text;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -38,20 +40,28 @@ public class SmsConfirmActivity extends AppCompatActivity {
         }
         setContentView(R.layout.activity_sms_confirm);
         setFinishOnTouchOutside(true);
+        // Labels in the app's language (the layout's own text follows the phone).
+        text = Lang.wrap(this);
+        ((TextView) findViewById(R.id.confirm_title)).setText(text.getString(R.string.confirm_title));
+        ((TextView) findViewById(R.id.confirm_category_label)).setText(text.getString(R.string.confirm_category));
+        ((TextView) findViewById(R.id.confirm_from_label)).setText(text.getString(R.string.confirm_from));
+        ((EditText) findViewById(R.id.confirm_note)).setHint(text.getString(R.string.confirm_note));
+        ((TextView) findViewById(R.id.confirm_ignore)).setText(text.getString(R.string.confirm_ignore));
+        ((TextView) findViewById(R.id.confirm_save)).setText(text.getString(R.string.confirm_save));
 
         boolean debit = "debit".equals(item.optString("type"));
         long amount = item.optLong("amount");
         String merchant = item.optString("merchant");
 
         TextView summary = findViewById(R.id.confirm_summary);
-        summary.setText(getString(debit ? R.string.sms_title_paid : R.string.sms_title_received,
+        summary.setText(text.getString(debit ? R.string.sms_title_paid : R.string.sms_title_received,
             WidgetStore.rupees(amount), merchant));
         TextView body = findViewById(R.id.confirm_body);
         body.setText(item.optString("body"));
 
         Spinner category = findViewById(R.id.confirm_category);
         String[] categories = SmsAlertStore.categories(this, !debit);
-        ArrayAdapter<String> adapter = new ArrayAdapter<>(this, android.R.layout.simple_spinner_item, categories);
+        ArrayAdapter<String> adapter = new ArrayAdapter<>(this, android.R.layout.simple_spinner_item, SmsAlertStore.labels(this, !debit));
         adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
         category.setAdapter(adapter);
         int guess = Arrays.asList(categories).indexOf(item.optString("category"));
@@ -65,14 +75,14 @@ public class SmsConfirmActivity extends AppCompatActivity {
         JSONArray cards = SmsAlertStore.cards(this);
         List<String> fromLabels = new ArrayList<>();
         List<String> fromIds = new ArrayList<>();
-        fromLabels.add(getString(R.string.confirm_from_account));
+        fromLabels.add(text.getString(R.string.confirm_from_account));
         fromIds.add("account");
         int preset = 0;
         String last4 = item.optString("last4", "");
         for (int i = 0; i < cards.length(); i++) {
             JSONObject c = cards.optJSONObject(i);
             if (c == null) continue;
-            fromLabels.add(getString(R.string.confirm_from_card, c.optString("name"), c.optString("last4")));
+            fromLabels.add(text.getString(R.string.confirm_from_card, c.optString("name"), c.optString("last4")));
             fromIds.add(c.optString("id"));
             if (!last4.isEmpty() && last4.equals(c.optString("last4"))) preset = fromIds.size() - 1;
         }
@@ -92,14 +102,14 @@ public class SmsConfirmActivity extends AppCompatActivity {
         });
         findViewById(R.id.confirm_save).setOnClickListener(v -> {
             String cardId = showFrom ? fromIds.get(from.getSelectedItemPosition()) : null;
-            SmsAlertStore.update(this, key, "confirmed", (String) category.getSelectedItem(), note.getText().toString().trim(), cardId);
+            SmsAlertStore.update(this, key, "confirmed", categories[category.getSelectedItemPosition()], note.getText().toString().trim(), cardId);
             done(key, R.string.confirm_saved);
         });
     }
 
     private void done(String key, int message) {
         NotificationManagerCompat.from(this).cancel(SmsReceiver.notificationId(key));
-        Toast.makeText(this, message, Toast.LENGTH_SHORT).show();
+        Toast.makeText(this, text.getString(message), Toast.LENGTH_SHORT).show();
         finish();
     }
 }

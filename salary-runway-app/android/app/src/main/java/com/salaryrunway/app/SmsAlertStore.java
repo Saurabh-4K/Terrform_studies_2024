@@ -37,10 +37,14 @@ final class SmsAlertStore {
         prefs(context).edit().putBoolean("enabled", on).apply();
     }
 
-    static void setLists(Context context, JSONArray categories, JSONArray incomeCategories, JSONObject rules, JSONArray cards) {
+    /** Category names are stored in English; the labels are how the app shows them, in its language. */
+    static void setLists(Context context, JSONArray categories, JSONArray incomeCategories, JSONArray categoryLabels,
+                         JSONArray incomeCategoryLabels, JSONObject rules, JSONArray cards) {
         prefs(context).edit()
             .putString("categories", categories.toString())
             .putString("incomeCategories", incomeCategories.toString())
+            .putString("categoryLabels", categoryLabels.toString())
+            .putString("incomeCategoryLabels", incomeCategoryLabels.toString())
             .putString("rules", rules.toString())
             .putString("cards", cards.toString())
             .apply();
@@ -79,6 +83,30 @@ final class SmsAlertStore {
         } catch (JSONException e) {
             return new String[] { "Misc" };
         }
+    }
+
+    /** Labels for categories(): the same order and length, falling back to the names. */
+    static String[] labels(Context context, boolean income) {
+        String[] names = categories(context, income);
+        try {
+            JSONArray list = new JSONArray(prefs(context).getString(income ? "incomeCategoryLabels" : "categoryLabels", "[]"));
+            if (list.length() != names.length) return names;
+            String[] out = new String[names.length];
+            for (int i = 0; i < names.length; i++) out[i] = list.getString(i);
+            return out;
+        } catch (JSONException e) {
+            return names;
+        }
+    }
+
+    /** How a category name is shown, in the app's language. */
+    static String label(Context context, String name) {
+        for (boolean income : new boolean[] { false, true }) {
+            String[] names = categories(context, income);
+            int i = java.util.Arrays.asList(names).indexOf(name);
+            if (i >= 0) return labels(context, income)[i];
+        }
+        return name;
     }
 
     static Map<String, String> rules(Context context) {

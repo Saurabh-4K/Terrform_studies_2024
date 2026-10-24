@@ -1,0 +1,45 @@
+<?xml version='1.0' encoding='utf-8'?>
+<!-- Hindi. The app name and IDs stay as in values/strings.xml. -->
+<resources>
+    <string name="widget_name">आज का खर्च</string>
+    <string name="widget_description">आज खर्च के लिए कितना बचा है दिखाता है, और ऐप खोले बिना खर्च जोड़ने देता है.</string>
+    <string name="widget_left_today">आज खर्च के लिए बचा</string>
+    <string name="widget_over">%1$s ज़्यादा</string>
+    <string name="widget_tomorrow_drops">कल का सुरक्षित खर्च घटकर %1$s</string>
+    <string name="widget_over_hint">आज की रकम से ज़्यादा</string>
+    <string name="widget_open_app">ऐप खोलें</string>
+    <string name="widget_open_app_hint">आज की रकम देखने के लिए</string>
+    <string name="widget_add">+ जोड़ें</string>
+    <string name="quick_title">खर्च जोड़ें</string>
+    <string name="quick_left">आज खर्च के लिए %1$s बचे</string>
+    <string name="quick_over">आज की रकम से %1$s ज़्यादा</string>
+    <string name="quick_amount">रकम (₹)</string>
+    <string name="quick_note">कहाँ / किस पर (वैकल्पिक)</string>
+    <string name="quick_cancel">रद्द करें</string>
+    <string name="quick_save">जोड़ें</string>
+    <string name="quick_amount_error">रकम डालें</string>
+    <string name="quick_added">%1$s जोड़े</string>
+    <string name="sms_channel">बैंक SMS</string>
+    <string name="sms_channel_description">बैंक या UPI भुगतान का SMS आने पर उसकी कैटेगरी जाँचने की याद.</string>
+    <string name="sms_title_paid">%2$s को %1$s भरे</string>
+    <string name="sms_title_received">%2$s से %1$s मिले</string>
+    <string name="sms_text_paid">कैटेगरी जाँचने के लिए टैप करें: %1$s</string>
+    <string name="sms_text_received">जाँचने और इसका क्या करना है चुनने के लिए टैप करें</string>
+    <string name="confirm_title">यह भुगतान जाँचें</string>
+    <string name="confirm_category">कैटेगरी</string>
+    <string name="confirm_note">कहाँ / किस पर</string>
+    <string name="confirm_ignore">यह भुगतान नहीं है</string>
+    <string name="confirm_save">सेव करें</string>
+    <string name="confirm_saved">सेव हो गया</string>
+    <string name="confirm_ignored">छोड़ दिया</string>
+    <string name="sms_a_card">आपका कार्ड</string>
+    <string name="sms_title_card">%2$s से %1$s भरे</string>
+    <string name="sms_text_card">उधार का पैसा: कैटेगरी जाँचने के लिए टैप करें</string>
+    <string name="sms_title_statement">%1$s बिल: %2$s</string>
+    <string name="sms_text_statement">भुगतान की योजना के लिए टैप करें. पूरा भरने पर कोई ब्याज नहीं.</string>
+    <string name="confirm_from">किससे भरा</string>
+    <string name="confirm_from_account">बैंक खाता / UPI / डेबिट कार्ड</string>
+    <string name="confirm_from_card">%1$s ••%2$s (क्रेडिट कार्ड)</string>
+    <string name="sms_title_salary">सैलरी आ गई! %1$s जमा</string>
+    <string name="sms_text_salary">अपनी मासिक योजना देखने के लिए टैप करें</string>
+</resources>

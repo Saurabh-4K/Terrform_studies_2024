@@ -129,12 +129,17 @@ With Personal mode off, the app is limited to **budgeting and debt planning**:
 
 *This is a design intent, not legal advice. Have a fintech lawyer review it before a public launch.*
 
+## Languages
+
+English, Marathi (मराठी) and Hindi (हिंदी), switched at the top of the Plan tab. The English text is the key: `tr('You saved {amount} today', { amount })` looks it up in `i18n-mr.js` or `i18n-hi.js`, and anything not translated stays in English. Any new text needs a Marathi and a Hindi entry; `tests/i18n.test.js` fails when one is missing or loses a `{value}`. The Android widget, notification and pop-ups use `values-mr/` and `values-hi/` strings, in the language chosen in the app (`Lang.java`).
+
 ## Files
 
 ```
 index.html        page shell
 styles.css        styles (light and dark themes)
 core.js           all calculations: cycles, runway, zones, pay, bills, cards, debts, insights, SMS reader
+i18n.js           language switch and translate function; i18n-mr.js, i18n-hi.js hold the Marathi and Hindi text
 demo.js           example data
 app.js            user interface
 tests/            unit tests for core.js
@@ -150,6 +155,7 @@ android/app/src/main/java/com/salaryrunway/app/
   SpendWidgetProvider.java        the "Spend today" home-screen widget
   QuickAddActivity.java           the widget's "Add an expense" window
   SpendWidgetPlugin.java, WidgetStore.java   widget data shared with the app
+  Lang.java                       the app's language for the widget, notification and pop-ups
 .github/workflows/salary-runway-android.yml  weekly APK build (Sunday morning)
 ```
 

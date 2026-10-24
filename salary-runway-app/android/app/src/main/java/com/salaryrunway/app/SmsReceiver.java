@@ -51,19 +51,21 @@ public class SmsReceiver extends BroadcastReceiver {
         return key.hashCode();
     }
 
-    private static void notify(Context context, String key, SmsParser.Result r) {
-        NotificationManagerCompat manager = NotificationManagerCompat.from(context);
+    private static void notify(Context app, String key, SmsParser.Result r) {
+        NotificationManagerCompat manager = NotificationManagerCompat.from(app);
+        // Text in the app's language; everything else uses the app's own context.
+        Context context = Lang.wrap(app);
         if (!manager.areNotificationsEnabled()) return;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             NotificationChannel channel = new NotificationChannel(
                 CHANNEL, context.getString(R.string.sms_channel), NotificationManager.IMPORTANCE_DEFAULT);
             channel.setDescription(context.getString(R.string.sms_channel_description));
-            context.getSystemService(NotificationManager.class).createNotificationChannel(channel);
+            app.getSystemService(NotificationManager.class).createNotificationChannel(channel);
         }
 
         boolean statement = "statement".equals(r.type) || r.salary;
         boolean debit = "debit".equals(r.type);
-        org.json.JSONObject card = SmsAlertStore.cardFor(context, r.last4);
+        org.json.JSONObject card = SmsAlertStore.cardFor(app, r.last4);
         String cardName = card != null ? card.optString("name") : context.getString(R.string.sms_a_card);
         String title;
         String text;
@@ -80,20 +82,20 @@ public class SmsReceiver extends BroadcastReceiver {
             title = context.getString(debit ? R.string.sms_title_paid : R.string.sms_title_received,
                 WidgetStore.rupees(r.amount), r.merchant);
             text = debit
-                ? context.getString(R.string.sms_text_paid, r.category)
+                ? context.getString(R.string.sms_text_paid, SmsAlertStore.label(app, r.category))
                 : context.getString(R.string.sms_text_received);
         }
 
         // Salary and statements open the app; a payment opens the "check this payment" window.
         Intent open = statement
-            ? new Intent(context, MainActivity.class).setFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            : new Intent(context, SmsConfirmActivity.class)
+            ? new Intent(app, MainActivity.class).setFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            : new Intent(app, SmsConfirmActivity.class)
                 .putExtra(SmsConfirmActivity.EXTRA_KEY, key)
                 .setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
-        PendingIntent tap = PendingIntent.getActivity(context, notificationId(key), open,
+        PendingIntent tap = PendingIntent.getActivity(app, notificationId(key), open,
             PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
 
-        NotificationCompat.Builder n = new NotificationCompat.Builder(context, CHANNEL)
+        NotificationCompat.Builder n = new NotificationCompat.Builder(app, CHANNEL)
             .setSmallIcon(R.drawable.ic_stat_runway)
             .setColor(0xFF0D6B58)
             .setContentTitle(title)
