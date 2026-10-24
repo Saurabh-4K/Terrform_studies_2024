@@ -13,7 +13,9 @@
     'Medical', 'Vehicle repair', 'Family function', 'Death in family', 'Tax payment',
     'Penalty or fine', 'Home repair', 'Job loss', 'Other',
   ];
-  const INCOME_CATEGORIES = ['Money received', 'Money returned', 'From family', 'Refund', 'Cashback', 'Side income', 'Gift'];
+  const INCOME_CATEGORIES = ['Money received', 'Money returned', 'From family', 'Refund', 'Cashback', 'Side income', 'Gift', 'Loan or Pay Later'];
+  // Money in that has to be paid back: counted as borrowed, never as income to save or invest.
+  const LOAN_CATEGORY = 'Loan or Pay Later';
   const INCOME_USE_LABELS = {
     spend: 'Kept for this month',
     emergency: 'Added to emergency fund',
@@ -101,6 +103,8 @@
     smsClean: null,
     help: null,
     helpFrom: null,
+    borrow: null,
+    rolloverHidden: false,
   };
 
   // ---------- storage ----------
@@ -311,6 +315,18 @@
       'Medical bills, a car repair, a family function or a tax bill. Enter the cost and see how to absorb it without new debt.',
       'The emergency fund is used first, then this month’s money. Grow and extra debt payments pause and flexible budgets are cut until the gap is made back.',
     ]],
+    borrow: ['Before you borrow', [
+      'Enter a big expense to see how to pay it without a loan.',
+      '<b>Needed now</b> (a repair, a hospital bill): your emergency fund goes first, since that’s what it’s for. Then this month’s Grow and extra loan payment, then this month’s money down to bills and basics.',
+      '<b>Can wait</b> (a purchase): whether it fits this month, what your next salary leaves free, and what saving for it costs next to an EMI.',
+      'If you still have to borrow, borrow only the shortfall, and see what it costs first.',
+      '<b>Borrowed this month</b> (under the Runway headline) counts credit card spending, which is borrowed until the bill is paid, and loan money received. A card bill paid in full by its due date costs no interest.',
+    ]],
+    rollover: ['Keep paying yourself', [
+      'When a loan ends, you’re already used to living without its EMI. Sending that money to your next loan, your emergency fund or savings speeds up your freedom without changing how you live.',
+      'The same works for a raise: send half to freedom before spending grows to match it.',
+      'Kept amounts are added to your set-asides every payday. Stop any of them from the Plan tab.',
+    ]],
     grow: ['Grow', [
       'Check that an adviser is registered on SEBI’s website: <a href="https://www.sebi.gov.in/sebiweb/other/OtherAction.do?doRecognisedFpi=yes&amp;intmId=13" target="_blank" rel="noopener">sebi.gov.in → Intermediaries → Investment Advisers</a>.',
       'Salary Runway doesn’t recommend any adviser, product, bank or fund, and earns nothing from them.',
@@ -356,11 +372,15 @@
         '<button data-action="tab" data-tab="' + t + '"' + (t === tab ? ' aria-current="page"' : '') + '>' +
         '<svg viewBox="0 0 24 24" aria-hidden="true">' + ICONS[t] + '</svg>' + TAB_LABELS[t] + '</button>'
       ).join('') +
-      '</div></nav>' + resetModal() + helpModal();
+      '</div></nav>' + resetModal() + helpModal() + borrowModal();
     if (tab === 'home') drawRunway();
     if (ui.reset) {
       const first = document.querySelector('#reset-card input, #reset-card button.primary');
       if (first) first.focus();
+    }
+    if (ui.borrow && ui.borrow.focus) {
+      ui.borrow.focus = false;
+      document.getElementById('borrow-card').focus();
     }
     if (ui.help) {
       document.querySelector('#help-card button.primary').focus();
@@ -429,10 +449,12 @@
 
     return (
       paydayCard() +
+      rolloverCard() +
+      loanDebtNote() +
       '<section class="hero">' +
       '<div class="hero-top"><p class="eyebrow">Salary cycle · ' + fmtDate(cyc.start) + ' – ' + fmtDate(lastDay) + ' · day ' + (r.idxToday + 1) + ' of ' + cyc.days + '</p>' + info('runway') + '</div>' +
       zoneMeter(z.zone) +
-      '<h1>' + headline + '</h1><p class="sub">' + sub + '</p>' +
+      '<h1>' + headline + '</h1><p class="sub">' + sub + '</p>' + borrowedLine() +
       (z.zone === 'red' ? redOptions(z, r) : '') +
       '<div class="chart-wrap"><div id="runway-chart" role="img" aria-label="Balance through this salary cycle"></div>' +
       '<div class="legend"><span><i></i>Balance so far</span><span><i class="pace"></i>If you keep this pace</span><span><i class="plan"></i>If you keep to budget</span>' +
@@ -458,6 +480,7 @@
       tile('Next salary', plural(daysToPay, 'day'), fmtDate(cyc.next)) +
       tile('Flexible spending', inr(flexSpent), 'of ' + inr(Math.round((r.plan.flexTotal * share) / 10) * 10) + ' budget' + (r.extraIn ? ' + ' + inr(r.extraIn) + ' received' : '') + (r.anchor ? ' since ' + fmtDate(r.anchor.date) : '')) +
       '</section>' +
+      bigExpenseCard() +
       paydayPreviewCard() +
       '<section class="card"><div class="card-head"><h2>' + (r.anchor && r.anchorIdx > 0 ? 'You can spend until payday' : 'You can spend this cycle') + '</h2><button class="ghost" data-action="tab" data-tab="plan">Adjust</button></div>' +
       '<div class="bars">' + bars.join('') + '</div></section>' +
@@ -586,6 +609,7 @@
       slip.previousUsual = usual;
       state.settings.salary = amount;
       toast('Usual pay updated to ' + inr(amount));
+      if (amount > usual) askRollover({ from: 'Half your raise', amount: Math.round((amount - usual) / 200) * 100, kind: 'raise', raise: amount - usual });
     } else if (amount > usual) {
       const extra = { id: uid(), kind: 'in', date: cyc.start, amount: amount - usual, category: slip.reason, note: 'Extra in this month’s pay', source: 'manual', useFor: null };
       state.transactions.push(extra);
@@ -772,6 +796,137 @@
   }
 
   // Ways out of the red, each with its amount.
+  // ---------- before you borrow ----------
+
+  function borrowedLine() {
+    const b = Core.borrowedThisCycle(state, today());
+    const parts = [b.card ? inr(b.card) + ' on cards' : '', b.loans ? inr(b.loans) + ' in loans' : ''].filter(Boolean);
+    return '<p class="borrowed-line ' + (b.total ? 'bad' : 'good') + '">Borrowed this month: <b>' + inr(b.total) + '</b>' +
+      (b.total ? (parts.length > 1 ? ' (' + parts.join(', ') + ')' : parts[0].replace(/^₹[\d,]+/, '')) : ' ✓') + '</p>';
+  }
+
+  function bigExpenseCard() {
+    return '<section class="card"><div class="card-head">' + titled('Big expense coming?', 'borrow') + '</div>' +
+      '<form id="borrow-form" class="row" autocomplete="off"><label class="field grow-field" for="borrow-amount"><span>How much (₹)</span>' +
+      '<input id="borrow-amount" type="number" inputmode="numeric" min="1" step="1" required placeholder="15000"></label>' +
+      '<button class="primary" type="submit">Check before you borrow</button></form></section>';
+  }
+
+  // A loan received that isn't in Debts yet: its cost should be planned.
+  function loanDebtNote() {
+    const tx = state.transactions.filter((x) => Core.isIncome(x) && x.borrowed && !x.debtId)
+      .sort((a, b) => (a.date < b.date ? 1 : -1))[0];
+    if (!tx) return '';
+    return '<div class="callout warn"><b>' + inr(tx.amount) + (tx.note && tx.note !== 'Money received' ? ' from ' + esc(tx.note) : '') + ' is borrowed money</b>' +
+      '<span class="hint">Add it to Debts so its interest and EMI are part of your plan.</span>' +
+      '<div class="row"><button class="primary" data-action="loan-add" data-id="' + esc(tx.id) + '">Add to Debts</button>' +
+      '<button class="ghost" data-action="loan-known" data-id="' + esc(tx.id) + '">It’s already there</button></div></div>';
+  }
+
+  // Shown while adding a payment that this month can't spare.
+  function bigSpendWarning(amount) {
+    if (!state.settings.salary || amount <= 0) return '';
+    const t = today();
+    const r = Core.projectRunway(state, t);
+    const z = Core.zoneStatus(state, t, r);
+    const spare = Math.max(0, Math.floor(z.money - z.needs));
+    if (amount <= Math.max(spare, 3 * r.dailyAllowance)) return '';
+    return inr(amount) + ' is more than this month can spare (' + inr(spare) + '). ' +
+      '<button type="button" class="link" data-action="borrow-open" data-amount="' + amount + '">Check before you borrow</button>';
+  }
+
+  function borrowModal() {
+    const b = ui.borrow;
+    if (!b) return '';
+    return '<div class="reset-modal-overlay borrow-overlay" role="presentation"><div class="reset-modal-card borrow-card" role="dialog" aria-modal="true" aria-labelledby="borrow-title" id="borrow-card" tabindex="-1">' +
+      borrowBody() + '</div></div>';
+  }
+
+  function borrowBody() {
+    const b = ui.borrow;
+    const c = Core.borrowCheck(state, b.amount, today());
+    const line = (label, amount, sub, cls) => amount > 0
+      ? '<div class="line"><span>' + label + (sub ? '<span class="hint line-sub">' + sub + '</span>' : '') + '</span><span' + (cls ? ' class="' + cls + '"' : '') + '>' + inr(amount) + '</span></div>' : '';
+    const cost = (q) => '<div class="summary"><span class="eyebrow">If you borrow ' + inr(q.amount) + '</span>' +
+      '<div class="line"><span>Credit card at ' + q.cardRate + '%, paying ' + inr(q.cardMonthly) + ' a month' +
+      '<span class="hint line-sub">' + (q.card.neverPaysOff ? 'Never paid off at this amount' : plural(q.card.months, 'month') + ' to clear') + '</span></span><span class="bad">+' + inr(q.card.interest) + '</span></div>' +
+      '<div class="line"><span>A bank loan at 16% for 12 months<span class="hint line-sub">' + inr(q.loan.emi) + ' a month</span></span><span class="bad">+' + inr(q.loan.interest) + '</span></div>' +
+      '<span class="hint">Loan apps and Pay Later often charge far more. Check the yearly rate and fees before you agree.</span></div>';
+    let html = '<span class="eyebrow">Before you borrow</span>' +
+      '<h2 id="borrow-title">' + inr(c.amount) + ' without a loan</h2>' +
+      '<label class="field" for="bc-amount"><span>Amount (₹)</span><input id="bc-amount" type="number" inputmode="numeric" min="1" step="1" data-borrow="amount" value="' + esc(c.amount || '') + '"></label>' +
+      '<div class="seg" role="group" aria-label="How soon is it needed"><button data-action="borrow-mode" data-urgent="1" aria-pressed="' + !!b.urgent + '">Needed now</button>' +
+      '<button data-action="borrow-mode" data-urgent="0" aria-pressed="' + !b.urgent + '">Can wait</button></div>';
+    if (!c.amount) return html + '<div class="row"><button class="ghost" data-action="borrow-close">Close</button></div>';
+    if (b.urgent) {
+      const u = c.urgent;
+      const daily = u.shortfall > 0 ? '' : 'From tomorrow: ' + inr(u.dailyAfter) + ' a day until payday (now ' + inr(c.daily) + ')';
+      html += '<div class="summary">' +
+        line('From your emergency fund', u.fromFund, 'That’s what it’s for.' + (u.freedomBefore !== null ? ' Days of Freedom ' + u.freedomBefore + ' → ' + u.freedomAfter + '.' : '')) +
+        line('Pause this month’s Grow and extra loan payment', u.pause, 'If you haven’t moved that money yet.') +
+        line('From this month’s money', u.fromMonth, daily || 'Bills and basics stay covered.') +
+        (u.shortfall > 0
+          ? '<div class="line total"><span>Still short</span><span class="bad">' + inr(u.shortfall) + '</span></div>'
+          : '<div class="line total"><span>Covered without a loan</span><span class="good">✓</span></div>' +
+            (u.fromFund || u.pause ? '' : '<span class="hint">' + daily + '</span>')) +
+        '</div>';
+      if (u.shortfall > 0) {
+        html += '<div class="callout warn"><b>If it can’t wait, borrow only ' + inr(u.shortfall) + ', not ' + inr(c.amount) + '.</b>' +
+          (c.wait.nextFree >= u.shortfall ? '<span class="hint">Your next salary on ' + fmtDate(c.nextPayday) + ' has ' + inr(c.wait.nextFree) + ' free after bills: clear it from there.</span>' : '') + '</div>' +
+          cost(u.borrow);
+      }
+      html += '<div class="row">' +
+        (u.fromFund || u.pause ? '<button class="primary" data-action="borrow-use">Use this plan</button>' : '') +
+        (u.shortfall > 0 ? '<button data-action="borrow-recover">Plan the recovery</button>' : '') +
+        '<button class="ghost" data-action="borrow-close">Close</button></div>';
+      return html;
+    }
+    const w = c.wait;
+    const sp = w.save.find((x) => x.months === b.months) || w.save[2];
+    html += '<div class="summary">' +
+      (w.fits
+        ? '<div class="line"><span>It fits this month<span class="hint line-sub">From tomorrow: ' + inr(w.dailyAfter) + ' a day until payday (now ' + inr(c.daily) + ')</span></span><span class="good">✓</span></div>'
+        : '<div class="line"><span>This month can spare</span><span>' + inr(c.spare) + '</span></div>') +
+      '<div class="line"><span>Wait for payday on ' + fmtDate(c.nextPayday) + '<span class="hint line-sub">Free after bills, before your budgets</span></span><span>' + inr(w.nextFree) + '</span></div></div>' +
+      '<span class="eyebrow">Save first, or pay in EMIs?</span>' +
+      '<div class="seg" role="group" aria-label="Months">' + w.save.map((x) =>
+        '<button data-action="borrow-months" data-months="' + x.months + '" aria-pressed="' + (x === sp) + '">' + x.months + ' months</button>').join('') + '</div>' +
+      '<div class="summary">' +
+      '<div class="line"><span>Save ' + inr(sp.monthly) + ' a month<span class="hint line-sub">Ready by ' + monthYear(sp.ready) + '</span></span><span class="good">' + inr(c.amount) + '</span></div>' +
+      '<div class="line"><span>EMI at 16%: ' + inr(sp.emi.emi) + ' a month<span class="hint line-sub">Yours today, paid for ' + plural(sp.months, 'month') + '</span></span><span class="bad">' + inr(c.amount + sp.emi.interest) + '</span></div>' +
+      '<div class="line total"><span>Saving first keeps</span><span class="good">' + inr(sp.emi.interest) + '</span></div></div>' +
+      '<p class="hint">Keep your emergency fund for emergencies.</p>' +
+      '<div class="row"><button class="ghost" data-action="borrow-close">Close</button></div>';
+    return html;
+  }
+
+  // ---------- keep paying yourself (rollover) ----------
+
+  const ROLL_TO = { debt: 'extra toward loans', emergency: 'emergency fund', grow: 'savings / investing' };
+
+  function askRollover(a) {
+    if (!(a.amount > 0)) return;
+    state.rolloverAsk = Object.assign({ date: today() }, a);
+    ui.rolloverHidden = false;
+  }
+
+  function rolloverCard() {
+    const a = state.rolloverAsk;
+    if (!a || ui.rolloverHidden || state.isDemo) return '';
+    const o = Core.rolloverOptions(state, a.amount, today());
+    return '<section class="card income-card rollover-card"><div class="card-head">' +
+      titled(a.kind === 'raise' ? 'Your pay went up by ' + inr(a.raise) : esc(a.from) + ' is done 🎉', 'rollover') + '</div>' +
+      '<p class="hint">' + (a.kind === 'raise'
+        ? 'Send half of it, ' + inr(a.amount) + ' a month, to freedom before spending grows to match it.'
+        : 'You’re used to living without ' + inr(a.amount) + ' a month. Keep paying it, to yourself:') + '</p>' +
+      '<div class="choices">' + o.options.map((opt) =>
+        '<button class="choice' + (opt.to === o.recommended ? ' suggested' : '') + '" data-action="rollover-use" data-to="' + opt.to + '">' +
+        '<span class="choice-title">' + esc(opt.title) + (opt.to === o.recommended ? ' <span class="chip chip-auto">Suggested</span>' : '') + '</span>' +
+        '<span class="choice-detail">' + esc(opt.detail) + '</span></button>').join('') + '</div>' +
+      '<p class="hint"><b>Why the suggestion:</b> ' + esc(o.reason) + '</p>' +
+      '<div><button class="ghost" data-action="rollover-later">Decide later</button></div></section>';
+  }
+
   function redOptions(z, r) {
     const items = z.options.map((o) => {
       if (o.kind === 'fund') {
@@ -1110,6 +1265,7 @@
       (saving ? savedForm() :
       '<form id="add-tx" class="form-grid" autocomplete="off">' +
       '<label class="field">Amount (₹)<input id="tx-amount" type="number" inputmode="decimal" min="1" step="1" required placeholder="' + (moneyIn ? '2000' : '250') + '"></label>' +
+      (moneyIn ? '' : '<p id="tx-big-warn" class="borrow-warn wide" hidden></p>') +
       '<label class="field">Category<select id="tx-category">' + (moneyIn ? incomeCategoryOptions('Money received') : categoryOptions('Food & dining')) + '</select></label>' +
       '<label class="field">Date<input id="tx-date" type="date" value="' + t + '" max="' + t + '" required></label>' +
       '<label class="field">' + (moneyIn ? 'From' : 'Where / what') + '<input id="tx-note" type="text" placeholder="' + (moneyIn ? 'Rahul' : 'Swiggy') + '"></label>' +
@@ -1275,6 +1431,11 @@
       tx.kind = 'in';
       // A refund to a card lowers the card bill, so it stays as this month's money.
       tx.useFor = paidFrom !== 'account' ? 'spend' : null;
+      if (paidFrom === 'account' && Core.isLoanCredit(p.raw)) {
+        tx.category = LOAN_CATEGORY;
+        tx.borrowed = true;
+        tx.useFor = 'spend';
+      }
     } else if (o.review || paidFrom.indexOf('card:') === 0) {
       tx.needsReview = true;
     } else {
@@ -1386,8 +1547,11 @@
     const plan = Core.monthlyPlan(state, today());
     const alloc = Core.allocate(state, today());
     const sv = alloc.savings;
+    const ro = alloc.rollover;
+    const rolls = state.savings.rollovers || [];
     const edited = alloc.budgets.some((b) => !b.auto);
     return (
+      rolloverCard() +
       (s.salary ? '' : '<div class="callout"><b>Start here.</b><span class="hint">Enter your salary and payday, then your fixed payments. Everything else can come later.</span></div>') +
       '<section class="card">' + titled('Salary', 'salary') + '<div class="form-grid">' +
       numInput('salary', 'settings.salary', s.salary || '', 'Monthly salary in hand (₹)') +
@@ -1418,10 +1582,15 @@
 
       '<section class="card"><div class="card-head">' + titled('Set aside each month', 'setaside') + modeChip(state.savings.auto) + '</div>' +
       '<div class="form-grid">' +
-      numInput('emergency-monthly', 'savings.emergencyMonthly', sv.emergencyMonthly, 'Emergency fund (₹)') +
-      numInput('debt-extra', 'savings.debtExtra', sv.debtExtra, 'Extra toward debts (₹)') +
-      numInput('invest-monthly', 'savings.investMonthly', sv.investMonthly, 'Grow budget (₹)') +
+      numInput('emergency-monthly', 'savings.emergencyMonthly', sv.emergencyMonthly - ro.emergency, 'Emergency fund (₹)') +
+      numInput('debt-extra', 'savings.debtExtra', sv.debtExtra - ro.debt, 'Extra toward debts (₹)') +
+      numInput('invest-monthly', 'savings.investMonthly', sv.investMonthly - ro.grow, 'Grow budget (₹)') +
       '</div>' +
+      (rolls.length
+        ? '<div class="summary"><span class="eyebrow">Kept paying yourself</span>' + rolls.map((x) =>
+          '<div class="line"><span>' + esc(x.from) + ' → ' + ROLL_TO[x.to] + '</span><span>' + inr(x.amount) +
+          ' <button class="link" data-action="rollover-stop" data-id="' + esc(x.id) + '">Stop</button></span></div>').join('') + '</div>'
+        : '') +
       (state.savings.auto
         ? sv.notes.map((n) => '<p class="hint">' + esc(n) + '</p>').join('')
         : '<div class="row"><span class="hint">You set these amounts.</span><button class="ghost" data-action="savings-auto">Work them out for me</button></div>') + '</section>' +
@@ -1729,7 +1898,8 @@
   function viewDebts() {
     const t = today();
     const debts = state.debts.filter((d) => Number(d.balance) > 0);
-    const extra = Core.allocate(state, t).savings.debtExtra;
+    const alloc = Core.allocate(state, t);
+    const extra = alloc.savings.debtExtra;
     let compare = '';
     if (debts.length) {
       const c = Core.compareDebtPlans(debts, extra);
@@ -1747,7 +1917,8 @@
       const bestKey = c.avalanche.totalInterest <= c.snowball.totalInterest ? 'avalanche' : 'snowball';
       compare =
         '<section class="card">' + titled('When will you be debt-free?', 'payoff') +
-        '<div class="form-grid">' + numInput('debt-extra-2', 'savings.debtExtra', extra, 'Extra per month on top of minimums (₹)') + '</div>' +
+        '<div class="form-grid">' + numInput('debt-extra-2', 'savings.debtExtra', extra - alloc.rollover.debt, 'Extra per month on top of minimums (₹)') + '</div>' +
+        (alloc.rollover.debt ? '<p class="hint">Plus ' + inr(alloc.rollover.debt) + ' a month kept from cleared loans.</p>' : '') +
         '<div class="plans">' +
         card('Minimums only', c.minimum, null, false) +
         (extra > 0
@@ -1757,6 +1928,7 @@
     }
 
     return (
+      rolloverCard() +
       leakBanner() +
       cardsSection() +
       '<section class="card"><div class="card-head">' + titled('Loans', 'loans') + '</div>' +
@@ -1959,6 +2131,7 @@
     if (ev.target.classList && ev.target.classList.contains('help-overlay')) {
       ui.helpFrom = ui.help; ui.help = null; rerenderKeepScroll(); return;
     }
+    if (ev.target.classList && ev.target.classList.contains('borrow-overlay')) { ui.borrow = null; rerenderKeepScroll(); return; }
     const btn = ev.target.closest('[data-action]');
     if (!btn) return;
     const a = btn.dataset.action;
@@ -2015,8 +2188,13 @@
       case 'list-add':
         state[btn.dataset.list] = state[btn.dataset.list] || [];
         state[btn.dataset.list].push(listDefaults(btn.dataset.list)); save(); break;
-      case 'list-remove':
-        state[btn.dataset.list] = state[btn.dataset.list].filter((x) => x.id !== btn.dataset.id); save(); break;
+      case 'list-remove': {
+        const item = state[btn.dataset.list].find((x) => x.id === btn.dataset.id);
+        // A loan or EMI that's gone frees its monthly payment.
+        if (item && btn.dataset.list === 'debts' && item.balance > 0) askRollover({ from: item.name || 'Your loan', amount: Number(item.minPayment) || 0, kind: 'loan' });
+        if (item && btn.dataset.list === 'fixed' && /\bemi\b|loan/i.test(item.name || '')) askRollover({ from: item.name, amount: Number(item.amount) || 0, kind: 'loan' });
+        state[btn.dataset.list] = state[btn.dataset.list].filter((x) => x !== item); save(); break;
+      }
       case 'tx-filter': ui.txFilter = btn.dataset.filter; break;
       case 'tx-delete': {
         const tx = state.transactions.find((x) => x.id === btn.dataset.id);
@@ -2028,6 +2206,55 @@
       }
       case 'tx-kind': ui.txKind = btn.dataset.kind; break;
       case 'help': ui.help = btn.dataset.help; break;
+      case 'borrow-open': ui.borrow = { amount: Number(btn.dataset.amount) || 0, urgent: true, months: 12, focus: true }; break;
+      case 'borrow-mode': ui.borrow.urgent = btn.dataset.urgent === '1'; break;
+      case 'borrow-months': ui.borrow.months = Number(btn.dataset.months) || 12; break;
+      case 'borrow-close': ui.borrow = null; break;
+      case 'borrow-use': {
+        const u = Core.borrowCheck(state, ui.borrow.amount, t).urgent;
+        if (u.fromFund > 0) {
+          state.transactions.push({ id: uid(), kind: 'in', date: t, amount: u.fromFund, category: 'From emergency fund', note: 'Emergency fund', source: 'manual', useFor: 'spend', fromFund: true });
+          state.savings.emergencyBalance = Math.max(0, (Number(state.savings.emergencyBalance) || 0) - u.fromFund);
+        }
+        if (u.pause > 0) {
+          const cyc = Core.cycleFor(t, Number(state.settings.payday) || 1);
+          state.adjustment = { until: cyc.next, flexCutPct: 0, pauseInvest: true, pauseDebtExtra: true, reason: 'Big expense' };
+        }
+        ui.borrow = null;
+        save(); toast((u.fromFund ? inr(u.fromFund) + ' moved from your emergency fund. ' : 'Grow and extra payments paused until payday. ') + 'Record the payment when you pay.'); break;
+      }
+      case 'borrow-recover':
+        ui.emergency.amount = String(ui.borrow.amount);
+        ui.borrow = null;
+        setTab('grow');
+        setTimeout(() => { const el = document.getElementById('em-amount'); if (el) el.scrollIntoView({ block: 'center' }); }, 0);
+        return;
+      case 'rollover-use': {
+        const a = state.rolloverAsk;
+        if (!a) break;
+        const opt = Core.rolloverOptions(state, a.amount, t).options.find((x) => x.to === btn.dataset.to);
+        state.rolloverAsk = null;
+        if (btn.dataset.to === 'spend') { save(); toast('Added to your flexible budgets'); break; }
+        state.savings.rollovers = (state.savings.rollovers || []).concat({ id: uid(), from: a.from, amount: a.amount, to: btn.dataset.to, date: t });
+        save(); celebrate('Nice move! ' + (opt ? opt.detail : inr(a.amount) + ' a month kept for you.')); break;
+      }
+      case 'rollover-later': ui.rolloverHidden = true; break;
+      case 'rollover-stop':
+        state.savings.rollovers = (state.savings.rollovers || []).filter((x) => x.id !== btn.dataset.id);
+        save(); toast('Stopped. That money goes back to your budgets.'); break;
+      case 'loan-add': {
+        const tx = state.transactions.find((x) => x.id === btn.dataset.id);
+        if (!tx) break;
+        const d = Object.assign(listDefaults('debts'), { name: tx.note && tx.note !== 'Money received' ? tx.note : 'Loan', balance: tx.amount });
+        state.debts.push(d);
+        tx.debtId = d.id;
+        save(); setTab('debts'); toast('Added. Enter its interest rate and monthly EMI.'); return;
+      }
+      case 'loan-known': {
+        const tx = state.transactions.find((x) => x.id === btn.dataset.id);
+        if (tx) tx.debtId = 'known';
+        save(); break;
+      }
       case 'help-close': ui.helpFrom = ui.help; ui.help = null; break;
       case 'reset-next': ui.reset.step = 2; break;
       case 'reset-back': ui.reset.step = 1; break;
@@ -2267,10 +2494,10 @@
       if (el.dataset.bind === 'settings.payday') val = Math.min(31, Math.max(1, Math.round(val) || 1));
       if (state.savings.auto && /^savings\.(emergencyMonthly|investMonthly|debtExtra)$/.test(el.dataset.bind)) {
         // Keep the other two at their worked-out amounts.
-        const sv = Core.allocate(state, today()).savings;
-        state.savings.emergencyMonthly = sv.emergencyMonthly;
-        state.savings.investMonthly = sv.investMonthly;
-        state.savings.debtExtra = sv.debtExtra;
+        const a = Core.allocate(state, today());
+        state.savings.emergencyMonthly = a.savings.emergencyMonthly - a.rollover.emergency;
+        state.savings.investMonthly = a.savings.investMonthly - a.rollover.grow;
+        state.savings.debtExtra = a.savings.debtExtra - a.rollover.debt;
         state.savings.auto = false;
       }
       setPath(el.dataset.bind, val);
@@ -2285,6 +2512,9 @@
       else {
         let v = Math.max(0, Number(el.value) || 0);
         if (f === 'dueDay') v = Math.min(31, Math.max(1, Math.round(v) || 1));
+        if (el.dataset.list === 'debts' && f === 'balance' && item.balance > 0 && v === 0) {
+          askRollover({ from: item.name || 'Your loan', amount: Number(item.minPayment) || 0, kind: 'loan' });
+        }
         item[f] = v;
         if (el.dataset.list === 'budgets' && f === 'amount') item.auto = false;
       }
@@ -2321,7 +2551,11 @@
         save(); toast('Marked as saved. Choose where it counts.'); rerenderKeepScroll(); return;
       }
       if (tx.needsReview) { tx.needsReview = false; rerenderKeepScroll(); }
-      if (Core.isIncome(tx)) { save(); return; }
+      if (Core.isIncome(tx)) {
+        tx.borrowed = el.value === LOAN_CATEGORY;
+        if (tx.borrowed && !tx.useFor) tx.useFor = 'spend';
+        save(); rerenderKeepScroll(); return;
+      }
       const key = Core.normalizeMerchant(tx.note);
       if (key) state.merchantRules[key] = el.value;
       save(); toast('Saved. ' + (key ? 'Future payments to ' + tx.note + ' will go to ' + el.value + '.' : '')); return;
@@ -2353,6 +2587,26 @@
       return;
     }
     if (el.id === 'sms-text') { ui.smsText = el.value; return; }
+    if (el.dataset.borrow && ui.borrow) {
+      ui.borrow.amount = Math.max(0, Math.round(Number(el.value) || 0));
+      const card = document.getElementById('borrow-card');
+      const pos = el.selectionStart;
+      if (card) {
+        card.innerHTML = borrowBody();
+        const again = document.getElementById(el.id);
+        if (again) { again.focus(); try { again.setSelectionRange(pos, pos); } catch (e) { /* number inputs */ } }
+      }
+      return;
+    }
+    if (el.id === 'tx-amount') {
+      const warn = document.getElementById('tx-big-warn');
+      if (warn) {
+        const msg = bigSpendWarning(Math.round(Number(el.value) || 0));
+        warn.innerHTML = msg;
+        warn.hidden = !msg;
+      }
+      return;
+    }
     if (el.dataset.em === 'amount' || el.dataset.em === 'cut') {
       ui.emergency[el.dataset.em] = el.value;
       const label = document.getElementById('em-cut-label');
@@ -2398,6 +2652,12 @@
       rerenderKeepScroll();
       return;
     }
+    if (ev.target.id === 'borrow-form') {
+      ev.preventDefault();
+      const amount = Math.round(Number(document.getElementById('borrow-amount').value) || 0);
+      if (amount > 0) { ui.borrow = { amount, urgent: true, months: 12, focus: true }; rerenderKeepScroll(); }
+      return;
+    }
     if (ev.target.id !== 'add-tx') return;
     ev.preventDefault();
     const amount = Math.round(Number(document.getElementById('tx-amount').value) || 0);
@@ -2405,7 +2665,12 @@
     const note = document.getElementById('tx-note').value.trim();
     const category = document.getElementById('tx-category').value;
     const tx = { id: uid(), date: document.getElementById('tx-date').value || today(), amount, category, note, source: 'manual' };
-    if (ui.txKind === 'in') { tx.kind = 'in'; tx.useFor = null; }
+    if (ui.txKind === 'in') {
+      tx.kind = 'in';
+      tx.useFor = null;
+      // Borrowed money is for what it was borrowed for: no "what should this do?".
+      if (category === LOAN_CATEGORY) { tx.borrowed = true; tx.useFor = 'spend'; }
+    }
     const from = document.getElementById('tx-from');
     if (ui.txKind !== 'in' && from && from.value !== 'account') tx.paidFrom = from.value;
     state.transactions.push(tx);
@@ -2429,6 +2694,7 @@
 
   document.addEventListener('keydown', (ev) => {
     if (ev.key === 'Escape' && ui.help) { ui.helpFrom = ui.help; ui.help = null; rerenderKeepScroll(); }
+    else if (ev.key === 'Escape' && ui.borrow) { ui.borrow = null; rerenderKeepScroll(); }
     else if (ev.key === 'Escape' && ui.reset) { ui.reset = null; rerenderKeepScroll(); }
   });
 

@@ -49,10 +49,10 @@ npm run android:apk   # APK at android/app/build/outputs/apk/debug/app-debug.apk
 
 | Tab | What it does |
 |---|---|
-| **Runway** | Payday check-in, the **green / careful / red zone**, the balance graph (with the red band for bills and basics), *left to spend today*, "you saved ₹58" prompts, card bill reminders, what's left in each budget, coming bills and insights from your spending. |
+| **Runway** | Payday check-in and reset, **borrowed this month**, **Before you borrow** for big expenses, the **green / careful / red zone**, the balance graph (with the red band for bills and basics), *left to spend today*, "you saved ₹58" prompts, card bill reminders, what's left in each budget, coming bills and insights from your spending. |
 | **Spend** | Payments and money received (by hand, from bank SMS, or from the home-screen widget), **Needs your check** for SMS payments, bills to pay, the "what should this money do?" card, and *Paid from* (account or card). Categories are learned per shop. |
 | **Plan** | Salary, payday and **pay over the year**, fixed payments, **bills that vary**, yearly costs, monthly set-asides and flexible budgets (worked out automatically; edit any amount and the rest adjust), and your data (backup, restore, SMS cleanup). |
-| **Debts** | **Credit cards** (bill, due date, limit used, pay full / minimum / part / EMI with real costs) and **loans** with a payoff plan: *minimums only*, *highest interest first*, *smallest balance first*. |
+| **Debts** | **Credit cards** (bill, due date, limit used, pay full / minimum / part / EMI with real costs) and **loans** with a payoff plan: *minimums only*, *highest interest first*, *smallest balance first*. When a loan ends, **keep paying yourself** its EMI. |
 | **Grow** | Savings from daily leftovers, monthly set-aside check-in, emergency fund, yearly costs, **emergency mode**, money set aside to invest (with a pointer to SEBI-registered advisers), and short lessons. |
 
 ### Credit cards: staying out of the card trap

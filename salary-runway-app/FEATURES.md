@@ -92,6 +92,19 @@ All numbers come from the same plan as the rest of the app. Locked-in money alre
 
 ## 4. Runway tab: where you stand today
 
+### Borrowed this month
+Under the headline: **Borrowed this month: ₹0 ✓** in green, or the amount in red, split into card spending (borrowed until the bill is paid) and loan money received.
+
+### Before you borrow
+**Big expense coming?** Enter the amount and tap *Check before you borrow*. The same check opens from the Spend tab when a payment is more than the month can spare (more than both the money above bills and basics and three days' spending). It shows the way to pay without a loan:
+- **Needed now** (a repair, a hospital bill):
+  1. the emergency fund first ("that's what it's for"), with Days of Freedom before and after
+  2. pausing this month's Grow and extra loan payment
+  3. this month's money down to bills and basics, with the daily amount from tomorrow
+  - If something is still short: **borrow only the shortfall, not the full amount**. If the next salary covers it, the check says so, and shows what the shortfall would cost on a credit card at minimum payments and as a bank loan at 16%. It also warns that loan apps and Pay Later often charge far more.
+  - **Use this plan** moves the fund money and pauses the set-asides. **Plan the recovery** opens Emergency mode with the amount filled in.
+- **Can wait** (a purchase): whether it fits this month, what the next salary leaves free, and **save first or pay in EMIs** for 3, 6 or 12 months: *Save ₹2,500 a month, ready by Apr 2027, ₹15,000* against *EMI at 16%, ₹15,708*: **saving first keeps ₹708**. "Keep your emergency fund for emergencies."
+
 ### Zone
 A three-part meter, **Green · Careful · Red**, with a headline that says what to do.
 
@@ -186,6 +199,7 @@ For a refund, money from home, money returned, cashback, side income or extra pa
 - With a loan at 15%+, *Keep it for this month* shows the badge **Extends this month's budget, but delays your debt-free date**.
 - Moving money to safety gives a light vibration and a green message with true numbers, e.g. *Nice move! +2 days of freedom (8 now)* or *Saves about ₹24 in interest a year*.
 - Until you choose, it counts as this month's money. You can change the choice later, and the old effect is undone.
+- **Loans are not income.** Money in marked *Loan or Pay Later*, or a bank SMS for a loan payout (the word loan or disbursed, a credit line, Pay Later, or a known lending app such as KreditBee, MoneyView, Navi, LazyPay or Simpl), is counted as **borrowed**. It isn't offered for saving or investing, and the Runway asks you to **add it to Debts** so its interest and EMI are planned.
 
 ## 8. Daily savings: "you saved ₹58 today"
 
@@ -233,6 +247,17 @@ For a refund, money from home, money returned, cashback, side income or extra pa
   - **Highest interest first** (pays the least interest)
   - **Smallest balance first** (quick wins)
 - Each plan shows the debt-free month, months, total interest, savings against minimums and the order loans are cleared. It warns if a minimum is smaller than the monthly interest ("never paid off").
+
+### Keep paying yourself (when a loan ends)
+When a loan's balance goes to ₹0 or it's removed, or a fixed payment with EMI or loan in its name is removed, the app asks: *"Personal loan is done 🎉 You're used to living without ₹4,100 a month. Keep paying it, to yourself."* Choices, each with its true effect:
+- **Pay off your other loans faster:** *Debt-free 10 months sooner, about ₹15,449 less interest*
+- **Build your emergency fund:** *+3 Days of Freedom every month*
+- **Set aside to invest** (with the SEBI-registered adviser reminder)
+- **Spend it:** your flexible budgets grow
+
+The suggestion follows the usual safety-first order. A chosen amount is added to the set-asides every payday, in automatic and manual plans alike. Money kept for loans moves to the emergency fund once no loans are left. The Plan tab lists them under **Kept paying yourself**, each with **Stop**.
+
+**A raise works the same way:** ticking *This is my new usual pay* with a higher amount asks to send **half the raise** to freedom before spending grows to match it.
 
 ## 12. Grow tab: safety nets and saving
 

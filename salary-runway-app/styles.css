@@ -258,7 +258,7 @@ button:disabled { opacity: 0.5; cursor: default; }
 
 .summary { display: grid; gap: 4px; font-size: 0.92rem; }
 .summary .line { display: flex; justify-content: space-between; gap: 10px; }
-.summary .line span:last-child { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.summary .line > span:last-child { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .summary .line.total { border-top: 1px solid var(--line); padding-top: 8px; margin-top: 4px; font-weight: 700; }
 
 .callout { border-radius: 12px; padding: 12px 14px; background: var(--accent-soft); display: grid; gap: 6px; }
@@ -457,3 +457,10 @@ label.check input { width: 18px; height: 18px; accent-color: var(--accent); }
 .info-btn:hover, .info-btn:focus-visible { color: var(--accent); background: var(--surface-2); }
 .help-card h2 { margin: 0; }
 .help-card p { margin: 0; color: var(--ink); line-height: 1.5; }
+
+/* ---------- before you borrow, keep paying yourself ---------- */
+.borrowed-line { font-size: 0.85rem; margin-top: 6px; }
+.line-sub { display: block; font-weight: 400; font-size: 0.8rem; margin-top: 1px; }
+.borrow-card .seg { justify-self: start; }
+.borrow-card:focus { outline: none; }
+#borrow-form .field { min-width: 140px; }

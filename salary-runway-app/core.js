@@ -800,6 +800,24 @@
           debtExtra: Number(sv.debtExtra) || 0,
           notes: [],
         };
+    /*
+     * Rollovers: what a finished loan's EMI (or half a raise) used to take,
+     * kept going to savings so it isn't quietly spent. With no loans left,
+     * money meant for loans goes to the emergency fund.
+     */
+    const rollover = { emergency: 0, debt: 0, grow: 0, total: 0 };
+    if (!override) {
+      const hasDebt = state.debts.some((d) => d.balance > 0);
+      (sv.rollovers || []).forEach((x) => {
+        const to = x.to === 'debt' && !hasDebt ? 'emergency' : x.to;
+        const a = Number(x.amount) || 0;
+        rollover[to] = (rollover[to] || 0) + a;
+        rollover.total += a;
+      });
+      savings.emergencyMonthly += rollover.emergency;
+      savings.debtExtra += rollover.debt;
+      savings.investMonthly += rollover.grow;
+    }
     const salary = salaryFor(state, todayIso);
     const fixed = sum(state.fixed, (f) => Number(f.amount) || 0);
     const mins = sum(state.debts.filter((d) => d.balance > 0), (d) => Number(d.minPayment) || 0);
@@ -822,7 +840,7 @@
       share: b.auto && wTotal ? Math.round((weightFor(b.name) / wTotal) * 100) : null,
       amount: b.auto ? amounts[b.id] : Number(b.amount) || 0,
     }));
-    return { savings, budgets, pool, autoPool, customTotal };
+    return { savings, budgets, pool, autoPool, customTotal, rollover };
   }
 
   // ---------- insights ----------
@@ -1279,6 +1297,136 @@
     };
   }
 
+  // ---------- before you borrow ----------
+
+  // Lenders and Pay Later apps: money from them is borrowed, not earned. "=" means a whole word.
+  const LENDERS = ['kreditbee', 'moneyview', 'money view', '=navi', '=fibe', 'earlysalary', '=cashe', 'mpokket', 'kissht', 'stashfin',
+    'lazypay', '=simpl', 'zestmoney', 'paysense', 'moneytap', '=dhani', 'home credit', 'bajaj finserv', 'tata capital', 'truebalance', 'smartcoin'];
+
+  // A bank "credited" SMS for money that has to be paid back: a loan payout or a credit line.
+  function isLoanCredit(text) {
+    const t = String(text || '').toLowerCase();
+    if (/\bloans?\b|disburs|credit line|pay ?later/.test(t)) return true;
+    return LENDERS.some((w) => keywordMatches(t, w));
+  }
+
+  /*
+   * Borrowed this cycle so far: spending on credit cards (borrowed until the
+   * bill is paid) and money received that is a loan.
+   */
+  function borrowedThisCycle(state, todayIso) {
+    const cyc = cycleFor(todayIso, Number(state.settings.payday) || 1);
+    const txs = state.transactions.filter((t) => inCycle(t.date, cyc) && t.date <= todayIso);
+    const card = sum(txs.filter((t) => isFlexible(t) && t.paidFrom && t.paidFrom !== 'account'), (t) => t.amount);
+    const loans = sum(txs.filter((t) => isIncome(t) && t.borrowed), (t) => t.amount);
+    return { total: card + loans, card, loans };
+  }
+
+  /*
+   * Before borrowing for a big expense: how to pay it without a loan, and what
+   * borrowing would cost instead.
+   * - urgent (a repair, a hospital bill): the emergency fund first (that's what
+   *   it's for), then pausing this month's Grow and extra loan payment, then
+   *   this month's money down to bills and basics. What's left is the shortfall.
+   * - can wait (a purchase): this month's spare money if it fits, the next
+   *   salary, or saving for it over 3, 6 or 12 months, next to the cost of an EMI.
+   * Daily amounts come from running the runway with the expense added.
+   */
+  function borrowCheck(state, amount, todayIso) {
+    amount = Math.max(0, Math.round(Number(amount) || 0));
+    const r = projectRunway(state, todayIso);
+    const z = zoneStatus(state, todayIso, r);
+    const cyc = r.cycle;
+    const spare = Math.max(0, Math.floor(z.money - z.needs));
+    const fund = Number(state.savings.emergencyBalance) || 0;
+    const setAsides = r.plan.adjustment ? 0 : r.plan.invest + r.plan.debtExtra;
+
+    // The runway with this expense paid today, plus any money moved in to cover it.
+    const after = (fromFund, pause) => {
+      const txs = state.transactions.concat([{ id: '_bc', date: todayIso, amount, category: 'Misc', note: 'Big expense' }]);
+      if (fromFund > 0) txs.push({ id: '_bf', kind: 'in', date: todayIso, amount: fromFund, category: 'From emergency fund', useFor: 'spend', fromFund: true });
+      const s = Object.assign({}, state, { transactions: txs, savings: Object.assign({}, state.savings, { emergencyBalance: fund - fromFund }) });
+      if (pause) s.adjustment = { until: cyc.next, flexCutPct: 0, pauseInvest: true, pauseDebtExtra: true, reason: 'Big expense' };
+      const r2 = projectRunway(s, todayIso);
+      const z2 = zoneStatus(s, todayIso, r2);
+      return { daily: r2.remainingDays > 0 ? r2.tomorrowAllowance : 0, zone: z2.zone, freedom: freedomDays(s, todayIso) };
+    };
+    const daily = r.remainingDays > 0 ? r.tomorrowAllowance : 0;
+
+    let left = amount;
+    const fromFund = Math.min(fund, left); left -= fromFund;
+    const pause = Math.min(setAsides, left); left -= pause;
+    const fromMonth = Math.min(spare, left); left -= fromMonth;
+    const urgentAfter = after(fromFund, pause > 0);
+    const f = freedomDays(state, todayIso);
+
+    const cards = state.cards || [];
+    const cardRate = cards.length ? Math.max.apply(null, cards.map((c) => Number(c.rate) || 42)) : 42;
+    const quotes = (P) => {
+      const monthly = Math.max(200, Math.round(P * 0.05));
+      return { amount: P, cardRate, cardMonthly: monthly, card: revolveQuote(P, cardRate, monthly), loan: emiQuote(P, 16, 12, 0) };
+    };
+
+    const preview = nextPaydayPreview(state, todayIso);
+    const save = [3, 6, 12].map((n) => ({
+      months: n,
+      monthly: Math.ceil(amount / n / 100) * 100,
+      ready: addMonths(cyc.next, n - 1),
+      emi: emiQuote(amount, 16, n, 0),
+    }));
+
+    return {
+      amount, spare, fund, daily, zone: z.zone, nextPayday: cyc.next, daysToPay: r.remainingDays + 1,
+      urgent: {
+        fromFund, pause, fromMonth, shortfall: left,
+        dailyAfter: urgentAfter.daily, zoneAfter: urgentAfter.zone,
+        freedomBefore: f ? f.days : null, freedomAfter: urgentAfter.freedom ? urgentAfter.freedom.days : null,
+        borrow: left > 0 ? quotes(left) : null,
+      },
+      wait: {
+        fits: amount <= spare,
+        dailyAfter: amount <= spare ? after(0, false).daily : null,
+        nextFree: Math.max(0, Math.round(preview.freeAfter)),
+        save,
+        borrow: quotes(amount),
+      },
+    };
+  }
+
+  /*
+   * When a loan ends (or pay goes up), the money it took can keep going to
+   * freedom instead of quietly becoming spending. What each choice does,
+   * suggested in the usual safety-first order.
+   */
+  function rolloverOptions(state, amount, todayIso) {
+    amount = Number(amount) || 0;
+    const debts = state.debts.filter((d) => d.balance > 0);
+    const extra = allocate(state, todayIso).savings.debtExtra;
+    const options = [];
+    if (debts.length) {
+      const before = simulateDebts(debts, extra, 'avalanche', true);
+      const after = simulateDebts(debts, extra + amount, 'avalanche', true);
+      const sooner = before.months - after.months;
+      options.push({
+        to: 'debt',
+        title: 'Pay off your other loans faster',
+        detail: before.neverPaysOff
+          ? 'Gets your loans paying down instead of growing.'
+          : 'Debt-free ' + (sooner > 0 ? sooner + (sooner === 1 ? ' month' : ' months') + ' sooner' : 'sooner') + ', about ' + rupeesIn(before.totalInterest - after.totalInterest) + ' less interest.',
+      });
+    }
+    const f = freedomDays(state, todayIso);
+    options.push({
+      to: 'emergency',
+      title: 'Build your emergency fund',
+      detail: f ? '+' + Math.floor(amount / f.daily) + ' Days of Freedom every month.' : 'Adds ' + rupeesIn(amount) + ' a month to your emergency fund.',
+    });
+    options.push({ to: 'grow', title: 'Set aside to invest', detail: rupeesIn(amount) + ' a month to invest. Talk to a SEBI-registered investment adviser about where.' });
+    options.push({ to: 'spend', title: 'Spend it', detail: 'Your flexible budgets grow by ' + rupeesIn(amount) + ' a month.' });
+    const s = suggestUse(state, todayIso, null);
+    return { options, recommended: s.use === 'debt' && !debts.length ? 'emergency' : s.use, reason: s.reason };
+  }
+
   // ---------- bank SMS parsing ----------
 
   const CATEGORY_KEYWORDS = [
@@ -1481,6 +1629,7 @@
     billShare, billPot, billsMonthly, billPaidIn, billDue, payBill, undoBillPayment, zoneStatus, ESSENTIAL_CATEGORIES,
     isCardTransfer, statementOn, dueAfter, cardOwedAt, cardReserve, cardStatus, emiQuote, revolveQuote, cardBillPlan,
     recordCardPayment, convertCardBalance, undoCardConvert, cardFreeDays, byCategory, DEFAULT_SPLIT,
+    isLoanCredit, borrowedThisCycle, borrowCheck, rolloverOptions,
   };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = Core;

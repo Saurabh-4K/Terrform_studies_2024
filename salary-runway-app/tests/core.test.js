@@ -708,3 +708,88 @@ test('example data produces a runway and insights', () => {
   assert.ok(ins.some((i) => i.level === 'warn'));
   assert.ok(ins.some((i) => /subscription/.test(i.title)));
 });
+
+test('before you borrow: the emergency fund goes first for an urgent cost', () => {
+  const s = baseState();
+  s.savings.emergencyBalance = 20000;
+  const c = Core.borrowCheck(s, 5000, '2026-10-10');
+  assert.deepEqual([c.urgent.fromFund, c.urgent.pause, c.urgent.fromMonth, c.urgent.shortfall], [5000, 0, 0, 0]);
+  // Basics: 15,000 rent a month = 500 a day.
+  assert.equal(c.urgent.freedomBefore, 40);
+  assert.equal(c.urgent.freedomAfter, 30);
+  // The fund pays for it, so the daily amount doesn't change.
+  assert.equal(Math.round(c.urgent.dailyAfter), Math.round(c.daily));
+  assert.equal(c.urgent.borrow, null);
+});
+
+test('before you borrow: only the shortfall is borrowed, and its cost is shown', () => {
+  const s = baseState();
+  // 50,000 salary less 15,000 rent (paid on the 5th): 35,000 can be spared.
+  const c = Core.borrowCheck(s, 40000, '2026-10-10');
+  assert.equal(c.spare, 35000);
+  assert.deepEqual([c.urgent.fromFund, c.urgent.fromMonth, c.urgent.shortfall], [0, 35000, 5000]);
+  assert.equal(c.urgent.borrow.amount, 5000);
+  assert.equal(c.urgent.borrow.cardRate, 42);
+  assert.equal(c.urgent.borrow.loan.emi, Core.emiQuote(5000, 16, 12, 0).emi);
+  assert.ok(c.urgent.borrow.card.interest > c.urgent.borrow.loan.interest);
+});
+
+test('before you borrow: a purchase that can wait', () => {
+  const s = baseState();
+  const small = Core.borrowCheck(s, 3000, '2026-10-10');
+  assert.equal(small.wait.fits, true);
+  assert.ok(small.wait.dailyAfter < small.daily);
+  const big = Core.borrowCheck(s, 120000, '2026-10-10');
+  assert.equal(big.wait.fits, false);
+  assert.deepEqual(big.wait.save.map((x) => [x.months, x.monthly, x.ready]),
+    [[3, 40000, '2027-01-01'], [6, 20000, '2027-04-01'], [12, 10000, '2027-10-01']]);
+  assert.ok(big.wait.save.every((x) => x.emi.interest > 0));
+});
+
+test('borrowed this month: card spending and loans, not refunds', () => {
+  const s = baseState({ transactions: [
+    { id: 't1', date: '2026-10-03', amount: 1000, category: 'Food', paidFrom: 'c1' },
+    { id: 't2', date: '2026-10-03', amount: 500, category: 'Food' },
+    { id: 't3', kind: 'in', date: '2026-10-04', amount: 20000, category: 'Loan or Pay Later', borrowed: true, useFor: 'spend' },
+    { id: 't4', kind: 'in', date: '2026-10-05', amount: 200, category: 'Refund', paidFrom: 'c1', useFor: 'spend' },
+    { id: 't5', date: '2026-09-20', amount: 900, category: 'Food', paidFrom: 'c1' },
+  ] });
+  assert.deepEqual(Core.borrowedThisCycle(s, '2026-10-10'), { total: 21000, card: 1000, loans: 20000 });
+});
+
+test('loan payouts in bank SMS are recognised', () => {
+  assert.equal(Core.isLoanCredit('Rs 20,000 credited to a/c XX12. Loan disbursed by KreditBee'), true);
+  assert.equal(Core.isLoanCredit('INR 5,000 credited to your a/c from NAVI'), true);
+  assert.equal(Core.isLoanCredit('Your personal loan amount Rs.50000 has been credited'), true);
+  assert.equal(Core.isLoanCredit('INR 5,000 credited by NEFT from RAHUL SHARMA'), false);
+  assert.equal(Core.isLoanCredit('Rs 500 credited. Navigate to the app to see it'), false);
+});
+
+test('rollover: a cleared loan keeps paying into savings', () => {
+  const s = baseState({ debts: [{ id: 'd1', name: 'Card loan', balance: 50000, rate: 36, minPayment: 2500, dueDay: 7 }] });
+  const before = Core.allocate(s, '2026-10-10');
+  s.savings.rollovers = [{ id: 'r1', from: 'Bike EMI', amount: 3000, to: 'debt' }, { id: 'r2', from: 'Half your raise', amount: 1000, to: 'grow' }];
+  const a = Core.allocate(s, '2026-10-10');
+  assert.equal(a.savings.debtExtra, 3000);
+  assert.equal(a.savings.investMonthly, 1000);
+  assert.deepEqual(a.rollover, { emergency: 0, debt: 3000, grow: 1000, total: 4000 });
+  assert.equal(a.pool, before.pool - 4000);
+  // With no loans left, money meant for loans builds the emergency fund.
+  s.debts[0].balance = 0;
+  assert.equal(Core.allocate(s, '2026-10-10').savings.emergencyMonthly, 3000);
+  // The payday reset includes it, and its own amounts replace it once saved.
+  assert.equal(Core.paydayReset(s, '2026-10-10').parts.emergency, 3000);
+  s.payslips = { '2026-10-01': { amount: 50000, usual: 50000, setAside: { emergency: 500, invest: 0, debtExtra: 0 } } };
+  assert.equal(Core.allocate(s, '2026-10-10').savings.emergencyMonthly, 500);
+});
+
+test('rollover: choices and the safety-first suggestion', () => {
+  const s = baseState({ debts: [{ id: 'd1', name: 'Card loan', balance: 50000, rate: 36, minPayment: 2500, dueDay: 7 }] });
+  const o = Core.rolloverOptions(s, 3000, '2026-10-10');
+  assert.deepEqual(o.options.map((x) => x.to), ['debt', 'emergency', 'grow', 'spend']);
+  assert.match(o.options[0].detail, /sooner/);
+  // No emergency fund yet: a 30-day shield comes first.
+  assert.equal(o.recommended, 'emergency');
+  s.savings.emergencyBalance = 40000;
+  assert.equal(Core.rolloverOptions(s, 3000, '2026-10-10').recommended, 'debt');
+});
