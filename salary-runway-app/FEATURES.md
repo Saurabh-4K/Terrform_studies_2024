@@ -82,6 +82,18 @@ Backup, restore, example data, erase, and **Clean up SMS imports** (removes SMS-
 - **"This is my new usual pay from now on"** for raises or a new tax slab.
 - Can be changed later from the Plan tab. Changing it undoes the old record, including a bonus entry.
 
+### Month-end report card
+When a new salary cycle starts (the payday check-in is due, or the bank's salary SMS arrived), a one-screen report on the cycle that just ended opens first. It also opens before *Record this month's pay* on the Plan tab, and *Last month's report card* there opens it any time.
+- **Wins (green):**
+  - **Card-free days:** days with no credit card spending, e.g. *29 of 30*.
+  - **Saved from daily leftovers:** money moved to the emergency fund, loans or savings, with the split. Payday set-asides aren't counted.
+  - **Extra paid on loans:** with the interest it saves at today's balances, and any loan cleared that month. With no loans: *Debt-free*.
+- **Watch-outs (amber):**
+  - **Most over budget:** the flexible category furthest over its budget, with spent vs budget.
+  - **Small payment leaks:** *7 small payments under ₹200 added up to ₹1,030.* Bills don't count.
+- A watch-out with nothing to report turns green: *Every category stayed within its budget.*
+- **Take lessons into next month** closes it and opens this month's payday check-in, then the payday reset. Shown once per cycle; Escape closes it for now.
+
 ### Payday reset (3 steps)
 Opens once a cycle, right after the payday check-in is saved. **Later** (or Escape) closes it at any step.
 1. **What's already spoken for:** *Payday check-in (₹55,000)*: fixed payments, loan minimums and EMIs, bills that vary (monthly share), yearly costs (monthly share) → **Money free for your month**.

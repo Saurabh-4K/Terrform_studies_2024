@@ -112,6 +112,9 @@
     helpFrom: null,
     borrow: null,
     rolloverHidden: false,
+    report: false,
+    reportHidden: false,
+    reportFocused: false,
   };
 
   // ---------- storage ----------
@@ -406,11 +409,15 @@
         '<button data-action="tab" data-tab="' + t + '"' + (t === tab ? ' aria-current="page"' : '') + '>' +
         '<svg viewBox="0 0 24 24" aria-hidden="true">' + ICONS[t] + '</svg>' + tr(TAB_LABELS[t]) + '</button>'
       ).join('') +
-      '</div></nav>' + resetModal() + helpModal() + borrowModal();
+      '</div></nav>' + resetModal() + helpModal() + borrowModal() + reportModal();
     if (tab === 'home') drawRunway();
     if (ui.reset) {
       const first = document.querySelector('#reset-card input, #reset-card button.primary');
       if (first) first.focus();
+    }
+    if (document.getElementById('report-card') && !ui.reportFocused) {
+      ui.reportFocused = true;
+      document.getElementById('report-card').focus();
     }
     if (ui.borrow && ui.borrow.focus) {
       ui.borrow.focus = false;
@@ -743,7 +750,9 @@
     const diff = slip ? slip.amount - slip.usual : 0;
     return '<div class="row pay-line"><span><b>' + tr('This month:') + '</b> ' + (slip
       ? tr('{amount} in hand', { amount: inr(slip.amount) }) + (diff ? ' (' + (diff > 0 ? '+' : '−') + inr(Math.abs(diff)) + ', ' + esc(label(slip.reason)) + ')' : '')
-      : tr('not recorded yet')) + '</span><button class="link" data-action="payday-open">' + tr(slip ? 'Change' : 'Record') + '</button></div>';
+      : tr('not recorded yet')) + '</span><button class="link" data-action="payday-open">' + tr(slip ? 'Change' : 'Record') + '</button></div>' +
+      (state.transactions.some((x) => Core.inCycle(x.date, Core.previousCycle(cyc, Number(state.settings.payday) || 1)))
+        ? '<div><button class="link" data-action="report-open">' + tr('Last month’s report card') + '</button></div>' : '');
   }
 
   // Days of Freedom: the emergency fund as time, not just money.
@@ -831,6 +840,68 @@
   }
 
   // Ways out of the red, each with its amount.
+  // ---------- month-end report card ----------
+
+  // A cycle with something recorded in it, not yet reviewed.
+  function reportPending() {
+    if (state.isDemo || !state.settings.salary) return false;
+    const payday = Number(state.settings.payday) || 1;
+    const prev = Core.previousCycle(Core.cycleFor(today(), payday), payday);
+    return state.reportSeen !== prev.start && state.transactions.some((x) => Core.inCycle(x.date, prev));
+  }
+
+  // Opens by itself when the payday check-in is due, before it.
+  function reportDue() {
+    if (ui.reportHidden || !reportPending()) return false;
+    const t = today();
+    const cyc = Core.cycleFor(t, Number(state.settings.payday) || 1);
+    const seen = state.salarySeen && state.salarySeen.cycle === cyc.start;
+    return !(state.payslips || {})[cyc.start] && (Core.daysBetween(cyc.start, t) <= 7 || !!seen);
+  }
+
+  function reportModal() {
+    if (!ui.report && !reportDue()) return '';
+    const r = Core.monthReport(state, today());
+    const stat = (tone, name, value, sub) => '<div class="report-stat ' + tone + '"><span class="report-label">' + name + '</span>' +
+      '<span class="report-value">' + value + '</span>' + (sub ? '<span class="report-sub">' + sub + '</span>' : '') + '</div>';
+    const swept = [['emergency', '{amount} to your emergency fund'], ['debt', '{amount} to loans'], ['grow', '{amount} to savings']]
+      .filter((x) => r.swept[x[0]] > 0).map((x) => tr(x[1], { amount: inr(r.swept[x[0]]) })).join(' · ');
+    const hasDebts = state.debts.some((d) => d.balance > 0);
+    let loans;
+    if (r.debtPaid > 0) {
+      loans = stat('good', tr('Extra paid on loans'), inr(r.debtPaid),
+        (r.interestSaved > 0 ? tr('Saves about {amount} in interest.', { amount: inr(r.interestSaved) }) : '') +
+        (r.cleared.length ? ' ' + tr('{names} cleared 🎉', { names: esc(r.cleared.join(', ')) }) : ''));
+    } else if (r.cleared.length) {
+      loans = stat('good', tr('Loans cleared'), esc(r.cleared.join(', ')), tr('Its EMI now keeps paying you.'));
+    } else if (!hasDebts) {
+      loans = stat('good', tr('Loans'), tr('Debt-free'), tr('No loans to pay off.'));
+    } else {
+      loans = stat('quiet', tr('Extra paid on loans'), inr(0), tr('Move a day’s leftover to a loan to cut its interest.'));
+    }
+    const o = r.overspent;
+    return '<div class="reset-modal-overlay report-overlay" role="presentation"><div class="reset-modal-card report-card" role="dialog" aria-modal="true" aria-labelledby="report-title" id="report-card" tabindex="-1">' +
+      '<span class="eyebrow">' + tr('Month-end report card · {from} – {to}', { from: fmtDate(r.cycle.start), to: fmtDate(r.last) }) + '</span>' +
+      '<h2 id="report-title">' + tr('How last month went') + '</h2>' +
+      '<span class="report-section good">' + tr('Wins') + '</span>' +
+      stat(r.cardFree > 0 ? 'good' : 'quiet', tr('Card-free days'), tr('{n} of {days}', { n: r.cardFree, days: r.days }),
+        tr(r.cardFree === r.days ? 'Not a rupee borrowed on a credit card.' : 'Days with no credit card spending.')) +
+      stat(r.swept.total > 0 ? 'good' : 'quiet', tr('Saved from daily leftovers'), inr(r.swept.total),
+        swept || tr('Move a day’s leftover to savings to see it here.')) +
+      loans +
+      '<span class="report-section warn">' + tr('Watch-outs') + '</span>' +
+      (o
+        ? stat('warn', tr('Most over budget'), esc(label(o.name)) + ' <span class="report-over">+' + inr(o.over) + '</span>',
+          tr('{spent} spent of a {budget} budget.', { spent: inr(o.spent), budget: inr(o.budget) }))
+        : stat('good', tr('Most over budget'), tr('None'), tr('Every category stayed within its budget.'))) +
+      (r.small.count
+        ? stat('warn', tr('Small payment leaks'), inr(r.small.total),
+          tr(r.small.count === 1 ? '1 small payment under ₹{under} added up to {amount}.' : '{n} small payments under ₹{under} added up to {amount}.', { n: r.small.count, under: r.small.under, amount: inr(r.small.total) }))
+        : stat('good', tr('Small payment leaks'), tr('None'), tr('No payments under ₹{under}.', { under: r.small.under }))) +
+      '<button class="primary report-go" data-action="report-done">' + tr('Take lessons into next month') + '</button>' +
+      '</div></div>';
+  }
+
   // ---------- before you borrow ----------
 
   function borrowedLine() {
@@ -2325,7 +2396,7 @@
         const opt = Core.rolloverOptions(state, a.amount, t).options.find((x) => x.to === btn.dataset.to);
         state.rolloverAsk = null;
         if (btn.dataset.to === 'spend') { save(); toast('Added to your flexible budgets'); break; }
-        state.savings.rollovers = (state.savings.rollovers || []).concat({ id: uid(), from: a.from, amount: a.amount, to: btn.dataset.to, date: t });
+        state.savings.rollovers = (state.savings.rollovers || []).concat({ id: uid(), from: a.from, amount: a.amount, to: btn.dataset.to, date: t, kind: a.kind });
         save(); celebrate(tr('Nice move!') + ' ' + (opt ? opt.detail : tr('{amount} a month kept for you.', { amount: inr(a.amount) }))); break;
       }
       case 'rollover-later': ui.rolloverHidden = true; break;
@@ -2392,7 +2463,28 @@
       }
       case 'payday-save': savePayday(document.getElementById('pay-amount').value); break;
       case 'payday-same': savePayday(state.settings.salary); break;
-      case 'payday-open': ui.paydayOpen = true; break;
+      case 'payday-open':
+        // Last month's report card comes first, once.
+        if (reportPending()) { ui.report = true; ui.reportFocused = false; ui.reportThenPay = true; } else ui.paydayOpen = true;
+        break;
+      case 'report-open': ui.report = true; ui.reportFocused = false; ui.reportThenPay = false; break;
+      case 'report-done': {
+        const r = Core.monthReport(state, t);
+        state.reportSeen = r.cycle.start;
+        ui.report = false;
+        save();
+        const cyc = Core.cycleFor(t, Number(state.settings.payday) || 1);
+        // On to this month's payday check-in: when it's still to do, or it's what was tapped.
+        const thenPay = ui.reportThenPay;
+        ui.reportThenPay = false;
+        if ((state.payslips || {})[cyc.start] && !thenPay) break;
+        ui.paydayOpen = true;
+        if (tab !== 'plan') { setTab('home'); return; }
+        rerenderKeepScroll();
+        const card = document.querySelector('.payday-card');
+        if (card) card.scrollIntoView({ block: 'start' });
+        return;
+      }
       case 'payday-close': ui.paydayOpen = false; break;
       case 'card-add': ui.cardForm = {}; break;
       case 'card-edit': ui.cardForm = { id: btn.dataset.id }; break;
@@ -2790,6 +2882,7 @@
   document.addEventListener('keydown', (ev) => {
     if (ev.key === 'Escape' && ui.help) { ui.helpFrom = ui.help; ui.help = null; rerenderKeepScroll(); }
     else if (ev.key === 'Escape' && ui.borrow) { ui.borrow = null; rerenderKeepScroll(); }
+    else if (ev.key === 'Escape' && document.getElementById('report-card')) { ui.report = false; ui.reportHidden = true; ui.reportThenPay = false; rerenderKeepScroll(); }
     else if (ev.key === 'Escape' && ui.reset) { ui.reset = null; rerenderKeepScroll(); }
   });
 

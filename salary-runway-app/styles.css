@@ -470,3 +470,24 @@ label.check input { width: 18px; height: 18px; accent-color: var(--accent); }
 .bar span.k-equity { background: var(--accent); }
 .bar span.k-debt { background: var(--good); opacity: 0.6; }
 .bar span.k-gold { background: var(--caution); }
+
+/* ---------- month-end report card ---------- */
+.report-card { gap: 8px; }
+.report-card h2 { margin-bottom: 2px; }
+.report-section { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 700; margin-top: 4px; }
+.report-section.good { color: var(--good); }
+.report-section.warn { color: var(--warn); }
+.report-stat {
+  display: grid; grid-template-columns: 1fr auto; gap: 0 10px; align-items: baseline;
+  padding: 8px 12px; border-radius: 10px; border-left: 4px solid var(--line); background: var(--surface-2);
+}
+.report-stat.good { border-left-color: var(--good); }
+.report-stat.warn { border-left-color: var(--caution); }
+.report-label { font-size: 0.85rem; font-weight: 600; }
+.report-value { font-family: var(--font-display); font-weight: 750; font-size: 1.05rem; text-align: right; font-variant-numeric: tabular-nums; }
+.report-stat.good .report-value { color: var(--good); }
+.report-stat.warn .report-value { color: var(--warn); }
+.report-over { font-size: 0.85rem; }
+.report-sub { grid-column: 1 / -1; color: var(--muted); font-size: 0.8rem; line-height: 1.35; }
+.report-go { width: 100%; margin-top: 6px; }
+.report-card:focus { outline: none; }

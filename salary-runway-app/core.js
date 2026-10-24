@@ -1444,6 +1444,60 @@
     return { options, recommended: s.use === 'debt' && !debts.length ? 'emergency' : s.use, reason: s.reason };
   }
 
+  // ---------- month-end report card ----------
+
+  // Small payments that are easy to miss: everyday spending under this amount.
+  const SMALL_PAYMENT = 200;
+
+  /*
+   * How the salary cycle before the one containing todayIso went.
+   * Wins: days with no credit card spending, leftovers moved to savings or
+   * loans, extra loan payments (and the interest they save at today's
+   * balances), loans cleared. Watch-outs: the flexible category furthest
+   * over its budget, and everyday payments under ₹200.
+   */
+  function monthReport(state, todayIso) {
+    const payday = Number(state.settings.payday) || 1;
+    const cycle = previousCycle(cycleFor(todayIso, payday), payday);
+    const txs = state.transactions.filter((t) => inCycle(t.date, cycle));
+    const cardDates = new Set(txs.filter((t) => isFlexible(t) && t.paidFrom && t.paidFrom !== 'account').map((t) => t.date));
+
+    const swept = { emergency: 0, debt: 0, grow: 0, total: 0 };
+    txs.filter((t) => isMove(t) && !t.setAside && swept[t.useFor] !== undefined).forEach((t) => {
+      swept[t.useFor] += t.amount;
+      swept.total += t.amount;
+    });
+
+    // Extra loan payments: money received or saved that went to a loan.
+    const paid = {};
+    txs.filter((t) => t.useFor === 'debt' && t.debtId).forEach((t) => { paid[t.debtId] = (paid[t.debtId] || 0) + (Number(t.debtPaid) || t.amount); });
+    const debtPaid = sum(Object.keys(paid), (id) => paid[id]);
+    let interestSaved = 0;
+    if (debtPaid > 0) {
+      const extra = allocate(state, todayIso).savings.debtExtra;
+      const now = simulateDebts(state.debts, extra, 'avalanche', true);
+      const before = simulateDebts(state.debts.map((d) => (paid[d.id] ? Object.assign({}, d, { balance: (Number(d.balance) || 0) + paid[d.id] }) : d)), extra, 'avalanche', true);
+      if (!now.neverPaysOff && !before.neverPaysOff) interestSaved = Math.max(0, before.totalInterest - now.totalInterest);
+    }
+    const cleared = (state.savings.rollovers || []).filter((x) => x.kind !== 'raise' && x.from !== 'Half your raise' && inCycle(x.date, cycle)).map((x) => x.from);
+
+    const plan = monthlyPlan(state, cycle.start);
+    const spent = byCategory(txs.filter((t) => isFlexible(t) && NON_PACE_CATEGORIES.indexOf(t.category) === -1));
+    let overspent = null;
+    plan.budgets.forEach((b) => {
+      const over = (spent[b.name] || 0) - b.amount;
+      if (b.amount > 0 && over > 0 && (!overspent || over > overspent.over)) overspent = { name: b.name, budget: b.amount, spent: spent[b.name], over };
+    });
+
+    const small = txs.filter((t) => isFlexible(t) && t.amount < SMALL_PAYMENT && ['Bills', 'Emergency'].indexOf(t.category) === -1);
+    return {
+      cycle, last: addDays(cycle.next, -1), days: cycle.days, active: txs.length > 0,
+      cardFree: cycle.days - cardDates.size, hasCards: (state.cards || []).length > 0,
+      swept, debtPaid, interestSaved, cleared, overspent,
+      small: { count: small.length, total: sum(small, (t) => t.amount), under: SMALL_PAYMENT },
+    };
+  }
+
   // ---------- investing (personal mode) ----------
 
   /*
@@ -1722,6 +1776,7 @@
     isCardTransfer, statementOn, dueAfter, cardOwedAt, cardReserve, cardStatus, emiQuote, revolveQuote, cardBillPlan,
     recordCardPayment, convertCardBalance, undoCardConvert, cardFreeDays, byCategory, DEFAULT_SPLIT,
     isLoanCredit, borrowedThisCycle, borrowCheck, rolloverOptions, personal, investPlan, sipValue, ASSUMED_RETURN, setTranslator,
+    monthReport,
   };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = Core;

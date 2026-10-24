@@ -829,3 +829,41 @@ test('SIP projection grows monthly investments at the assumed rate', () => {
   s.settings.personal = true;
   assert.match(Core.rolloverOptions(s, 1000, '2026-10-10').options.find((o) => o.to === 'grow').detail, /Grow tab/);
 });
+
+test('month-end report card: wins and watch-outs for the cycle that just ended', () => {
+  const s = baseState({
+    debts: [{ id: 'd1', name: 'Card loan', balance: 40000, rate: 36, minPayment: 2000, dueDay: 7 }],
+    cards: [{ id: 'c1', name: 'HDFC', last4: '1234', limit: 50000, rate: 42, statementDay: 5, dueDay: 25 }],
+    transactions: [
+      // October (the cycle that ended): two days on the card
+      { id: 't1', date: '2026-10-03', amount: 900, category: 'Food', paidFrom: 'c1' },
+      { id: 't2', date: '2026-10-09', amount: 150, category: 'Food', paidFrom: 'c1' },
+      { id: 't3', date: '2026-10-09', amount: 16000, category: 'Food' },
+      // small payments under ₹200 (bills don't count)
+      { id: 't4', date: '2026-10-12', amount: 120, category: 'Food' },
+      { id: 't5', date: '2026-10-13', amount: 199, category: 'Food' },
+      { id: 't6', date: '2026-10-14', amount: 150, category: 'Bills' },
+      // leftovers moved: to the fund and to the loan
+      { id: 'm1', kind: 'move', date: '2026-10-20', amount: 300, category: 'Savings', useFor: 'emergency' },
+      { id: 'm2', kind: 'move', date: '2026-10-21', amount: 500, category: 'Savings', useFor: 'debt', debtId: 'd1', debtPaid: 500 },
+      // a payday set-aside isn't a leftover
+      { id: 'm3', kind: 'move', date: '2026-10-01', amount: 2000, category: 'Savings', useFor: 'emergency', setAside: '2026-10-01' },
+      // November doesn't count
+      { id: 'n1', date: '2026-11-02', amount: 50, category: 'Food', paidFrom: 'c1' },
+    ],
+  });
+  s.savings.rollovers = [{ id: 'r1', from: 'Bike EMI', amount: 3000, to: 'debt', date: '2026-10-25', kind: 'loan' }];
+  const r = Core.monthReport(s, '2026-11-03');
+  assert.equal(r.cycle.start, '2026-10-01');
+  assert.equal(r.last, '2026-10-31');
+  assert.equal(r.cardFree, 29);
+  assert.deepEqual(r.swept, { emergency: 300, debt: 500, grow: 0, total: 800 });
+  assert.equal(r.debtPaid, 500);
+  assert.ok(r.interestSaved > 0);
+  assert.deepEqual(r.cleared, ['Bike EMI']);
+  // Food: 15,500 budget, 900 + 150 + 16,000 + 120 + 199 spent
+  assert.deepEqual(r.overspent, { name: 'Food', budget: 15500, spent: 17369, over: 1869 });
+  assert.deepEqual(r.small, { count: 3, total: 469, under: 200 });
+  assert.equal(r.active, true);
+  assert.equal(Core.monthReport(s, '2026-10-15').active, false);
+});
