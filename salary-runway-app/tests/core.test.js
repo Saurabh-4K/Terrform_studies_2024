@@ -1286,3 +1286,79 @@ test('bank SMS: an ATM withdrawal and the account it came from', () => {
   const credit = Core.parseSms('Your A/c XX4321 is credited with Rs.5,000 on 22-10-26 by NEFT', {}, '2026-10-25');
   assert.equal(credit.acct, '4321');
 });
+
+test('savings goals: a monthly amount to reach the target by the date', () => {
+  const s = Demo.demoState('2026-10-23');
+  s.settings.payday = 1;
+  const g = { id: 'g1', name: 'Bike', target: 12000, saved: 0, by: '2027-03-15' };
+  s.goals = [g];
+  // Paydays from this cycle (Oct) up to the date: Oct, Nov, Dec, Jan, Feb, Mar
+  let st = Core.goalStatus(s, g, '2026-10-23');
+  assert.equal(st.paydays, 6);
+  assert.equal(st.monthly, 2000);
+  const plan = Core.monthlyPlan(s, '2026-10-23');
+  assert.equal(plan.goals, 2000);
+  // It comes out of the money for flexible budgets
+  const before = Core.allocate(Object.assign({}, s, { goals: [] }), '2026-10-23').pool;
+  assert.equal(Core.allocate(s, '2026-10-23').pool, before - 2000);
+  // Recorded on payday: this cycle's amount stays the same
+  g.saved = 2000; g.added = { cycle: '2026-10-01', amount: 2000 };
+  assert.equal(Core.goalStatus(s, g, '2026-10-23').monthly, 2000);
+  assert.equal(Core.goalStatus(s, g, '2026-11-02').monthly, 2000); // 10000 over Nov..Mar
+  // A passed date reserves nothing and says so
+  st = Core.goalStatus(s, Object.assign({}, g, { by: '2026-09-30', added: null }), '2026-10-23');
+  assert.equal(st.late, true);
+  assert.equal(st.monthly, 0);
+  // Reached
+  assert.equal(Core.goalStatus(s, Object.assign({}, g, { saved: 12000, added: null }), '2026-10-23').done, true);
+  // Added after this cycle's payday: nothing comes out of this month; it starts next payday
+  const late = Core.goalStatus(s, { id: 'g2', name: 'Trip', target: 10000, saved: 0, by: '2027-03-15', created: '2026-10-23' }, '2026-10-23');
+  assert.equal(late.monthly, 0);
+  assert.equal(late.paydays, 5);
+  assert.equal(late.perPayday, 2000);
+});
+
+test('budget envelopes: covering an overspend and keeping a leftover', () => {
+  const s = Demo.demoState('2026-10-23');
+  s.settings.payday = 1;
+  s.balanceCheck = null;
+  s.transactions = s.transactions.filter((t) => t.date < '2026-09-01');
+  const names = Core.monthlyPlan(s, '2026-10-23').budgets.map((b) => b.name);
+  const [a, b] = names;
+  const env0 = Core.budgetEnvelopes(s, '2026-10-23');
+  const A = env0.list.find((x) => x.name === a);
+  s.transactions.push({ id: 'x1', date: '2026-10-05', amount: A.planned + 300, category: a });
+  let env = Core.budgetEnvelopes(s, '2026-10-23');
+  assert.equal(env.list.find((x) => x.name === a).left, -300);
+  assert.equal(env.over.length, 1);
+  // Cover it from the second budget: the total stays the same
+  s.budgetMoves = [{ id: 'm1', cycle: '2026-10-01', from: b, to: a, amount: 300 }];
+  env = Core.budgetEnvelopes(s, '2026-10-23');
+  assert.equal(env.list.find((x) => x.name === a).left, 0);
+  assert.equal(env.list.find((x) => x.name === b).available, env0.list.find((x) => x.name === b).planned - 300);
+  assert.equal(env.over.length, 0);
+  assert.equal(env.list.reduce((t, x) => t + x.available, 0), env0.list.reduce((t, x) => t + x.available, 0));
+  // Moves belong to their cycle
+  assert.equal(Core.budgetEnvelopes(s, '2026-11-05').list.find((x) => x.name === b).moved, 0);
+  // Keep the leftover: turned on in October, October's leftover shows in November
+  const own = s.budgets.find((x) => x.name === b);
+  own.carry = true; own.carryFrom = '2026-10-01';
+  assert.equal(Core.budgetEnvelopes(s, '2026-10-23').list.find((x) => x.name === b).carried, 0);
+  const octLeft = Core.budgetEnvelopes(s, '2026-10-31').list.find((x) => x.name === b).left;
+  const nov = Core.budgetEnvelopes(s, '2026-11-05').list.find((x) => x.name === b);
+  assert.equal(nov.carried, octLeft);
+  assert.equal(nov.available, nov.planned + octLeft);
+  // An overspent budget carries nothing
+  s.transactions.push({ id: 'x2', date: '2026-10-06', amount: 999999, category: b });
+  assert.equal(Core.budgetEnvelopes(s, '2026-11-05').list.find((x) => x.name === b).carried, 0);
+});
+
+test('net worth: what you own minus what you owe', () => {
+  const s = Demo.demoState('2026-10-23');
+  const n = Core.netWorth(s, '2026-10-23');
+  assert.equal(n.value, n.money + n.funds - n.loans - n.cards);
+  assert.ok(n.loans > 0);
+  // A loan from family with no EMI lowers it by exactly its balance
+  s.debts.push({ id: 'fam', name: 'Family', balance: 5000, rate: 0, minPayment: 0 });
+  assert.equal(Core.netWorth(s, '2026-10-23').value, n.value - 5000);
+});

@@ -60,6 +60,16 @@ Everything the app can do today, screen by screen, with the rules it follows. Fo
 - **Paid from / Into:** the add form and the edit sheet offer each wallet as well as credit cards. Rows show the wallet, and moves show *Main bank account → Cash*.
 - **Split a payment:** in the edit sheet, *Split this payment into categories*. For example, ₹530 at Blinkit becomes ₹380 groceries and ₹150 household. It saves only when the parts add up. Each part becomes its own payment, marked *Split*, so budgets, charts and leaks count each part in its own category. Undo puts it back as one payment.
 
+## Cover, keep, goals and net worth
+- **Cover an overspend (Runway → Budgets):** a budget that's over shows *Cover it from another budget*. Pick a budget with money left and the amount (filled in with what's needed). The month's total stays the same, so today's limit doesn't change; rows show *₹700 covered in* and *given to cover others*. Undo works, and moves belong to their own month.
+- **Keep what's left for next month (Plan → Flexible budgets):** a tick per budget, for costs that come and go (clothes, gifts). What it doesn't use this month is added to it next month (*₹800 kept from last month*). Only a leftover carries; an overspend already came out of the money.
+- **Savings goals (Grow → Savings goals):** a name, the amount needed, a date and what's saved so far. The app works out what to put aside each payday to get there in time: it comes out of the salary before the flexible budgets, like yearly costs, and is added to the goal on payday.
+  - A goal added after payday starts at the next payday, so this month's budgets don't shrink for money that would never reach it.
+  - Change *Saved so far* or the date any time; this month's amount stays and the new one counts from next payday.
+  - If the date passes before it's reached, nothing more is put aside and the goal asks for a new date (the tile shows a warning badge).
+  - Goals show in the plan summary, the payday screen and Grow's set-asides.
+- **Net worth (Runway → Net worth):** what you own minus what you owe: money in the account and wallets, the emergency fund and Grow savings, less loans and card dues from before the card was added. Below zero it shows in coral with *You owe more than you own*. Kept once per round (about two years), with a chart of the last 12 rounds, the change since last round, and a table of the numbers.
+
 ## Profile, tour and app lock
 
 ### Profile (the round button at the top right)

@@ -464,6 +464,17 @@
     flex: ['Flexible budgets', [
       'What is left of your salary is shared out across these automatically.',
       'Type your own amount and that category is marked <b>Set by you</b>. The automatic ones adjust to fit. <b>Share everything out automatically</b> undoes your edits.',
+      '<b>Keep what’s left for next month:</b> for costs that come and go, like clothes or gifts. What a budget doesn’t use this month is added to it next month. An overspend doesn’t carry: it already came out of your money.',
+      'Over in one budget? On Runway → Budgets, <b>Cover it from another budget</b> that has money left. The month’s total stays the same, so today’s limit doesn’t change.',
+    ]],
+    goals: ['Savings goals', [
+      'Something to save for by a date: a bike’s down payment, a trip, a rent deposit. The app works out what to put aside each payday to get there in time.',
+      'That amount comes out of your salary before the flexible budgets, like yearly costs, and is added to the goal on payday. Change <b>Saved so far</b> or the date any time and the monthly amount is worked out again.',
+      'If the date passes before it’s reached, nothing more is put aside until you pick a new date.',
+    ]],
+    worth: ['Net worth', [
+      'What you own minus what you owe: the money in your account and wallets, the emergency fund and Grow savings, less your loans and card dues from before you added the card.',
+      'It’s kept once per round, so you see the trend. Borrowing pulls it down even when the account looks fuller. Paying a loan off moves it up, even though your balance drops.',
     ]],
     data: ['Your data', [
       'Everything is saved on this phone only. Nothing is uploaded.',
@@ -660,6 +671,7 @@
     graph: '<path d="M3 3h2v16h16v2H3z"/><path d="M6.2 14.6l4-5 3 3 5-7 1.6 1.2-6.4 9-3-3-2.6 3.3z"/>',
     budgets: '<rect x="3.5" y="11" width="4.5" height="10" rx="1.5"/><rect x="9.75" y="3" width="4.5" height="18" rx="1.5"/><rect x="16" y="7.5" width="4.5" height="13.5" rx="1.5"/>',
     insight: '<path d="M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2zM8.5 18.5h7V20a2 2 0 0 1-2 2h-3a2 2 0 0 1-2-2z"/>',
+    scale: '<path d="M11 2h2v2.2l6.2 1.5L22 12.5a3.5 3.5 0 0 1-7 0l2.4-5.9L13 5.6V20h5v2H6v-2h5V5.6L6.6 6.6 9 12.5a3.5 3.5 0 0 1-7 0l2.8-6.8zM5.5 8.6L3.9 12.5h3.2zm13 0l-1.6 3.9h3.2z"/>',
     wallet: '<path d="M4 4h13v2.5H5.5a1 1 0 0 0 0 2H20a1 1 0 0 1 1 1V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a1 1 0 0 1 1-1zm12.5 10a1.5 1.5 0 1 0 3 0 1.5 1.5 0 0 0-3 0z"/>',
     flag: '<path d="M5 2h2v20H5z"/><path d="M8.5 3H20l-2.6 4.5L20 12H8.5z"/>',
     card: '<path d="M2 6a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v2H2zm0 4h20v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2zm3 5v1.6h5V15z"/>',
@@ -805,6 +817,7 @@
     const daysToPay = Core.daysBetween(t, cyc.next);
     const z = Core.zoneStatus(state, t, r);
     recordToday(r);
+    logWorth();
     const streak = withinStreak();
     let headline, sub;
     if (z.zone === 'red') {
@@ -823,15 +836,8 @@
     // Joined mid-cycle: budgets cover only the days from the balance check.
     const share = r.anchor ? (cyc.days - r.anchorIdx) / cyc.days : 1;
     const fromDate = r.anchor ? r.anchor.date : cyc.start;
-    const spentByCat = Core.byCategory(Core.spendInRange(state.transactions, cyc).filter((x) => x.date >= fromDate && x.date <= t));
-    const spentByCatAll = Object.assign({}, spentByCat);
-    const bars = r.plan.budgets.map((b) => {
-      const spent = spentByCat[b.name] || 0;
-      delete spentByCat[b.name];
-      return barRow(b.name, spent, Math.round((b.amount * share) / 10) * 10);
-    });
+    const env = Core.budgetEnvelopes(state, t);
     const flexSpent = Object.values(Core.byCategory(Core.spendInRange(state.transactions, cyc).filter((x) => x.date >= fromDate && x.date <= t))).reduce((a, b) => a + b, 0);
-    Object.keys(spentByCat).forEach((cat) => bars.push(barRow(tr('{category} (no budget)', { category: label(cat) }), spentByCat[cat], 0)));
 
     const upcoming = r.events.filter((e) => e.date > t);
     const askBalance = !state.isDemo && !r.anchor && state.balancePromptSkipped !== cyc.start;
@@ -875,7 +881,7 @@
     // Live badges: what each icon would show if opened.
     const billsDue = (state.bills || []).filter((b) => (Number(b.estimate) || 0) > 0 && Core.billDue(b, cyc) && !Core.billPaidIn(state, b, cyc)).length;
     const upcomingTotal = upcoming.reduce((s, e) => s + e.amount, 0);
-    const overBudgets = r.plan.budgets.filter((b) => (spentByCatAll[b.name] || 0) > Math.round((b.amount * share) / 10) * 10 && b.amount > 0).length;
+    const overBudgets = env.over.length;
     const warnInsights = ins.filter((i) => i.level === 'warn').length;
     const dfd = Core.debtFreeDates(state, t);
     const cardsDue = (state.cards || []).filter((c) => { const st = Core.cardStatus(state, c, t); return st.remaining > 0 && st.daysToDue <= 7; }).length;
@@ -895,7 +901,7 @@
       { key: 'graph', group: 'Check & plan', icon: 'graph', label: 'Runway graph', tone: 'amber', badge: null, html: () => chartCard() },
       { key: 'budgets', group: 'Check & plan', icon: 'budgets', label: 'Budgets', tone: 'amber', badge: overBudgets ? { text: tr('{n} over', { n: overBudgets }), tone: 'bad' } : null,
         html: () => '<section class="card"><div class="card-head"><h2>' + tr(r.anchor && r.anchorIdx > 0 ? 'You can spend until payday' : 'You can spend this cycle') + '</h2><button class="ghost" data-action="tab" data-tab="plan">' + tr('Adjust') + '</button></div>' +
-          '<div class="bars">' + bars.join('') + '</div></section>' },
+          envelopeBars(env) + '</section>' },
       { key: 'insights', group: 'Check & plan', icon: 'insight', label: 'Insights', tone: 'amber', badge: warnInsights ? { text: String(warnInsights), tone: 'bad' } : null,
         html: () => '<section class="card"><h2>' + tr('What your spending says') + '</h2><div>' +
           ins.map((i) => '<div class="insight lvl-' + i.level + '"><div><h3>' + esc(i.title) + '</h3><p>' + esc(i.body) + '</p></div></div>').join('') + '</div></section>' },
@@ -907,6 +913,7 @@
           tile('Flexible spending', inr(flexSpent), tr('of {amount} budget', { amount: inr(Math.round((r.plan.flexTotal * share) / 10) * 10) }) +
             (r.extraIn ? ' ' + tr('+ {amount} received', { amount: inr(r.extraIn) }) : '') + (r.anchor ? ' ' + tr('since {date}', { date: fmtDate(r.anchor.date) }) : '')) +
           '</section>' + ((state.wallets || []).length ? walletsCard() : '<p class="hint">' + tr('Keep cash, a second bank or Paytm apart? Add wallets in Plan → Wallets.') + '</p>') },
+      { key: 'worth', group: 'Money', icon: 'scale', label: 'Net worth', tone: 'teal', badge: (() => { const n = Core.netWorth(state, t).value; return { text: (n < 0 ? '−' : '') + shortInr(Math.abs(n)), tone: n < 0 ? 'bad' : '' }; })(), html: () => netWorthCard() },
       { key: 'debtfree', group: 'Money', icon: 'flag', label: 'Debt-free date', tone: 'teal', hide: !dfd, badge: dfd ? { text: dfd.plan.never ? '!' : monthYear(dfd.plan.date), tone: dfd.plan.never ? 'bad' : '' } : null, html: () => debtFreeCard() },
       { key: 'cards', group: 'Money', icon: 'card', label: 'Credit cards', tone: 'teal', tab: 'debts', hide: !(state.cards || []).length, badge: cardsDue ? { text: tr('{n} due', { n: cardsDue }), tone: 'bad' } : (state.cards || []).length ? { text: String(state.cards.length) } : null, html: () => '' },
     ]);
@@ -1064,6 +1071,10 @@
       setIncomeUse(tx, use);
     });
     state.sinking.forEach((f) => { f.saved = (Number(f.saved) || 0) + Core.sinkingMonthly(f); });
+    (state.goals || []).forEach((g) => {
+      const st = Core.goalStatus(state, g, cyc.start);
+      if (st.monthly > 0) { g.saved = (Number(g.saved) || 0) + st.monthly; g.added = { cycle: cyc.start, amount: st.monthly }; }
+    });
     state.savingsRecorded.push(cyc.start);
     const slip = (state.payslips || {})[cyc.start];
     if (slip) slip.locked = true;
@@ -1731,6 +1742,104 @@
   }
 
   // Remembers today's amount so tomorrow the app can say what was saved.
+  // Net worth at the latest day of each round, for the chart over time. About two years.
+  function logWorth() {
+    const t = today();
+    const c = Core.cycleFor(t, Number(state.settings.payday) || 1).start;
+    const v = Core.netWorth(state, t).value;
+    state.worthLog = state.worthLog || {};
+    if (state.worthLog[c] === v) return;
+    state.worthLog[c] = v;
+    Object.keys(state.worthLog).sort().slice(0, -24).forEach((k) => { delete state.worthLog[k]; });
+    save(true);
+  }
+
+  function netWorthCard() {
+    const t = today();
+    const n = Core.netWorth(state, t);
+    const log = state.worthLog || {};
+    const keys = Object.keys(log).sort().slice(-12);
+    const vals = keys.map((k) => log[k]);
+    const hi = Math.max(0, ...vals);
+    const lo = Math.min(0, ...vals);
+    const span = Math.max(1, hi - lo);
+    const zero = (-lo / span) * 100;
+    const prev = keys.length > 1 ? vals[vals.length - 2] : null;
+    const change = prev !== null ? n.value - prev : null;
+    const signed = (v) => (v < 0 ? '−' : '') + inr(Math.abs(v));
+    const bars = keys.map((k, i) => {
+      const v = vals[i];
+      const tip = tr('Round from {date}: {amount}', { date: fmtDate(k), amount: signed(v) });
+      const h = (Math.abs(v) / span) * 100;
+      return '<button class="nw-col' + (i === keys.length - 1 ? ' today' : '') + '" data-action="viz-tip" data-tip="' + esc(tip) + '" aria-label="' + esc(tip) + '"><span class="nw-plot">' +
+        '<span class="nw-zero" style="bottom:' + zero.toFixed(1) + '%"></span>' +
+        '<span class="nw-bar' + (v < 0 ? ' neg' : '') + '" style="bottom:' + (v < 0 ? zero - h : zero).toFixed(1) + '%;height:' + Math.max(v ? 2 : 0, h).toFixed(1) + '%"></span></span>' +
+        '<span class="wk-day">' + monthName(Core.parseISO(k).getMonth()) + '</span></button>';
+    }).join('');
+    const line = (labelText, v, cls) => '<div class="line"><span>' + tr(labelText) + '</span><span' + (cls ? ' class="' + cls + '"' : '') + '>' + v + '</span></div>';
+    return '<section class="card net-worth"><div class="card-head">' + titled('Net worth', 'worth') + '</div>' +
+      '<p class="nw-big' + (n.value < 0 ? ' bad-text' : '') + '">' + signed(n.value) + '</p>' +
+      '<p class="hint">' + (n.value < 0 ? tr('You owe more than you own. Every loan payment and every rupee saved moves this up.') : tr('What you own minus what you owe.')) +
+      (change !== null ? ' ' + tr(change >= 0 ? 'Up {amount} since last round.' : 'Down {amount} since last round.', { amount: inr(Math.abs(change)) }) : '') + '</p>' +
+      '<div class="summary">' + line('Money in your account and wallets', inr(n.money)) + line('Emergency fund and Grow savings', inr(n.funds)) +
+      (n.loans ? line('Loans', '−' + inr(n.loans)) : '') + (n.cards ? line('Card dues from before', '−' + inr(n.cards)) : '') +
+      line('Net worth', signed(n.value), n.value < 0 ? 'bad' : '') + '</div>' +
+      (keys.length > 1
+        ? '<div class="nw-grid">' + bars + '</div><p class="viz-tip" aria-live="polite">' + tr('Tap a round to see its number.') + '</p>' +
+          numbersTable([tr('Round from'), tr('Net worth')], keys.map((k, i) => [fmtDate(k, true), signed(vals[i])]))
+        : '<p class="hint">' + tr('Kept each round from now on, so you can watch it climb.') + '</p>') +
+      '</section>';
+  }
+
+  // Savings goals with a date: the monthly amount comes out of the salary like yearly costs.
+  function goalsCard() {
+    const t = today();
+    const gs = state.goals || [];
+    const f = ui.goalForm;
+    return '<section class="card goals-card"><div class="card-head">' + titled('Savings goals', 'goals') + '<span class="hint">' + tr('A bike, a trip, a deposit') + '</span></div>' +
+      (gs.length ? '<div class="bars">' + gs.map((g) => {
+        const st = Core.goalStatus(state, g, t);
+        const note = st.done ? '<b class="good">' + tr('Reached ✓') + '</b>'
+          : st.late ? '<b class="bad">' + tr('The date has passed with {amount} still to go. Pick a new date.', { amount: inr(st.left) }) + '</b>'
+            : tr(st.fresh ? 'From next payday: {amount} a month until {date}' : '{amount} a month until {date}', { amount: inr(st.perPayday), date: fmtDate(g.by, true) });
+        return '<div class="bar-row goal-row"><div class="bar-top"><span>' + esc(g.name) + '</span><span class="amt">' + tr('{amount} of {target}', { amount: inr(st.saved), target: inr(st.target) }) + '</span></div>' +
+          '<div class="bar"><span class="' + (st.done ? '' : 'marigold') + '" style="width:' + st.pct.toFixed(1) + '%"></span></div>' +
+          '<div class="bar-sub">' + note + '</div>' +
+          '<div class="form-grid goal-edit">' +
+          '<label class="field" for="goal-saved-' + esc(g.id) + '"><span>' + tr('Saved so far (₹)') + '</span><input id="goal-saved-' + esc(g.id) + '" type="number" inputmode="numeric" min="0" step="1" data-goal="' + esc(g.id) + '" data-goal-field="saved" value="' + (Number(g.saved) || 0) + '"></label>' +
+          '<label class="field" for="goal-by-' + esc(g.id) + '"><span>' + tr('By') + '</span><input id="goal-by-' + esc(g.id) + '" type="date" min="' + t + '" data-goal="' + esc(g.id) + '" data-goal-field="by" value="' + esc(g.by || '') + '"></label>' +
+          '</div><div class="row"><button class="ghost small" data-action="goal-remove" data-id="' + esc(g.id) + '">' + tr('Remove') + '</button></div></div>';
+      }).join('') + '</div>' : '<p class="hint">' + tr('Save for something with a date, and the app puts aside what it takes each payday, before your flexible budgets.') + '</p>') +
+      (f
+        ? '<form id="goal-form" class="callout" autocomplete="off"><b>' + tr('New goal') + '</b><div class="form-grid">' +
+          '<label class="field" for="gf-name"><span>' + tr('Name') + '</span><input id="gf-name" type="text" required maxlength="40" placeholder="' + tr('Bike down payment') + '"></label>' +
+          '<label class="field" for="gf-target"><span>' + tr('Amount needed (₹)') + '</span><input id="gf-target" type="number" inputmode="numeric" min="1" step="1" required></label>' +
+          '<label class="field" for="gf-by"><span>' + tr('By') + '</span><input id="gf-by" type="date" min="' + Core.addDays(t, 1) + '" required></label>' +
+          '<label class="field" for="gf-saved"><span>' + tr('Saved so far (₹)') + '</span><input id="gf-saved" type="number" inputmode="numeric" min="0" step="1" placeholder="0"></label>' +
+          '</div>' + (f.error ? '<p class="bad" role="alert">' + f.error + '</p>' : '') +
+          '<div class="row"><button class="primary" type="submit">' + tr('Add goal') + '</button><button type="button" class="ghost" data-action="goal-cancel">' + tr('Cancel') + '</button></div></form>'
+        : '<div class="row"><button class="primary" data-action="goal-add">' + tr('Add a goal') + '</button></div>') +
+      '</section>';
+  }
+
+  function addGoal(ev) {
+    ev.preventDefault();
+    const t = today();
+    const name = document.getElementById('gf-name').value.trim().slice(0, 40);
+    const target = Math.round(Number(document.getElementById('gf-target').value) || 0);
+    const by = document.getElementById('gf-by').value;
+    const saved = Math.max(0, Math.round(Number(document.getElementById('gf-saved').value) || 0));
+    if (!name) { ui.goalForm = { error: tr('Give it a name.') }; render(); return; }
+    if (!(target > 0)) { ui.goalForm = { error: tr('Enter an amount above ₹0.') }; render(); return; }
+    if (!by || by <= t) { ui.goalForm = { error: tr('Pick a date after today.') }; render(); return; }
+    const before = JSON.stringify(state);
+    state.goals = (state.goals || []).concat({ id: uid(), name, target, by, saved, created: t });
+    ui.goalForm = null;
+    save();
+    rerenderKeepScroll();
+    offerUndo(tr('{name} added', { name }), before);
+  }
+
   function recordToday(r) {
     const t = today();
     state.days = state.days || {};
@@ -1932,7 +2041,55 @@
       '<span class="tile-value">' + value + '</span><span class="tile-sub">' + tr(sub) + '</span></div>';
   }
 
-  function barRow(name, spent, budget) {
+  // The budgets as envelopes: what's in each (with money covered in or kept from last month), and a way to cover an overspend.
+  function envelopeBars(env) {
+    const c = ui.cover;
+    const rows = env.list.map((x) => {
+      const notes = [x.carried ? tr('{amount} kept from last month', { amount: inr(x.carried) }) : '',
+        x.moved > 0 ? tr('{amount} covered in', { amount: inr(x.moved) }) : x.moved < 0 ? tr('{amount} given to cover others', { amount: inr(-x.moved) }) : ''].filter(Boolean);
+      let html = barRow(x.name, x.spent, x.available, notes.join(' · '));
+      if (x.left < 0 && x.spent > 0) {
+        const donors = env.list.filter((d) => d.name !== x.name && d.left > 0);
+        if (c && c.to === x.name) {
+          const first = donors[0];
+          html += '<form id="cover-form" class="callout" autocomplete="off"><b>' + tr('Cover {amount} for {category}', { amount: inr(-x.left), category: label(x.name) }) + '</b>' +
+            '<span class="hint">' + tr('Take it from a budget that has money left. Your total for the month stays the same.') + '</span>' +
+            '<div class="form-grid"><label class="field wide" for="cover-from"><span>' + tr('From') + '</span><select id="cover-from">' +
+            donors.map((d) => '<option value="' + esc(d.name) + '">' + esc(label(d.name)) + ' · ' + tr('{amount} left', { amount: inr(d.left) }) + '</option>').join('') + '</select></label>' +
+            '<label class="field" for="cover-amount"><span>' + tr('Amount (₹)') + '</span><input id="cover-amount" type="number" inputmode="numeric" min="1" step="1" value="' + Math.min(-x.left, first ? first.left : 0) + '"></label></div>' +
+            (c.error ? '<p class="bad" role="alert">' + c.error + '</p>' : '') +
+            '<div class="row"><button class="primary" type="submit">' + tr('Cover it') + '</button><button type="button" class="ghost" data-action="cover-cancel">' + tr('Cancel') + '</button></div></form>';
+        } else if (donors.length) {
+          html += '<div class="cover-row"><button class="ghost small" data-action="cover-open" data-cat="' + esc(x.name) + '">' + tr('Cover it from another budget') + '</button></div>';
+        } else {
+          html += '<p class="hint">' + tr('No other budget has money left to cover this. It comes out of the money for the rest of the month.') + '</p>';
+        }
+      }
+      return html;
+    });
+    env.others.forEach((o) => rows.push(barRow(tr('{category} (no budget)', { category: label(o.name) }), o.spent, 0)));
+    return '<div class="bars">' + rows.join('') + '</div>';
+  }
+
+  function coverSave(ev) {
+    ev.preventDefault();
+    const env = Core.budgetEnvelopes(state, today());
+    const to = env.list.find((x) => x.name === (ui.cover && ui.cover.to));
+    const from = env.list.find((x) => x.name === document.getElementById('cover-from').value);
+    const amount = Math.round(Number(document.getElementById('cover-amount').value) || 0);
+    if (!to || !from) { ui.cover = null; render(); return; }
+    if (!(amount > 0)) { ui.cover = { to: to.name, error: tr('Enter an amount above ₹0.') }; render(); return; }
+    if (amount > from.left) { ui.cover = { to: to.name, error: tr('{category} has only {amount} left.', { category: label(from.name), amount: inr(from.left) }) }; render(); return; }
+    const before = JSON.stringify(state);
+    state.budgetMoves = (state.budgetMoves || []).filter((m) => m.cycle >= Core.addDays(env.cycle.start, -400))
+      .concat({ id: uid(), cycle: env.cycle.start, from: from.name, to: to.name, amount, date: today() });
+    ui.cover = null;
+    save();
+    rerenderKeepScroll();
+    offerUndo(tr('{amount} moved from {from} to {to}', { amount: inr(amount), from: label(from.name), to: label(to.name) }), before);
+  }
+
+  function barRow(name, spent, budget, note) {
     const pct = budget > 0 ? Math.min(100, (spent / budget) * 100) : spent > 0 ? 100 : 0;
     const cls = budget === 0 ? 'marigold' : spent > budget ? 'bad' : spent > budget * 0.85 ? 'warn' : '';
     const left = budget - spent;
@@ -1941,7 +2098,7 @@
       : inr(spent);
     return '<div class="bar-row"><div class="bar-top"><span>' + esc(label(name)) + '</span><span class="amt">' + right + '</span></div>' +
       '<div class="bar"><span class="' + cls + '" style="width:' + pct.toFixed(1) + '%"></span></div>' +
-      (budget > 0 ? '<div class="bar-sub">' + tr('Spent {spent} of {budget}', { spent: inr(spent), budget: inr(budget) }) + '</div>' : '') + '</div>';
+      (budget > 0 ? '<div class="bar-sub">' + tr('Spent {spent} of {budget}', { spent: inr(spent), budget: inr(budget) }) + (note ? ' · ' + note : '') + '</div>' : '') + '</div>';
   }
 
   function niceStep(range, count) {
@@ -2637,7 +2794,8 @@
         const item = state.budgets.find((x) => x.id === b.id);
         return '<div class="edit-row cols-2">' + listField('budgets', item, 'name', 'Category', 'text') +
           listField('budgets', Object.assign({}, item, { amount: b.amount }), 'amount', b.auto ? tr('Auto · {pct}%', { pct: b.share }) : 'Set by you', 'number', b.auto ? ' class="auto"' : '') +
-          removeButton('budgets', item) + '</div>';
+          removeButton('budgets', item) +
+          '<label class="check carry-check"><input type="checkbox" data-carry="' + esc(b.id) + '"' + (item.carry ? ' checked' : '') + '> ' + tr('Keep what’s left for next month') + '</label></div>';
       }).join('') + '</div>' +
       (alloc.budgets.length && alloc.autoPool === 0 && alloc.budgets.some((b) => b.auto) && alloc.pool > 0
         ? '<p class="hint warn">' + tr('Your own amounts use all of the money left, so the automatic budgets are at ₹0.') + '</p>' : '') +
@@ -3524,6 +3682,7 @@
       line('Extra toward debts', minus(p.debtExtra)) +
       line('Grow budget', minus(p.invest)) +
       line('Yearly costs (monthly share)', minus(p.sinking)) +
+      (p.goals ? line('Savings goals', minus(p.goals)) : '') +
       line('Flexible budgets', minus(p.flexTotal)) +
       line(left >= 0 ? 'Not yet assigned' : 'Over-planned by', '<span class="' + (left >= 0 ? 'good' : 'bad') + '">' + inr(Math.abs(left)) + '</span>', 'total') +
       '</div>';
@@ -4106,7 +4265,7 @@
 
     const movedThisCycle = state.transactions.filter((x) => Core.isMove(x) && Core.inCycle(x.date, cyc)).reduce((a, x) => a + x.amount, 0);
     const setAside = [
-      ['Emergency fund', p.emergency], ['Extra toward debts', p.debtExtra], ['Grow budget', p.invest], ['Yearly costs', p.sinking],
+      ['Emergency fund', p.emergency], ['Extra toward debts', p.debtExtra], ['Grow budget', p.invest], ['Yearly costs', p.sinking], ['Savings goals', p.goals],
     ].filter((x) => x[1] > 0);
 
     return hub('grow',
@@ -4131,6 +4290,8 @@
             : '<div><button class="primary" data-action="record-savings">' + tr('I’ve moved this money aside') + '</button></div>')
         : '<p class="hint">' + tr('Nothing set aside yet. Add amounts in the Plan tab.') + '</p>') +
       '</section>' },
+        { key: 'goals', group: 'Save', icon: 'target', label: 'Savings goals', tone: 'mint',
+          badge: (() => { const gs = state.goals || []; const late = gs.filter((g) => Core.goalStatus(state, g, t).late).length; return late ? { text: '!', tone: 'bad' } : gs.length ? { text: String(gs.length) } : null; })(), html: () => goalsCard() },
         { key: 'yearly', group: 'Save', icon: 'pot', label: 'Yearly costs', tone: 'mint', hide: !state.sinking.length, badge: { text: String(state.sinking.length) }, html: () =>
       (state.sinking.length
         ? '<section class="card"><h2>' + tr('Yearly costs') + '</h2><div class="bars">' + state.sinking.map((f) => {
@@ -4369,6 +4530,19 @@
         if (x) ui.split = { id: x.id, parts: [{ category: x.category, amount: x.amount }, { category: 'Misc', amount: 0 }] };
         break;
       }
+      case 'goal-add': ui.goalForm = {}; break;
+      case 'goal-cancel': ui.goalForm = null; break;
+      case 'goal-remove': {
+        const before = JSON.stringify(state);
+        const g = (state.goals || []).find((x) => x.id === btn.dataset.id);
+        state.goals = (state.goals || []).filter((x) => x.id !== btn.dataset.id);
+        save();
+        rerenderKeepScroll();
+        offerUndo(tr('{name} removed', { name: g ? g.name : '' }), before);
+        return;
+      }
+      case 'cover-open': ui.cover = { to: btn.dataset.cat }; break;
+      case 'cover-cancel': ui.cover = null; break;
       case 'split-add': if (ui.split) ui.split.parts.push({ category: 'Misc', amount: 0 }); break;
       case 'split-remove': if (ui.split) ui.split.parts.splice(Number(btn.dataset.i), 1); break;
       case 'split-cancel': ui.split = null; break;
@@ -4992,6 +5166,26 @@
       if (el.checked) sound('chime');
       return;
     }
+    if (el.dataset.goal) {
+      const g = (state.goals || []).find((x) => x.id === el.dataset.goal);
+      if (!g) return;
+      if (el.dataset.goalField === 'saved') g.saved = Math.max(0, Math.round(Number(el.value) || 0));
+      else if (el.value && el.value > today()) g.by = el.value;
+      // This month's share stays as it was; the new amount or date counts from next payday.
+      save(); refreshAfterEdit(); return;
+    }
+    if (el.dataset.carry) {
+      // Turned on now: this cycle's leftover is the first one kept.
+      const b = state.budgets.find((x) => x.id === el.dataset.carry);
+      if (b) {
+        b.carry = el.checked;
+        if (el.checked) b.carryFrom = Core.cycleFor(today(), Number(state.settings.payday) || 1).start;
+        else delete b.carryFrom;
+        save();
+        toast(el.checked ? tr('What’s left in {category} moves to next month', { category: label(b.name) }) : tr('{category} starts fresh each month', { category: label(b.name) }));
+      }
+      return;
+    }
     if (el.id === 'personal-mode') {
       state.settings.personal = el.checked;
       save(); toast(el.checked ? 'Personal mode on: the Grow tab shows where to invest' : 'Personal mode off'); rerenderKeepScroll(); return;
@@ -5179,6 +5373,8 @@
       return;
     }
     if (ev.target.id === 'wallet-form') { addWallet(ev); return; }
+    if (ev.target.id === 'cover-form') { coverSave(ev); return; }
+    if (ev.target.id === 'goal-form') { addGoal(ev); return; }
     if (ev.target.id === 'move-form') { moveMoney(ev); return; }
     if (ev.target.id === 'wallet-balance-form') { saveWalletBalances(ev); return; }
     if (ev.target.id === 'balance-form') {

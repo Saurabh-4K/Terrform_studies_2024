@@ -100,6 +100,35 @@
   function sinkingMonthly(fund) { return Math.round((Number(fund.amount) || 0) / 12); }
 
   /*
+   * Savings goals with a date (a bike's down payment by March): what to put
+   * aside each payday to get there in time. Like yearly costs, it comes out of
+   * the salary before the flexible budgets. The amount recorded on a payday
+   * stays this cycle's amount, so the plan doesn't shift mid-cycle, and a
+   * goal added after payday starts on the next one.
+   * A date that has passed reserves nothing: the goal asks for a new date.
+   */
+  function goalStatus(state, g, todayIso) {
+    const payday = Number(state.settings.payday) || 1;
+    const cyc = cycleFor(todayIso, payday);
+    const target = Number(g.target) || 0;
+    const saved = Number(g.saved) || 0;
+    const left = Math.max(0, target - saved);
+    const late = !!g.by && g.by < todayIso && left > 0;
+    // This cycle's amount already added on payday, or a goal added after payday: it starts next payday.
+    const handled = !!(g.added && g.added.cycle === cyc.start);
+    const fresh = !handled && !!g.created && g.created > cyc.start;
+    let paydays = 0;
+    for (let c = handled || fresh ? cycleFor(cyc.next, payday) : cyc; g.by && c.start <= g.by && paydays < 600; c = cycleFor(c.next, payday)) paydays++;
+    const perPayday = left > 0 && !late && paydays > 0 ? Math.ceil(left / paydays) : 0;
+    const monthly = handled ? Number(g.added.amount) || 0 : fresh ? 0 : perPayday;
+    return { target, saved, left, late, fresh, done: target > 0 && left === 0, paydays, perPayday, monthly, pct: target > 0 ? Math.min(100, (saved / target) * 100) : 0 };
+  }
+
+  function goalsMonthly(state, todayIso) {
+    return sum(state.goals || [], (g) => goalStatus(state, g, todayIso || toISO(new Date())).monthly);
+  }
+
+  /*
    * Bills that vary (electricity, gas, water, recharges). Each has an
    * estimate, how many months one payment covers (everyMonths) and the next
    * due date. A share is set aside every month so a 3-month recharge costs
@@ -217,6 +246,7 @@
     const invest = adj && adj.pauseInvest ? 0 : sv.investMonthly;
     const debtExtra = adj && adj.pauseDebtExtra ? 0 : sv.debtExtra;
     const sinking = sum(state.sinking, sinkingMonthly);
+    const goals = goalsMonthly(state, todayIso);
     const variableBills = billsMonthly(state);
     const cut = adj ? adj.flexCutPct : 0;
     const budgets = alloc.budgets.map((b) => ({
@@ -226,10 +256,10 @@
       amount: Math.round(b.amount * (1 - cut / 100)),
     }));
     const flexTotal = sum(budgets, (b) => b.amount);
-    const savingsTotal = emergency + invest + debtExtra + sinking;
+    const savingsTotal = emergency + invest + debtExtra + sinking + goals;
     const allocated = fixedTotal + debtMin + variableBills + savingsTotal + flexTotal;
     return {
-      salary, fixedTotal, debtMin, variableBills, emergency, invest, debtExtra, sinking,
+      salary, fixedTotal, debtMin, variableBills, emergency, invest, debtExtra, sinking, goals,
       budgets, flexTotal, savingsTotal, allocated,
       unallocated: salary - allocated,
       adjustment: adj,
@@ -814,7 +844,7 @@
     const salary = salaryFor(state, todayIso);
     const fixed = sum(state.fixed, (f) => Number(f.amount) || 0);
     const mins = sum(state.debts.filter((d) => d.balance > 0), (d) => Number(d.minPayment) || 0);
-    const sinking = sum(state.sinking, sinkingMonthly) + billsMonthly(state);
+    const sinking = sum(state.sinking, sinkingMonthly) + billsMonthly(state) + goalsMonthly(state, todayIso);
     const available = salary - fixed - mins - sinking;
     const notes = [];
     if (available <= 0) {
@@ -892,7 +922,7 @@
     const salary = salaryFor(state, todayIso);
     const fixed = sum(state.fixed, (f) => Number(f.amount) || 0);
     const mins = sum(state.debts.filter((d) => d.balance > 0), (d) => Number(d.minPayment) || 0);
-    const sinking = sum(state.sinking, sinkingMonthly) + billsMonthly(state);
+    const sinking = sum(state.sinking, sinkingMonthly) + billsMonthly(state) + goalsMonthly(state, todayIso);
     const pool = salary - fixed - mins - sinking - savings.emergencyMonthly - savings.investMonthly - savings.debtExtra;
     const customTotal = sum(state.budgets.filter((b) => !b.auto), (b) => Number(b.amount) || 0);
     const autoPool = Math.max(0, pool - customTotal);
@@ -1497,6 +1527,7 @@
       ['Loan minimums and EMIs', p.debtMin],
       ['Bills that vary (monthly share)', p.variableBills],
       ['Yearly costs (monthly share)', p.sinking],
+      ['Savings goals', p.goals],
     ].filter((x) => x[1] > 0);
     const committedTotal = sum(committed, (x) => x[1]);
     const free = p.salary - committedTotal;
@@ -1608,7 +1639,7 @@
     const committed = Math.round(
       sum(state.fixed, (f) => Number(f.amount) || 0) +
       sum(state.debts.filter((d) => d.balance > 0 && !startsNext(d)), (d) => Number(d.minPayment) || 0) +
-      billsMonthly(state) + sum(state.sinking, sinkingMonthly)
+      billsMonthly(state) + sum(state.sinking, sinkingMonthly) + goalsMonthly(state, next.start)
     );
     return {
       date: next.start, nominal, shortfall, fromBefore, newCardDebt, borrowed, effective,
@@ -1813,6 +1844,65 @@
    * wallets are counted, so the parts always add up to the total.
    * morning: leave out today's entries (the balances as the day began).
    */
+  /*
+   * Each flexible budget for the cycle containing todayIso, as an envelope:
+   * the plan's amount (only the days from a balance check, if the person
+   * joined mid-cycle), plus money covered in from other budgets (or minus
+   * money covered out), plus what's left from last cycle when that budget
+   * keeps its leftover. Only a leftover carries: overspending already came
+   * out of the money. Today's limit still goes by the money itself.
+   */
+  function budgetEnvelopes(state, todayIso, depth) {
+    const payday = Number(state.settings.payday) || 1;
+    const cyc = cycleFor(todayIso, payday);
+    const plan = monthlyPlan(state, todayIso);
+    const check = state.balanceCheck;
+    const anchor = check && inCycle(check.date, cyc) && check.date <= todayIso ? check : null;
+    const share = anchor ? (cyc.days - daysBetween(cyc.start, anchor.date)) / cyc.days : 1;
+    const from = anchor ? anchor.date : cyc.start;
+    const spent = byCategory(spendInRange(state.transactions, cyc).filter((t) => t.date >= from && t.date <= todayIso));
+    const moves = (state.budgetMoves || []).filter((m) => m.cycle === cyc.start);
+    const own = {};
+    (state.budgets || []).forEach((b) => { own[b.name] = b; });
+    let prev = null;
+    const list = plan.budgets.map((b) => {
+      const planned = Math.round((b.amount * share) / 10) * 10;
+      const moved = sum(moves.filter((m) => m.to === b.name), (m) => m.amount) - sum(moves.filter((m) => m.from === b.name), (m) => m.amount);
+      let carried = 0;
+      const o = own[b.name];
+      if (o && o.carry && o.carryFrom && (depth || 0) < 24) {
+        const last = previousCycle(cyc, payday);
+        if (last.start >= o.carryFrom) {
+          prev = prev || budgetEnvelopes(state, addDays(cyc.start, -1), (depth || 0) + 1).list;
+          const p = prev.find((x) => x.name === b.name);
+          carried = p ? Math.max(0, p.left) : 0;
+        }
+      }
+      const available = planned + moved + carried;
+      const s = spent[b.name] || 0;
+      return { name: b.name, planned, moved, carried, carry: !!(o && o.carry), available, spent: s, left: available - s };
+    });
+    const others = Object.keys(spent).filter((c) => !list.some((x) => x.name === c)).map((c) => ({ name: c, spent: spent[c] }));
+    return { cycle: cyc, list, others, over: list.filter((x) => x.left < 0 && x.available >= 0 && x.spent > 0 && (x.available > 0 || x.planned > 0)) };
+  }
+
+  /*
+   * What you own minus what you owe, today: the money in the account and
+   * wallets, the emergency fund and money set aside to invest, less loans
+   * and what was owed on credit cards when they were added.
+   * Yearly costs and goals are part of the account's money already.
+   */
+  function netWorth(state, todayIso) {
+    const r = projectRunway(state, todayIso);
+    const money = Math.max(0, Number(r.balanceToday) || 0);
+    const sv = state.savings || {};
+    const funds = (Number(sv.emergencyBalance) || 0) + (Number(sv.investSaved) || 0);
+    const loans = sum((state.debts || []).filter((d) => d.balance > 0), (d) => Number(d.balance) || 0);
+    // Card spending this cycle already came off the money; what was owed before the card was added did not.
+    const cards = sum(state.cards || [], (c) => Math.max(0, setupOwed(c) - sum(cardPayments(state, c).filter((t) => t.date <= todayIso), (t) => t.amount)));
+    return { money, funds, loans, cards, owe: loans + cards, own: money + funds, value: Math.round(money + funds - loans - cards) };
+  }
+
   function walletBalances(state, todayIso, total, morning) {
     const wallets = (state.wallets || []).map((w) => {
       const from = w.check ? w.check.date : w.created || '0000-00-00';
@@ -2604,7 +2694,7 @@
     recordCardPayment, convertCardBalance, answerCardDue, cardLateFee, cardRate, CARD_RATE, undoCardConvert, cardFreeDays, byCategory, DEFAULT_SPLIT,
     isLoanCredit, borrowedThisCycle, borrowCheck, rolloverOptions, personal, investPlan, sipValue, ASSUMED_RETURN, setTranslator,
     payoffOrder, tickDebts, debtJourney, lenderTasks, lastBorrowed,
-    encryptBackup, openBackup, backupInfo, toB64, fromB64, isTransfer, walletBalances,
+    encryptBackup, openBackup, backupInfo, toB64, fromB64, isTransfer, walletBalances, goalStatus, goalsMonthly, budgetEnvelopes, netWorth,
     daySpent, daySpending, dayTally, roundSnapshot, roundResult, weekRecap,
     monthReport, aiReport, LEAKS, leakNames, leakOf, leakSummary, leakSuggestions, spendWhere, spendWhen, spendTrend, BASICS,
   };
