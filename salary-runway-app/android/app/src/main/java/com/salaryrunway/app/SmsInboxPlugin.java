@@ -141,6 +141,10 @@ public class SmsInboxPlugin extends Plugin {
                 Telephony.Sms.DATE + " DESC")) {
             if (cursor != null) {
                 while (cursor.moveToNext() && messages.length() < limit) {
+                    // Bank and UPI alerts come from named senders (VM-HDFCBK). Messages from
+                    // phone numbers (friends, family) are skipped here and never reach the app.
+                    String address = cursor.getString(0);
+                    if (address == null || !address.matches(".*[A-Za-z].*")) continue;
                     JSObject message = new JSObject();
                     message.put("address", cursor.getString(0));
                     message.put("body", cursor.getString(1));

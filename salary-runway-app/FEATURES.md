@@ -29,13 +29,22 @@ Everything the app can do today, screen by screen, with the rules it follows. Fo
 
 ## 1. Privacy and your data
 
-- **Everything stays on your device.** There is no server and no account, and nothing is uploaded.
-- In the Android app, fonts are bundled, so the app makes no network requests. Android's cloud backup and device-to-device transfer are **turned off** for the app's data.
-- **Backup:** Plan → Your data → *Show backup* → *Copy backup* gives you your whole data as text. Keep it somewhere safe.
-- **Restore:** paste a backup into *Restore from backup*.
-- **Erase everything**, after a confirmation.
+Plan → **Your privacy** lists what the app does and never does, and each line is true of the app as built:
+- **No internet permission.** The Android manifest removes it, so Android itself blocks any network use: the app can't send anything anywhere. Airplane mode changes nothing. Every build is installed on an emulator with Wi-Fi and data off; the download is only updated if it has no INTERNET permission and opens normally.
+- **Nothing from outside:** a content security policy stops the app's screens loading any outside script, font, image or request, and the fonts are bundled. No account, no ads, no analytics, no crash reports, no Google services.
+- **Bank SMS** are read only when you tap *Read bank SMS* or turn on alerts. Messages from phone numbers (friends, family) are skipped in the native code, before the app sees them. Only a payment's amount, date and shop are saved, never the message.
+- **Android's cloud backup and device-to-device transfer are turned off** for the app's data, so not even Google gets a copy.
+- Something leaves the phone only when you share it (the AI report or a backup file), to the app you pick.
+- **If the phone is lost, reset, or the app is uninstalled, the data goes with it**, unless you have a backup file. The app says so plainly.
+
+### Backup and restore
+- **Make a backup file** (Plan → Your data): choose a password (6+ characters, typed twice). The file is locked with AES-256-GCM, its key made from the password by PBKDF2-SHA256 with 210,000 rounds and a random salt. Without the password nobody can open it, not even the app. The share menu opens to save it to Google Drive, or email or WhatsApp it to yourself. The card shows the date of your last backup.
+- **Restore from a backup:** pick the file; it shows the backup's date and entry count, asks for the password and replaces the data on this phone. A wrong password or a file that isn't a backup is refused with a clear message. Older plain-text backups can still be pasted in.
+- **Reminder:** once a month, when there's at least two weeks of data and no backup in the last 30 days, the Runway tab suggests one (*Later* hides it for a month).
+- **Erase everything**, after a confirmation, removes all of it: entries and plans, the language and view settings, the home-screen widget's numbers and queue, SMS alerts, notifications and shared files. A backup file saved elsewhere is not touched.
+
 - **Example data:** the app opens with example numbers (₹55,000 salary, rent, a bike EMI, a credit card and a personal loan, four months of spending), clearly marked. *Start with my numbers* clears them.
-- **Updates keep your data.** New versions install over the old one because the app ID and signing key never change. Uninstalling deletes the data, so take a backup first.
+- **Updates keep your data.** New versions install over the old one because the app ID and signing key never change. Uninstalling deletes the data, so make a backup file first.
 
 ## 1b. First-time setup (about 3 minutes)
 *Start with my numbers* opens five short steps, each unlocking something real, with a progress bar (*Step 2 of 5 · about 3 min*). Everything is saved as you go; **Finish later** keeps your place (Plan tab: *Finish setting up · step 3 of 5*).
@@ -81,7 +90,7 @@ Groceries, Food & dining, Travel, Shopping, Entertainment, Health, Personal care
 A summary of salary minus fixed payments, debt minimums, bills that vary, set-asides, yearly costs and flexible budgets. It shows what's not yet assigned, or warns if the plan uses more than the salary.
 
 ### Your data
-Backup, restore, example data, erase, and **Clean up SMS imports** (removes SMS-imported entries before a chosen date and keeps anything added by hand).
+Your privacy, backup file, restore, example data, erase, and **Clean up SMS imports** (removes SMS-imported entries before a chosen date and keeps anything added by hand).
 
 ## 3. Payday check-in
 

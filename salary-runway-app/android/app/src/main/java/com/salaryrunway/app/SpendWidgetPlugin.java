@@ -36,6 +36,33 @@ public class SpendWidgetPlugin extends Plugin {
         call.resolve();
     }
 
+    /**
+     * "Erase everything": the widget's numbers and queue, bank SMS alerts,
+     * the saved language, shared files in the cache and any notifications.
+     * The web app clears its own storage.
+     */
+    @PluginMethod
+    public void eraseAll(PluginCall call) {
+        Context context = getContext();
+        for (String name : new String[] {"spend_widget", "sms_alerts", "salary_runway_lang"}) {
+            context.getSharedPreferences(name, Context.MODE_PRIVATE).edit().clear().commit();
+        }
+        deleteTree(context.getCacheDir());
+        android.app.NotificationManager nm = (android.app.NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
+        if (nm != null) nm.cancelAll();
+        SpendWidgetProvider.updateAll(context);
+        call.resolve();
+    }
+
+    private static void deleteTree(java.io.File dir) {
+        java.io.File[] files = dir.listFiles();
+        if (files == null) return;
+        for (java.io.File f : files) {
+            if (f.isDirectory()) deleteTree(f);
+            f.delete();
+        }
+    }
+
     @PluginMethod
     public void getQueued(PluginCall call) {
         try {

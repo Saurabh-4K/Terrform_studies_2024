@@ -1223,3 +1223,24 @@ test('weekly recap: the 7 days to yesterday in small wins', () => {
   assert.equal(w.freedomGained, 1); // basics 18,000 a month = 600 a day
   assert.equal(w.borrowed, 0);
 });
+
+test('backup file: locked with the password, opens only with it; old plain backups still open', async () => {
+  const s = baseState({ transactions: [{ id: 'a', date: '2026-10-10', amount: 300, category: 'Food', note: 'Swiggy' }] });
+  const file = await Core.encryptBackup(s, 'chai-123', '2026-10-25');
+  // Nothing readable inside: not the shop, not the salary
+  assert.equal(/Swiggy|50000|Rent/.test(file), false);
+  assert.deepEqual(Core.backupInfo(file), { locked: true, date: '2026-10-25', entries: 1 });
+  const back = await Core.openBackup(file, 'chai-123');
+  assert.deepEqual(back, JSON.parse(JSON.stringify(s)));
+  await assert.rejects(Core.openBackup(file, 'chai-124'), /password/);
+  // Two backups of the same data look different (random salt and IV)
+  assert.notEqual(file, await Core.encryptBackup(s, 'chai-123', '2026-10-25'));
+  // A changed byte is caught
+  const o = JSON.parse(file); o.data = (o.data[0] === 'A' ? 'B' : 'A') + o.data.slice(1);
+  await assert.rejects(Core.openBackup(JSON.stringify(o), 'chai-123'), /password/);
+  // Older plain backups, and anything else
+  assert.deepEqual(Core.backupInfo(JSON.stringify(s)), { locked: false, date: null, entries: 1 });
+  assert.equal((await Core.openBackup(JSON.stringify(s))).settings.salary, 50000);
+  assert.equal(Core.backupInfo('hello'), null);
+  await assert.rejects(Core.openBackup('{"a":1}', 'x'), /format/);
+});

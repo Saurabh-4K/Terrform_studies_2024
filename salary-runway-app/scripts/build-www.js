@@ -25,6 +25,9 @@ fs.writeFileSync(path.join(out, 'fonts.css'), faces.join('\n') + '\n');
 
 let html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 html = html
+  // The app allows only its own files: no font hosts in its security policy.
+  .replace(' https://fonts.googleapis.com;', ';')
+  .replace(' https://fonts.gstatic.com;', ';')
   .split('\n')
   .filter((line) => !/fonts\.(googleapis|gstatic)\.com/.test(line))
   .join('\n')

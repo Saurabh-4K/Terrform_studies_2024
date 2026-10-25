@@ -31,14 +31,15 @@ On your phone:
 
 New builds install over the old one and keep your data, because every build is signed with the same key (`android/app/salary-runway.keystore`). That key is in the repo for convenience, so it only suits personal sideloading. Publishing to the Play Store needs a private key kept out of the repo.
 
-Uninstalling the app deletes its data. Copy a backup from the Plan tab first.
+Uninstalling the app deletes its data. Make a backup file first (Plan tab → Your data): it's locked with your password and restores on any phone.
 
 ### Android app details
 - Built with [Capacitor](https://capacitorjs.com/): the same web app in an Android shell, plus a small native plugin (`SmsInboxPlugin.java`) that reads the SMS inbox.
 - Only messages from named senders (such as `VM-HDFCBK`) are read for payments. Only today's messages are read: each time you open the app it checks today's new messages, never earlier days, and you review each payment before it is added.
 - **Notifications for new bank SMS** (optional, Spend tab): each bank or UPI SMS is recorded as it arrives and a notification asks you to check its category. Tapping it opens a small "Check this payment" window (change category, or mark *Not a payment*). Payments you don't check are recorded anyway and highlighted under **Needs your check** until you confirm them. Messages are matched by their text, so one SMS is never recorded twice. The Android side (`SmsReceiver`, `SmsParser.java`) mirrors the app's own SMS reader; `tests/` pins the shared message key.
 - **Home-screen widget** "Spend today": what's left to spend today, and **+ Add** to record an expense from a small window without opening the app.
-- Fonts are bundled. The app makes no network requests, and Android cloud backup is turned off for its data.
+- **No internet permission.** The manifest removes it (`tools:node="remove"`), so Android blocks any network use. A content security policy also stops the web layer loading anything from outside, fonts are bundled, and Android cloud backup is turned off for the app's data.
+- **Every build is checked offline:** the workflow installs the APK on an emulator with Wi-Fi and data off, confirms it has no INTERNET permission and that the app opens (`scripts/device-check.sh`). The download link is only updated when this passes.
 
 To build locally (needs the Android SDK and JDK 21):
 
@@ -175,16 +176,15 @@ npm test
 Done: Android app, SMS reading and notifications, home-screen widget, zones, bills that vary, credit cards, payday check-in.
 
 Next:
-1. A new name and icon (in progress; the app ID stays the same).
-2. Encrypted on-device storage, app lock (fingerprint/PIN), and optional encrypted backup.
-3. More banks' SMS formats, from real samples.
-4. Phone notifications before bills, EMIs and card due dates (today they show inside the app).
-5. Before a Play Store release: Google's review of the SMS permissions, and a private signing key kept out of the repo.
-6. Later, with a licensed partner: Account Aggregator for iPhone users and more accurate data.
+1. App lock (fingerprint/PIN).
+2. More banks' SMS formats, from real samples.
+3. Phone notifications before bills, EMIs and card due dates (today they show inside the app).
+4. Before a Play Store release: Google's review of the SMS permissions, and a private signing key kept out of the repo.
+5. Later, with a licensed partner: Account Aggregator for iPhone users and more accurate data.
 
 ## Known limits of the prototype
 
-- Debt balances don't go down automatically; update them from each statement.
+- Loan balances go down by a worked-out amount after each due date (the EMI less that month's interest); correct them from your loan app now and then. Card EMIs follow the card bill.
 - Fixed payments are assumed to be paid on their due date.
-- Data lives in one browser or one phone. Use **Show backup** on the Plan tab to copy it to another device.
+- Data lives in one browser or one phone. Use **Make a backup file** on the Plan tab to move it to another device.
 - The browser version loads fonts from Google Fonts; the Android app bundles them.

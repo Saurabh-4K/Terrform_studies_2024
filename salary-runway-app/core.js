@@ -1906,6 +1906,68 @@
     };
   }
 
+  // ---------- encrypted backup ----------
+
+  /*
+   * A backup file locked with the person's password: AES-256-GCM, with the key
+   * made from the password by PBKDF2-SHA256 (210,000 rounds, random salt).
+   * Without the password nobody can open it. Older plain backups (the app's
+   * data as JSON) still restore without one.
+   */
+  const BACKUP_ROUNDS = 210000;
+
+  function toB64(bytes) {
+    let s = '';
+    for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+    return btoa(s);
+  }
+
+  function fromB64(text) {
+    const s = atob(text);
+    const out = new Uint8Array(s.length);
+    for (let i = 0; i < s.length; i++) out[i] = s.charCodeAt(i);
+    return out;
+  }
+
+  function backupKey(password, salt, rounds) {
+    const subtle = globalThis.crypto.subtle;
+    return subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveKey'])
+      .then((base) => subtle.deriveKey({ name: 'PBKDF2', salt, iterations: rounds, hash: 'SHA-256' }, base, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']));
+  }
+
+  // Resolves to the backup file's text.
+  function encryptBackup(state, password, todayIso) {
+    const salt = globalThis.crypto.getRandomValues(new Uint8Array(16));
+    const iv = globalThis.crypto.getRandomValues(new Uint8Array(12));
+    return backupKey(password, salt, BACKUP_ROUNDS)
+      .then((key) => globalThis.crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, new TextEncoder().encode(JSON.stringify(state))))
+      .then((data) => JSON.stringify({
+        app: 'Hisab Se', kind: 'backup', v: 1, date: todayIso, entries: (state.transactions || []).length,
+        kdf: 'PBKDF2-SHA256', rounds: BACKUP_ROUNDS, salt: toB64(salt), iv: toB64(iv), data: toB64(new Uint8Array(data)),
+      }));
+  }
+
+  // What a backup file is, before asking for its password: { locked, date, entries }, or null if it isn't one.
+  function backupInfo(text) {
+    let o;
+    try { o = JSON.parse(String(text || '').trim()); } catch (e) { return null; }
+    if (o && o.kind === 'backup' && o.data && o.salt && o.iv) return { locked: true, date: o.date || null, entries: Number(o.entries) || 0 };
+    if (o && o.settings && Array.isArray(o.transactions)) return { locked: false, date: null, entries: o.transactions.length };
+    return null;
+  }
+
+  // Resolves to the saved app data; rejects with Error('format') or Error('password').
+  function openBackup(text, password) {
+    let o;
+    try { o = JSON.parse(String(text || '').trim()); } catch (e) { return Promise.reject(new Error('format')); }
+    const check = (s) => { if (!s || !s.settings || !Array.isArray(s.transactions)) throw new Error('format'); return s; };
+    if (o && o.settings) return Promise.resolve().then(() => check(o));
+    if (!o || o.kind !== 'backup') return Promise.reject(new Error('format'));
+    return backupKey(password || '', fromB64(o.salt), Number(o.rounds) || BACKUP_ROUNDS)
+      .then((key) => globalThis.crypto.subtle.decrypt({ name: 'AES-GCM', iv: fromB64(o.iv) }, key, fromB64(o.data)))
+      .then((plain) => check(JSON.parse(new TextDecoder().decode(plain))), (e) => { throw new Error(e && e.message === 'format' ? 'format' : 'password'); });
+  }
+
   // ---------- spending, three ways ----------
 
   // Basics: what has to be paid whatever happens. Everything else is a choice.
@@ -2506,6 +2568,7 @@
     recordCardPayment, convertCardBalance, answerCardDue, cardLateFee, cardRate, CARD_RATE, undoCardConvert, cardFreeDays, byCategory, DEFAULT_SPLIT,
     isLoanCredit, borrowedThisCycle, borrowCheck, rolloverOptions, personal, investPlan, sipValue, ASSUMED_RETURN, setTranslator,
     payoffOrder, tickDebts, debtJourney, lenderTasks, lastBorrowed,
+    encryptBackup, openBackup, backupInfo,
     daySpent, daySpending, dayTally, roundSnapshot, roundResult, weekRecap,
     monthReport, aiReport, LEAKS, leakNames, leakOf, leakSummary, leakSuggestions, spendWhere, spendWhen, spendTrend, BASICS,
   };

@@ -214,7 +214,7 @@ a { color: var(--accent); }
 
 /* ---------- forms ---------- */
 label.field { display: grid; gap: 4px; font-size: 0.82rem; color: var(--muted); min-width: 0; }
-input[type="text"], input[type="number"], input[type="date"], select, textarea {
+input[type="text"], input[type="number"], input[type="date"], input[type="password"], select, textarea {
   width: 100%;
   min-width: 0;
   background: var(--bg);
@@ -831,3 +831,13 @@ details.prep ul { margin: 6px 0 0; padding-left: 20px; color: var(--muted); font
 .week-list li.wk-clean::before, .week-list li.wk-saved::before, .week-list li.wk-debt::before { content: "✓"; color: var(--good); }
 .week-list li.wk-borrow { color: var(--bad); font-weight: 600; }
 .rr-table th[scope="row"] { text-transform: none; letter-spacing: 0; font-size: 0.88rem; color: var(--ink); }
+
+/* Privacy: what the app does and never does, each line ticked. */
+.privacy-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; font-size: 0.9rem; line-height: 1.45; }
+.privacy-list li { display: grid; grid-template-columns: 22px 1fr; gap: 6px; align-items: start; }
+.privacy-list li::before { content: "✓"; color: var(--good); font-weight: 800; }
+.privacy-list li.pv-warn::before { content: "!"; color: var(--warn); text-align: center; }
+.privacy-list li.pv-warn b { color: var(--warn); }
+.warn-text { color: var(--warn); font-weight: 650; }
+.backup-form, .restore-form { gap: 10px; }
+#data-card { display: grid; gap: 12px; }

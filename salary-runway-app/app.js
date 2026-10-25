@@ -411,8 +411,14 @@
       'Type your own amount and that category is marked <b>Set by you</b>. The automatic ones adjust to fit. <b>Share everything out automatically</b> undoes your edits.',
     ]],
     data: ['Your data', [
-      'Everything is saved on this device only. Nothing is uploaded.',
-      'Copy a backup to move to another phone, or before uninstalling: uninstalling deletes the app’s data.',
+      'Everything is saved on this phone only. Nothing is uploaded.',
+      '<b>Make a backup file</b> to move to a new phone, or in case this one is lost: the file is locked with your password. Save it to Google Drive, or email or WhatsApp it to yourself. On the new phone: <b>Restore from a backup</b>, pick the file and type the password.',
+      'Forgot the password? Then the backup can’t be opened, by anyone. Make a new one with a password you’ll remember.',
+      '<b>Erase everything</b> removes all of it from this phone, including the widget and SMS alerts.',
+    ]],
+    privacy: ['Your privacy', [
+      'Hisab Se has no internet permission: Android doesn’t let it connect to anything. There is no server, no account and no tracking.',
+      'Check it yourself: turn on airplane mode and use the app. Everything works.',
     ]],
     smsclean: ['Clean up SMS imports', [
       'Removes payments and money received that were added from SMS before the date you pick. Anything you added by hand stays.',
@@ -640,6 +646,7 @@
       '</section>' +
       roundBoard(cyc, r) +
       weekCard() +
+      backupNudge() +
       debtFreeCard() +
       savedCard() +
       cardHomeNotes(cyc) +
@@ -2406,20 +2413,122 @@
 
       '<section class="card" id="plan-summary">' + planSummary() + '</section>' +
 
-      '<section class="card">' + titled('Your data', 'data') +
-      '<label class="check"><input id="personal-mode" type="checkbox"' + (Core.personal(state) ? ' checked' : '') + '> ' + tr('Personal mode: show where to invest (for my own use)') + '</label>' +
-      '<div class="row"><button data-action="backup">' + tr(ui.backup ? 'Hide backup' : 'Show backup') + '</button>' +
-      '<button data-action="restore-toggle">' + tr('Restore from backup') + '</button>' +
-      '<button data-action="load-demo">' + tr('Load example data') + '</button>' +
-      '<button class="danger" data-action="wipe">' + tr('Erase everything') + '</button></div>' +
-      (ui.confirmWipe ? '<div class="callout bad"><b>' + tr('Erase all your data on this device?') + '</b><span class="hint">' + tr('This cannot be undone.') + '</span><div class="row"><button class="danger" data-action="wipe-confirm">' + tr('Yes, erase') + '</button><button data-action="wipe-cancel">' + tr('Cancel') + '</button></div></div>' : '') +
-      (ui.backup ? '<label class="field" for="backup-text">' + tr('Backup (copy and keep it somewhere safe)') + '<textarea id="backup-text" readonly>' + esc(ui.backup) + '</textarea></label><div><button data-action="backup-copy">' + tr('Copy backup') + '</button></div>' : '') +
-      (ui.restoreOpen ? '<label class="field" for="restore-text">' + tr('Paste a backup') + '<textarea id="restore-text"></textarea></label>' +
-        (ui.restoreError ? '<p class="bad">' + esc(ui.restoreError) + '</p>' : '') +
-        '<div><button class="primary" data-action="restore">' + tr('Restore') + '</button></div>' : '') +
-      '</section>' +
+      privacyCard() +
+      dataCard() +
       smsCleanup()
     );
+  }
+
+  // ---------- privacy and backup ----------
+
+  // Every line here was checked against the app: the manifest, the native code and the web code.
+  const PRIVACY = [
+    ['good', '<b>No internet permission.</b> Hisab Se can’t send anything anywhere, and Android enforces it. Turn on airplane mode: everything still works.'],
+    ['good', '<b>No account, no ads, no analytics, no crash reports.</b>'],
+    ['good', '<b>Bank SMS</b> are read only when you tap Read bank SMS or turn on alerts. Messages from phone numbers (friends, family) are skipped before the app sees them. Only a payment’s amount, date and shop are saved, never the message.'],
+    ['good', '<b>Your data stays on this phone</b>, in the app’s private storage. Android’s cloud backup is off for Hisab Se, so not even Google gets a copy.'],
+    ['good', '<b>Something leaves the phone only when you share it:</b> the AI report or a backup file, to the app you pick.'],
+    ['warn', '<b>If the phone is lost, reset, or the app is uninstalled, your data goes with it,</b> unless you have a backup file.'],
+  ];
+
+  function privacyCard() {
+    return '<section class="card privacy-card">' + titled('Your privacy', 'privacy') +
+      '<ul class="privacy-list">' + PRIVACY.map((x) => '<li class="pv-' + x[0] + '"><span>' + tr(x[1]) + '</span></li>').join('') + '</ul></section>';
+  }
+
+  function dataCard() {
+    const last = state.lastBackup;
+    const b = ui.backupForm;
+    const r = ui.restore;
+    let form = '';
+    if (b) {
+      form = '<div class="callout backup-form"><b>' + tr('Make a backup file') + '</b>' +
+        '<span class="hint">' + tr('The file is locked with a password you choose (AES-256). Without the password nobody can open it, not even Hisab Se, so write it down. Then save the file off this phone: Google Drive, email or WhatsApp to yourself.') + '</span>' +
+        '<label class="field" for="backup-pass"><span>' + tr('Password (6 or more characters)') + '</span><input id="backup-pass" type="password" autocomplete="new-password" minlength="6"></label>' +
+        '<label class="field" for="backup-pass2"><span>' + tr('Same password again') + '</span><input id="backup-pass2" type="password" autocomplete="new-password" minlength="6"></label>' +
+        (b.error ? '<p class="bad" role="alert">' + b.error + '</p>' : '') +
+        '<div class="row"><button class="primary" data-action="backup-make">' + tr('Lock and save') + '</button><button class="ghost" data-action="backup-cancel">' + tr('Cancel') + '</button></div></div>';
+    } else if (r) {
+      const info = r.info;
+      form = '<div class="callout restore-form"><b>' + tr('Restore from a backup') + '</b>' +
+        (r.paste
+          ? '<label class="field" for="restore-text"><span>' + tr('Paste the backup text') + '</span><textarea id="restore-text"></textarea></label>'
+          : '<label class="field" for="restore-file"><span>' + tr('Pick the backup file') + '</span><input id="restore-file" type="file"></label>' +
+            (info ? '<p class="good">' + (info.date ? tr('Backup from {date} · {entries}', { date: fmtDate(info.date, true), entries: plural(info.entries, 'entry', 'entries') }) : tr('Backup · {entries}', { entries: plural(info.entries, 'entry', 'entries') })) + '</p>' : '')) +
+        ((info && info.locked) || r.paste ? '<label class="field" for="restore-pass"><span>' + tr('Backup password') + '</span><input id="restore-pass" type="password" autocomplete="current-password"></label>' : '') +
+        (r.error ? '<p class="bad" role="alert">' + r.error + '</p>' : '') +
+        (info || r.paste ? '<p class="hint">' + tr('This replaces everything in Hisab Se on this phone with the backup.') + '</p>' +
+          '<div class="row"><button class="primary" data-action="restore-go">' + tr('Replace my data with this backup') + '</button><button class="ghost" data-action="restore-cancel">' + tr('Cancel') + '</button></div>'
+          : '<div class="row"><button class="ghost" data-action="restore-cancel">' + tr('Cancel') + '</button>' + (r.paste ? '' : '<button class="link" data-action="restore-paste">' + tr('Paste backup text instead') + '</button>') + '</div>') +
+        '</div>';
+    }
+    return '<section class="card" id="data-card">' + titled('Your data', 'data') +
+      '<label class="check"><input id="personal-mode" type="checkbox"' + (Core.personal(state) ? ' checked' : '') + '> ' + tr('Personal mode: show where to invest (for my own use)') + '</label>' +
+      '<p class="' + (last ? 'good' : 'warn-text') + '">' + (last ? tr('Last backup: {date}.', { date: fmtDate(last, true) }) : tr('No backup yet. If this phone is lost or reset, your data goes with it.')) + '</p>' +
+      (b || r ? '' : '<div class="row"><button class="primary" data-action="backup-open">' + tr('Make a backup file') + '</button><button data-action="restore-open">' + tr('Restore from a backup') + '</button></div>') +
+      form +
+      '<div class="row"><button data-action="load-demo">' + tr('Load example data') + '</button>' +
+      '<button class="danger" data-action="wipe">' + tr('Erase everything') + '</button></div>' +
+      (ui.confirmWipe ? '<div class="callout bad"><b>' + tr('Erase all your data on this device?') + '</b><span class="hint">' + tr('Everything in Hisab Se on this phone: entries, plans, loans, the widget and SMS alerts. This cannot be undone. A backup file you saved elsewhere is not touched.') + '</span><div class="row"><button class="danger" data-action="wipe-confirm">' + tr('Yes, erase') + '</button><button data-action="wipe-cancel">' + tr('Cancel') + '</button></div></div>' : '') +
+      '</section>';
+  }
+
+  // Once a month, when there's data worth keeping and no recent backup.
+  function backupNudge() {
+    if (state.isDemo || !state.settings.salary) return '';
+    const t = today();
+    if (state.lastBackup && Core.daysBetween(state.lastBackup, t) < 30) return '';
+    if (state.backupNudge && Core.daysBetween(state.backupNudge, t) < 30) return '';
+    const first = state.transactions.reduce((m, x) => (!m || x.date < m ? x.date : m), null);
+    if (!first || Core.daysBetween(first, t) < 14) return '';
+    return '<div class="callout"><b>' + tr(state.lastBackup ? 'Time for a fresh backup' : 'Keep a backup of your data') + '</b>' +
+      '<span class="hint">' + tr('If this phone is lost or reset, everything in Hisab Se goes with it. A backup file locked with your password takes a minute.') + '</span>' +
+      '<div class="row"><button class="primary" data-action="backup-go">' + tr('Make a backup') + '</button><button class="ghost" data-action="backup-later">' + tr('Later') + '</button></div></div>';
+  }
+
+  function makeBackup() {
+    const p1 = (document.getElementById('backup-pass') || {}).value || '';
+    const p2 = (document.getElementById('backup-pass2') || {}).value || '';
+    if (p1.length < 6) { ui.backupForm = { error: tr('Use at least 6 characters.') }; render(); return; }
+    if (p1 !== p2) { ui.backupForm = { error: tr('The two passwords don’t match.') }; render(); return; }
+    const t = today();
+    Core.encryptBackup(state, p1, t).then((text) => {
+      const name = 'HisabSe-backup-' + t + '.json';
+      const done = () => {
+        state.lastBackup = t;
+        ui.backupForm = null;
+        save(); rerenderKeepScroll();
+        celebrate(tr('Backup ready. Keep it off this phone, and keep the password safe.'));
+      };
+      if (ShareFile) return ShareFile.share({ name, text, title: tr('Save your backup'), mime: 'application/json' }).then(done);
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+      a.download = name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+      done();
+    }).catch(() => { ui.backupForm = { error: tr('Couldn’t make the backup. Try again.') }; render(); });
+  }
+
+  function restoreBackup() {
+    const r = ui.restore || {};
+    const text = r.paste ? ((document.getElementById('restore-text') || {}).value || '') : r.text;
+    const pass = (document.getElementById('restore-pass') || {}).value || '';
+    Core.openBackup(text, pass).then((data) => {
+      state = migrate(Object.assign(emptyState(), data));
+      if (r.info && r.info.date) state.lastBackup = r.info.date;
+      ui.restore = null;
+      save();
+      toast(tr('Backup restored'));
+      setTab('home');
+    }, (e) => {
+      ui.restore = Object.assign({}, r, { error: e.message === 'password'
+        ? tr('That password doesn’t open this backup. Check for typos: capitals count.')
+        : tr('That isn’t a Hisab Se backup.') });
+      render();
+    });
   }
 
   // Removes payments imported from SMS before a date, for clearing out a
@@ -3262,9 +3371,10 @@
       }
       case 'wipe-cancel': ui.confirmWipe = false; break;
       case 'wipe-confirm':
-        try { localStorage.removeItem(KEY); } catch (e) { /* ignore */ }
-        state = emptyState(); ui.confirmWipe = false; ui.backup = null; save(); toast('All data erased'); break;
-      case 'backup': ui.backup = ui.backup ? null : JSON.stringify(state); break;
+        // Everything the app keeps: its storage here, and the widget, SMS alerts, notifications and shared files.
+        try { [KEY, LANG_KEY, CHART_KEY, VIZ_KEY].forEach((k) => localStorage.removeItem(k)); } catch (e) { /* ignore */ }
+        if (SpendWidget) Promise.resolve().then(() => SpendWidget.eraseAll()).catch(() => {});
+        state = emptyState(); ui.confirmWipe = false; ui.backupForm = null; ui.restore = null; save(); toast('All data erased'); break;
       case 'viz-view':
         ui.viz = btn.dataset.view;
         try { localStorage.setItem(VIZ_KEY, ui.viz); } catch (e) { /* private mode */ }
@@ -3383,28 +3493,19 @@
         return;
       case 'ai-report-share': shareAiReport(); return;
       case 'ai-report-copy': copyAiReport(); return;
-      case 'backup-copy': {
-        const area = document.getElementById('backup-text');
-        const done = () => toast('Backup copied');
-        if (navigator.clipboard && navigator.clipboard.writeText) {
-          navigator.clipboard.writeText(ui.backup).then(done, () => { area.select(); toast('Press copy to finish'); });
-        } else { area.select(); }
+      case 'backup-open': ui.backupForm = {}; ui.restore = null; break;
+      case 'backup-cancel': ui.backupForm = null; break;
+      case 'backup-make': makeBackup(); return;
+      case 'backup-go':
+        ui.backupForm = {}; ui.restore = null;
+        setTab('plan');
+        { const card = document.getElementById('data-card'); if (card) card.scrollIntoView({ block: 'start' }); }
         return;
-      }
-      case 'restore-toggle': ui.restoreOpen = !ui.restoreOpen; ui.restoreError = ''; break;
-      case 'restore': {
-        const text = document.getElementById('restore-text').value;
-        try {
-          const parsed = JSON.parse(text);
-          if (!parsed || !parsed.settings || !Array.isArray(parsed.transactions)) throw new Error('shape');
-          state = migrate(Object.assign(emptyState(), parsed));
-          ui.restoreOpen = false; ui.restoreError = '';
-          save(); toast('Backup restored');
-        } catch (e) {
-          ui.restoreError = tr('That doesn’t look like a Hisab Se backup. Paste the full text from “Show backup”.');
-        }
-        break;
-      }
+      case 'backup-later': state.backupNudge = t; save(); break;
+      case 'restore-open': ui.restore = {}; ui.backupForm = null; break;
+      case 'restore-paste': ui.restore = { paste: true }; break;
+      case 'restore-cancel': ui.restore = null; break;
+      case 'restore-go': restoreBackup(); return;
       case 'budgets-auto': state.budgets.forEach((b) => { b.auto = true; }); save(); toast('Budgets shared out automatically'); break;
       case 'savings-auto': state.savings.auto = true; save(); toast('Set-asides worked out from your numbers'); break;
       case 'list-add':
@@ -3853,6 +3954,16 @@
         if (el.dataset.list === 'budgets' && f === 'amount') item.auto = false;
       }
       save(); refreshAfterEdit(); return;
+    }
+    if (el.id === 'restore-file') {
+      const f = el.files && el.files[0];
+      if (!f) return;
+      f.text().then((text) => {
+        const info = Core.backupInfo(text);
+        ui.restore = { text, info, error: info ? '' : tr('That isn’t a Hisab Se backup.') };
+        render();
+      });
+      return;
     }
     if (el.id === 'tx-from') {
       const warn = document.getElementById('tx-from-warn');
@@ -4539,4 +4650,6 @@
   tab = TABS.indexOf(fromHash) !== -1 ? fromHash : 'home';
   render();
   announceAutoSaved();
+  // For the offline check on an emulator: the app's first screen is drawn.
+  console.info('Hisab Se: ready');
 })();
