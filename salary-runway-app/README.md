@@ -176,7 +176,7 @@ npm test
 Done: Android app, SMS reading and notifications, home-screen widget, zones, bills that vary, credit cards, payday check-in.
 
 Next:
-1. Profile screen (theme, privacy, data, tour), first-time tour, and app lock (PIN or password, fingerprint, face): see [BACKLOG.md](BACKLOG.md).
+1. Profile screen (theme, privacy, data, tour), first-time tour, and app lock (fingerprint, face or the phone's screen lock; no separate password): see [BACKLOG.md](BACKLOG.md).
 2. More banks' SMS formats, from real samples.
 3. Phone notifications before bills, EMIs and card due dates (today they show inside the app).
 4. Before a Play Store release: Google's review of the SMS permissions, and a private signing key kept out of the repo.

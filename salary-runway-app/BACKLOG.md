@@ -8,7 +8,7 @@ A **Profile** button in the top bar (an avatar or person icon) opens one screen 
 - **Language:** English, मराठी, हिंदी (moved here from the Plan tab).
 - **Privacy and data protection:** the "Your privacy" details move here. They come off the Plan tab, so the main screens stay about money.
 - **Your data:** backup file, restore, erase everything, clean up SMS imports, personal mode.
-- **App lock** (see 3).
+- **App lock** with fingerprint, face or the phone's screen lock (see 3).
 - **See the app tour** (see 2).
 - About: version and build number.
 
@@ -24,21 +24,22 @@ A **Profile** button in the top bar (an avatar or person icon) opens one screen 
 - Anyone who skipped it can replay it from **Profile → See the app tour**.
 - Uses example numbers, never the person's own.
 
-## 3. App lock: password, fingerprint, face
-The data is sensitive, so opening the app can require unlocking:
-- **PIN or password**, set by the user.
-- **Fingerprint or face unlock** where the phone supports it, through Android's own biometric prompt. This works offline.
+## 3. App lock: fingerprint, face or the phone's own lock
+Decided: **no separate app password.** The lock uses what the phone already has:
+- **Fingerprint or face unlock** through Android's own biometric prompt. It works offline.
+- **The phone's screen lock (PIN, pattern or password) as the fallback**, through the same prompt, for when a finger isn't read or the phone has no fingerprint sensor.
+- Nothing new to remember, so there's no forgotten-PIN problem. Whoever can unlock the phone can unlock the app.
+- If the phone has no screen lock at all, the app says that one is needed to turn on the app lock, and points to the phone's settings.
 - Options:
   - lock every time the app opens, or after 1, 5 or 15 minutes away
   - hide the app's contents in the recent-apps screen
 - The home-screen widget and SMS notifications show amounts. Add an option to hide them while the lock is on.
-- **Forgotten PIN:** there is no server, so nobody can reset it. The way back is reinstalling and restoring from a backup file. The screen must say this clearly before the lock is turned on.
 
 ## 4. Data protected even if the phone is lost
 - **Backup file: already encrypted.** Since build 40 it's locked with the user's password (AES-256-GCM, key from PBKDF2-SHA256, 210,000 rounds). Without the password nobody can open it, wherever the file is. Keep this, and say it clearly on the backup screen.
 - **Data on the phone:** today it sits in the app's private storage. Other apps can't read it, and Android encrypts the phone's storage while the phone is locked. But someone holding an unlocked phone can open the app. To build:
   - the app lock from 3
-  - encrypting the app's data on the phone with a key kept in the Android Keystore, released only after the app is unlocked
+  - encrypting the app's data on the phone with a key kept in the Android Keystore, released only after fingerprint, face or the phone's screen lock
 
   Then even a copied storage dump shows nothing readable.
 
