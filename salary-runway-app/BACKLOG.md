@@ -51,6 +51,25 @@ The home-screen widget changes colour with the zone, with the same signs as the 
 
 The zone label shows in bold next to the sign, with text that stays readable on each colour, in light and dark mode. The app sends the zone to the widget along with today's amount. If "hide amounts while locked" (see 3) is on, the widget still shows the colour and sign, but not the amount.
 
+## 6. Less open at once: icon grid by category, with the essentials always open
+Today every card is open, so screens read like a long report. The idea (from a PhonePe-style home screen): small icons grouped by category, each opening its card only when tapped. Proposed mix, to confirm before building:
+- **Always open, never collapsed:** today's limit with the zone colour and sign, and Days of Freedom. These are the pain point and must stay visible.
+- **Warnings never collapse:**
+  - red zone
+  - a card bill due
+  - "how did your call go?"
+  - the backup reminder
+- **The rest as a grouped icon grid**, each icon opening its card full-screen. Example for the Runway tab:
+  - *This month:* Round board, Week recap, Bills to pay, Next payday
+  - *Check & plan:* Big expense?, Graph, Insights, AI plan
+  - *Money:* Balance, Cards, Money received
+- **Live badges on icons** so nothing important hides: "2 due" on Bills, the amount on Cards, ✓ on Week recap. This is part of the design, not an extra.
+- **Other tabs, same style:**
+  - Plan in groups (Salary, Fixed, Budgets, Savings, Your data), each showing a one-line summary until tapped. This replaces the review item "group the Plan tab".
+  - Spend: the three graph views as icons.
+  - Debts: the journey card open, with loans, calls and cards as icons.
+- **Hisab Se's own icons and colours** (teal, cream, mint, coral), not a copy of another app's look.
+
 ## Still pending from the review list
 - A clearer Debts screen when there are no debts.
 - Group the Plan tab's inputs, hide advanced settings, and show the result summary first.
