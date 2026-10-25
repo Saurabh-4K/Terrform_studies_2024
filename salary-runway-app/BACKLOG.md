@@ -43,6 +43,14 @@ Decided: **no separate app password.** The lock uses what the phone already has:
 
   Then even a copied storage dump shows nothing readable.
 
+## 5. Widget in zone colours
+The home-screen widget changes colour with the zone, with the same signs as the app's zone cards, so the state shows without opening the app:
+- **Green** with a sparkle/celebration sign: on track.
+- **Yellow (careful)** with a warning sign ⚠️: at this pace, money runs out early.
+- **Red** with a stop sign 🛑: bills and basics aren't covered.
+
+The zone label shows in bold next to the sign, with text that stays readable on each colour, in light and dark mode. The app sends the zone to the widget along with today's amount. If "hide amounts while locked" (see 3) is on, the widget still shows the colour and sign, but not the amount.
+
 ## Still pending from the review list
 - A clearer Debts screen when there are no debts.
 - Group the Plan tab's inputs, hide advanced settings, and show the result summary first.
