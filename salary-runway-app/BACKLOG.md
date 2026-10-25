@@ -1,0 +1,50 @@
+# Hisab Se: noted requests (not built yet)
+
+Requests written down to build later. Nothing here is in the app yet.
+
+## 1. Profile screen (like standard apps)
+A **Profile** button in the top bar (an avatar or person icon) opens one screen that holds the settings now spread around the app:
+- **Appearance:** Light, Dark, or Same as phone. Today the app only follows the phone's setting.
+- **Language:** English, मराठी, हिंदी (moved here from the Plan tab).
+- **Privacy and data protection:** the "Your privacy" details move here. They come off the Plan tab, so the main screens stay about money.
+- **Your data:** backup file, restore, erase everything, clean up SMS imports, personal mode.
+- **App lock** (see 3).
+- **See the app tour** (see 2).
+- About: version and build number.
+
+## 2. First-time tour (demo)
+- Shown the first time the app opens, before setup. It is a few swipeable screens explaining the main ideas:
+  - today's limit
+  - zones (green, careful, red)
+  - Days of Freedom
+  - the round board
+  - the debt journey
+  - SMS reading and privacy
+- **Skip** on every screen.
+- Anyone who skipped it can replay it from **Profile → See the app tour**.
+- Uses example numbers, never the person's own.
+
+## 3. App lock: password, fingerprint, face
+The data is sensitive, so opening the app can require unlocking:
+- **PIN or password**, set by the user.
+- **Fingerprint or face unlock** where the phone supports it, through Android's own biometric prompt. This works offline.
+- Options:
+  - lock every time the app opens, or after 1, 5 or 15 minutes away
+  - hide the app's contents in the recent-apps screen
+- The home-screen widget and SMS notifications show amounts. Add an option to hide them while the lock is on.
+- **Forgotten PIN:** there is no server, so nobody can reset it. The way back is reinstalling and restoring from a backup file. The screen must say this clearly before the lock is turned on.
+
+## 4. Data protected even if the phone is lost
+- **Backup file: already encrypted.** Since build 40 it's locked with the user's password (AES-256-GCM, key from PBKDF2-SHA256, 210,000 rounds). Without the password nobody can open it, wherever the file is. Keep this, and say it clearly on the backup screen.
+- **Data on the phone:** today it sits in the app's private storage. Other apps can't read it, and Android encrypts the phone's storage while the phone is locked. But someone holding an unlocked phone can open the app. To build:
+  - the app lock from 3
+  - encrypting the app's data on the phone with a key kept in the Android Keystore, released only after the app is unlocked
+
+  Then even a copied storage dump shows nothing readable.
+
+## Still pending from the review list
+- A clearer Debts screen when there are no debts.
+- Group the Plan tab's inputs, hide advanced settings, and show the result summary first.
+- Grow tab: show the investment split only after a minimum emergency cushion exists.
+- Tagline: "Make your salary last".
+- Step 9 of the plan: Pro version and monetisation, after the daily flow has been used for a round or two.
