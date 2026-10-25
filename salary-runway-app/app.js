@@ -580,8 +580,104 @@
     syncAlerts();
   }
 
+  // ---------- icon grid: each tab's cards as grouped icons ----------
+
+  // Line icons for the grid, drawn on a 24×24 grid in the tab bar's style.
+  const HUB_ICONS = {
+    grid: '<rect x="4" y="4" width="6" height="6" rx="1.5"/><rect x="14" y="4" width="6" height="6" rx="1.5"/><rect x="4" y="14" width="6" height="6" rx="1.5"/><path d="M15 17l2 2 3-4"/>',
+    bill: '<path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6M9 16h3"/>',
+    upcoming: '<rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M9 3v4M15 3v4M8 14h3M8 17h6"/>',
+    payday: '<rect x="3" y="6" width="18" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M6 9v.01M18 15v.01"/>',
+    big: '<path d="M12 3l9 16H3z"/><path d="M12 10v4M12 17v.01"/>',
+    graph: '<path d="M4 19h16"/><path d="M5 15l4-4 3 3 6-7"/>',
+    budgets: '<path d="M6 20V10M12 20V4M18 20v-7"/>',
+    insight: '<path d="M9 18h6M10 21h4"/><path d="M12 3a6 6 0 0 0-3.5 10.9V16h7v-2.1A6 6 0 0 0 12 3z"/>',
+    wallet: '<path d="M4 7a2 2 0 0 1 2-2h12v4"/><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M16 13.5h2"/>',
+    flag: '<path d="M5 21V4M5 4h11l-2 4 2 4H5"/>',
+    where: '<path d="M12 3v9l7 4"/><circle cx="12" cy="12" r="9"/>',
+    when: '<rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16"/><rect x="8" y="13" width="3" height="3"/><rect x="13" y="13" width="3" height="3"/>',
+    trend: '<path d="M4 17l5-5 4 3 7-8"/><path d="M15 7h5v5"/>',
+    drop: '<path d="M12 3c3 4.5 6 7.5 6 11a6 6 0 0 1-12 0c0-3.5 3-6.5 6-11z"/>',
+    list: '<path d="M8 6h12M8 12h12M8 18h12"/><path d="M4 6h.01M4 12h.01M4 18h.01"/>',
+    sms: '<path d="M4 5h16v11H9l-5 4z"/><path d="M8 9h8M8 12h5"/>',
+    rupee: '<path d="M7 5h10M7 9h10M9 5c4 0 5 2 5 4s-2 4-5 4H7l7 7"/>',
+    repeat: '<path d="M4 12a7 7 0 0 1 12-5l2 2M20 12a7 7 0 0 1-12 5l-2-2"/><path d="M18 4v5h-5M6 20v-5h5"/>',
+    bolt: '<path d="M13 3L5 14h6l-1 7 8-11h-6z"/>',
+    yearly: '<rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M9 3v4M15 3v4"/><path d="M12 13v4M10 15h4"/>',
+    shield: '<path d="M12 3l7 3v5c0 5-3 8-7 10-4-2-7-5-7-10V6z"/>',
+    sliders: '<path d="M5 6h14M5 12h14M5 18h14"/><circle cx="9" cy="6" r="2"/><circle cx="15" cy="12" r="2"/><circle cx="8" cy="18" r="2"/>',
+    sparkle: '<path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M19 16l.7 1.8L21.5 18.5l-1.8.7L19 21l-.7-1.8-1.8-.7 1.8-.7z"/>',
+    lang: '<path d="M4 6h9M8.5 4v2c0 4-2 7-4.5 8M6 10c1.5 2 3.5 3.5 6 4"/><path d="M13 20l4-9 4 9M14.5 17h5"/>',
+    lock: '<rect x="5" y="10" width="14" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/><path d="M12 14v2"/>',
+    data: '<ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v6c0 1.7 3.1 3 7 3s7-1.3 7-3V6M5 12v6c0 1.7 3.1 3 7 3s7-1.3 7-3v-6"/>',
+    broom: '<path d="M14 4l-4 8M7 12h8l2 8H5z"/><path d="M9 16v4M13 16v4"/>',
+    target: '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4"/><path d="M12 12h.01"/>',
+    loan: '<path d="M4 10l8-6 8 6"/><path d="M6 10v9M10 10v9M14 10v9M18 10v9M4 20h16"/>',
+    card: '<rect x="3" y="6" width="18" height="12" rx="2"/><path d="M3 10h18M7 15h3"/>',
+    phone: '<path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a1 1 0 0 1-1 1A16 16 0 0 1 4 5a1 1 0 0 1 1-1z"/>',
+    plans: '<path d="M4 19h16"/><path d="M6 16V9M11 16V5M16 16v-4"/><path d="M19 5l-3 3"/>',
+    sprout: '<path d="M12 20v-8M12 12c0-4 3-7 7-7 0 4-3 7-7 7zM12 14c0-3-2-5-6-5 0 3 2 5 6 5z"/>',
+    book: '<path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2z"/><path d="M4 19V5"/>',
+    pot: '<path d="M5 9h14l-1 10H6z"/><path d="M9 9V6a3 3 0 0 1 6 0v3"/>',
+    add: '<circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/>',
+  };
+  const BACK_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
+  /*
+   * A tab: what always matters stays open on top (the limit, zones, warnings),
+   * then the other cards as small icons in groups. Each icon can carry a live
+   * badge ("2 due") so nothing important hides; a tap opens the card as its own
+   * page, and Back (or the phone's back button) returns to the icons.
+   * sections: [{ key, group, icon, label, badge: { text, tone } | null, html: () => string, hide, tone, tab, viz }]
+   */
+  function hub(tabKey, top, sections) {
+    const list = sections.filter((x) => !x.hide);
+    const open = ui.page && ui.page.tab === tabKey ? list.find((x) => x.key === ui.page.key) : null;
+    if (open) {
+      return '<div class="page-head"><button class="page-back" data-action="page-back">' + BACK_ICON + '<span>' + tr('Back') + '</span></button>' +
+        '<span class="page-group">' + tr(open.group) + '</span></div>' +
+        '<div class="page-body stack" style="gap:16px">' + open.html() + '</div>';
+    }
+    const groups = [];
+    list.forEach((x) => {
+      let g = groups.find((y) => y.name === x.group);
+      if (!g) groups.push((g = { name: x.group, items: [] }));
+      g.items.push(x);
+    });
+    return top + groups.map((g) => '<section class="card hub-group"><h2>' + tr(g.name) + '</h2><div class="hub-grid">' +
+      g.items.map(hubTile).join('') + '</div></section>').join('');
+  }
+
+  function hubTile(x) {
+    const b = x.badge;
+    return '<button class="hub-tile tone-' + (x.tone || 'teal') + '" data-action="page-open" data-key="' + x.key + '"' +
+      (x.tab ? ' data-tab="' + x.tab + '"' : '') + (x.viz ? ' data-viz="' + x.viz + '"' : '') + '>' +
+      '<span class="hub-icon"><svg viewBox="0 0 24 24" aria-hidden="true">' + (HUB_ICONS[x.icon] || '') + '</svg>' +
+      (b && b.text ? '<span class="hub-badge' + (b.tone ? ' ' + b.tone : '') + '">' + b.text + '</span>' : '') + '</span>' +
+      '<span class="hub-label">' + tr(x.label) + '</span></button>';
+  }
+
+  // Opens a card as its own page; the phone's back button comes back to the icons.
+  function openPage(tabKey, key) {
+    ui.page = { tab: tabKey, key };
+    tab = tabKey;
+    try { history.pushState({ page: key }, '', '#' + tabKey); } catch (e) { /* sandboxed */ }
+    render();
+    window.scrollTo(0, 0);
+  }
+
+  function closePage() {
+    if (!ui.page) return;
+    ui.page = null;
+    render();
+    window.scrollTo(0, 0);
+  }
+
+  window.addEventListener('popstate', () => { if (ui.page) closePage(); });
+
   function setTab(t) {
     tab = TABS.indexOf(t) === -1 ? 'home' : t;
+    ui.page = null;
     try { history.replaceState(null, '', '#' + tab); } catch (e) { /* sandboxed */ }
     render();
     window.scrollTo(0, 0);
@@ -620,6 +716,7 @@
     const share = r.anchor ? (cyc.days - r.anchorIdx) / cyc.days : 1;
     const fromDate = r.anchor ? r.anchor.date : cyc.start;
     const spentByCat = Core.byCategory(Core.spendInRange(state.transactions, cyc).filter((x) => x.date >= fromDate && x.date <= t));
+    const spentByCatAll = Object.assign({}, spentByCat);
     const bars = r.plan.budgets.map((b) => {
       const spent = spentByCat[b.name] || 0;
       delete spentByCat[b.name];
@@ -633,7 +730,8 @@
     const ins = Core.insights(state, t);
     const adj = r.plan.adjustment;
 
-    return (
+    const bal = askBalance && !ui.balanceOpen ? balanceForm(true) : '';
+    const top =
       paydayCard() +
       rolloverCard() +
       followBanner() +
@@ -644,19 +742,16 @@
       (z.zone === 'red' ? redOptions(z, r) : '') +
       freedomCard() +
       '</section>' +
-      roundBoard(cyc, r) +
-      weekCard() +
-      backupNudge() +
-      debtFreeCard() +
-      savedCard() +
       cardHomeNotes(cyc) +
-      (askBalance || ui.balanceOpen ? balanceForm(askBalance && !ui.balanceOpen) : '') +
+      savedCard() +
+      incomeCard() +
+      weekCard() +
+      bal +
       (needsCheck().length
         ? '<div class="callout warn"><b>' + tr(needsCheck().length === 1 ? '1 payment from SMS needs a quick check' : '{n} payments from SMS need a quick check', { n: needsCheck().length }) + '</b>' +
           '<span class="hint">' + tr(needsCheck().length === 1 ? 'Make sure it’s in the right category.' : 'Make sure they’re in the right category.') + '</span>' +
           '<div><button class="primary" data-action="tab" data-tab="spend">' + tr('Check now') + '</button></div></div>'
         : '') +
-      incomeCard() +
       ((state.sortQueue || []).length
         ? '<div class="callout"><b>' + tr((state.sortQueue || []).length === 1 ? '1 imported payment waits to be sorted' : '{n} imported payments wait to be sorted', { n: (state.sortQueue || []).length }) + '</b>' +
           '<span class="hint">' + tr('They count once they have a category.') + '</span><div><button class="primary" data-action="tab" data-tab="spend">' + tr('Continue sorting') + '</button></div></div>'
@@ -664,32 +759,46 @@
       (adj ? '<div class="callout warn"><b>' + tr('Recovery plan active until {date}.', { date: fmtDate(adj.until, true) }) + '</b><span class="hint">' +
         [adj.flexCutPct ? tr('Flexible budgets are {pct}% lower.', { pct: adj.flexCutPct }) : '', adj.pauseInvest ? tr('The Grow budget is paused.') : '', adj.pauseDebtExtra ? tr('Extra debt payments are paused.') : '']
           .filter(Boolean).join(' ') + '</span></div>' : '') +
-      bigExpenseCard() +
-      billsCard() +
-      detailsCard(
-      '<section class="tiles">' +
-      tile('Balance now', inr(r.balanceToday),
-        (r.anchor ? tr('From your balance on {date}', { date: fmtDate(r.anchor.date) }) : tr('Worked out from your plan')) +
-        ' · <button class="link" data-action="balance-open">' + tr('Update') + '</button>') +
-      tile('Flexible spending', inr(flexSpent), tr('of {amount} budget', { amount: inr(Math.round((r.plan.flexTotal * share) / 10) * 10) }) +
-        (r.extraIn ? ' ' + tr('+ {amount} received', { amount: inr(r.extraIn) }) : '') + (r.anchor ? ' ' + tr('since {date}', { date: fmtDate(r.anchor.date) }) : '')) +
-      '</section>' +
-      chartCard() +
-      paydayPreviewCard() +
-      '<section class="card"><div class="card-head"><h2>' + tr(r.anchor && r.anchorIdx > 0 ? 'You can spend until payday' : 'You can spend this cycle') + '</h2><button class="ghost" data-action="tab" data-tab="plan">' + tr('Adjust') + '</button></div>' +
-      '<div class="bars">' + bars.join('') + '</div></section>' +
-      '<section class="card"><div class="card-head"><h2>' + tr('Coming up before payday') + '</h2><span class="hint">' + inr(upcoming.reduce((s, e) => s + e.amount, 0)) + '</span></div>' +
-      (upcoming.length
-        ? '<div class="list">' + upcoming.map((e) =>
-          '<div class="list-item"><div class="date-badge"><b>' + Core.parseISO(e.date).getDate() + '</b>' + monthName(Core.parseISO(e.date).getMonth()) + '</div>' +
-          '<div class="grow"><div class="title">' + esc(e.name) + '</div><div class="meta">' + tr(e.kind === 'debt' ? 'Minimum payment' : e.kind === 'bill' ? 'Estimate · amount varies' : 'Fixed payment') + '</div></div>' +
-          '<div class="amt">' + inr(e.amount) + '</div></div>').join('') + '</div>'
-        : '<p class="hint">' + tr('No more fixed payments this cycle.') + '</p>') +
-      '</section>' +
-      '<section class="card"><h2>' + tr('What your spending says') + '</h2><div>' +
-      ins.map((i) => '<div class="insight lvl-' + i.level + '"><div><h3>' + esc(i.title) + '</h3><p>' + esc(i.body) + '</p></div></div>').join('') +
-      '</div></section>')
-    );
+      backupNudge();
+
+    // Live badges: what each icon would show if opened.
+    const billsDue = (state.bills || []).filter((b) => (Number(b.estimate) || 0) > 0 && Core.billDue(b, cyc) && !Core.billPaidIn(state, b, cyc)).length;
+    const upcomingTotal = upcoming.reduce((s, e) => s + e.amount, 0);
+    const overBudgets = r.plan.budgets.filter((b) => (spentByCatAll[b.name] || 0) > Math.round((b.amount * share) / 10) * 10 && b.amount > 0).length;
+    const warnInsights = ins.filter((i) => i.level === 'warn').length;
+    const dfd = Core.debtFreeDates(state, t);
+    const cardsDue = (state.cards || []).filter((c) => { const st = Core.cardStatus(state, c, t); return st.remaining > 0 && st.daysToDue <= 7; }).length;
+    return hub('home', top, [
+      { key: 'round', group: 'This month', icon: 'grid', label: 'This round', tone: 'mint', badge: roundTiles(cyc).won ? { text: '✓ ' + roundTiles(cyc).won, tone: 'good' } : null, html: () => roundBoard(cyc, r) },
+      { key: 'bills', group: 'This month', icon: 'bill', label: 'Bills to pay', tone: 'mint', badge: billsDue ? { text: tr('{n} due', { n: billsDue }), tone: 'bad' } : { text: '✓', tone: 'good' }, html: () => billsCard() || '<section class="card"><h2>' + tr('Bills to pay') + '</h2><p class="hint">' + tr('No bills due before payday.') + '</p></section>' },
+      { key: 'coming', group: 'This month', icon: 'upcoming', label: 'Coming up', tone: 'mint', badge: upcomingTotal ? { text: shortInr(upcomingTotal) } : null,
+        html: () => '<section class="card"><div class="card-head"><h2>' + tr('Coming up before payday') + '</h2><span class="hint">' + inr(upcomingTotal) + '</span></div>' +
+          (upcoming.length
+            ? '<div class="list">' + upcoming.map((e) =>
+              '<div class="list-item"><div class="date-badge"><b>' + Core.parseISO(e.date).getDate() + '</b>' + monthName(Core.parseISO(e.date).getMonth()) + '</div>' +
+              '<div class="grow"><div class="title">' + esc(e.name) + '</div><div class="meta">' + tr(e.kind === 'debt' ? 'Minimum payment' : e.kind === 'bill' ? 'Estimate · amount varies' : 'Fixed payment') + '</div></div>' +
+              '<div class="amt">' + inr(e.amount) + '</div></div>').join('') + '</div>'
+            : '<p class="hint">' + tr('No more fixed payments this cycle.') + '</p>') + '</section>' },
+      { key: 'payday', group: 'This month', icon: 'payday', label: 'Next payday', tone: 'mint', badge: { text: fmtDate(cyc.next) }, html: () => paydayPreviewCard() },
+      { key: 'big', group: 'Check & plan', icon: 'big', label: 'Big expense?', tone: 'amber', badge: null, html: () => bigExpenseCard() },
+      { key: 'graph', group: 'Check & plan', icon: 'graph', label: 'Runway graph', tone: 'amber', badge: null, html: () => chartCard() },
+      { key: 'budgets', group: 'Check & plan', icon: 'budgets', label: 'Budgets', tone: 'amber', badge: overBudgets ? { text: tr('{n} over', { n: overBudgets }), tone: 'bad' } : null,
+        html: () => '<section class="card"><div class="card-head"><h2>' + tr(r.anchor && r.anchorIdx > 0 ? 'You can spend until payday' : 'You can spend this cycle') + '</h2><button class="ghost" data-action="tab" data-tab="plan">' + tr('Adjust') + '</button></div>' +
+          '<div class="bars">' + bars.join('') + '</div></section>' },
+      { key: 'insights', group: 'Check & plan', icon: 'insight', label: 'Insights', tone: 'amber', badge: warnInsights ? { text: String(warnInsights), tone: 'bad' } : null,
+        html: () => '<section class="card"><h2>' + tr('What your spending says') + '</h2><div>' +
+          ins.map((i) => '<div class="insight lvl-' + i.level + '"><div><h3>' + esc(i.title) + '</h3><p>' + esc(i.body) + '</p></div></div>').join('') + '</div></section>' },
+      { key: 'balance', group: 'Money', icon: 'wallet', label: 'Balance', tone: 'teal', badge: { text: shortInr(r.balanceToday) },
+        html: () => (ui.balanceOpen ? balanceForm(false) : '') + '<section class="tiles">' +
+          tile('Balance now', inr(r.balanceToday),
+            (r.anchor ? tr('From your balance on {date}', { date: fmtDate(r.anchor.date) }) : tr('Worked out from your plan')) +
+            ' · <button class="link" data-action="balance-open">' + tr('Update') + '</button>') +
+          tile('Flexible spending', inr(flexSpent), tr('of {amount} budget', { amount: inr(Math.round((r.plan.flexTotal * share) / 10) * 10) }) +
+            (r.extraIn ? ' ' + tr('+ {amount} received', { amount: inr(r.extraIn) }) : '') + (r.anchor ? ' ' + tr('since {date}', { date: fmtDate(r.anchor.date) }) : '')) +
+          '</section>' },
+      { key: 'debtfree', group: 'Money', icon: 'flag', label: 'Debt-free date', tone: 'teal', hide: !dfd, badge: dfd ? { text: dfd.plan.never ? '!' : monthYear(dfd.plan.date), tone: dfd.plan.never ? 'bad' : '' } : null, html: () => debtFreeCard() },
+      { key: 'cards', group: 'Money', icon: 'card', label: 'Credit cards', tone: 'teal', tab: 'debts', hide: !(state.cards || []).length, badge: cardsDue ? { text: tr('{n} due', { n: cardsDue }), tone: 'bad' } : (state.cards || []).length ? { text: String(state.cards.length) } : null, html: () => '' },
+    ]);
   }
 
   const BILL_PERIODS = [1, 2, 3, 6, 12];
@@ -1158,14 +1267,6 @@
       (d.sooner > 0 ? '<p class="good">' + tr('{months} sooner, saving about {amount} in interest.', { months: plural(d.sooner, 'month'), amount: inr(d.saved) }) + '</p>'
         : '<p class="hint">' + tr('Set aside an extra amount for loans in Plan to bring this date closer.') + '</p>') +
       '<button class="explain-link" data-action="explain" data-explain="debtfree">' + tr('How is this calculated?') + '</button></section>';
-  }
-
-  // Everything else on the Runway tab, one tap away.
-  function detailsCard(inner) {
-    return '<section class="card details-card"><div class="card-head"><h2>' + tr('More details') + '</h2>' +
-      '<button class="ghost" data-action="chart-toggle" aria-expanded="' + !!ui.chartOpen + '">' + tr(ui.chartOpen ? 'Hide' : 'Show') + '</button></div>' +
-      (ui.chartOpen ? '' : '<p class="hint">' + tr('Your runway graph, balance, budgets, what’s coming before payday and what your spending says.') + '</p>') + '</section>' +
-      (ui.chartOpen ? inner : '');
   }
 
   // "How is this calculated?": the formula with the person's own numbers.
@@ -2029,12 +2130,7 @@
     const moneyIn = ui.txKind === 'in';
     const saving = ui.txKind === 'save';
 
-    return (
-      sortCard() +
-      importCard() +
-      needsCheckCard() +
-      billsCard() +
-      incomeCard() +
+    const addCard =
       '<section class="card"><div class="card-head">' + titled(saving ? 'Add money saved' : moneyIn ? 'Add money received' : 'Add a payment', 'add') +
       '<div class="seg" role="group" aria-label="' + tr('Type') + '"><button data-action="tx-kind" data-kind="out" aria-pressed="' + (!moneyIn && !saving) + '">' + tr('Money out') + '</button>' +
       '<button data-action="tx-kind" data-kind="in" aria-pressed="' + moneyIn + '">' + tr('Money in') + '</button>' +
@@ -2051,29 +2147,23 @@
           '<p id="tx-from-warn" class="borrow-warn wide" hidden></p>'
         : '') +
       '<div class="wide"><button class="primary" type="submit">' + tr(moneyIn ? 'Add money received' : 'Add payment') + '</button></div>' +
-      '</form>') + '</section>' +
-      vizCard() +
-      leaksCard() +
-
-      (NATIVE
-        ? '<section class="card"><div class="card-head">' + titled('Bank SMS', 'sms') + (state.smsAuto ? modeChip(true) : '') + '</div>' +
-          (state.smsAuto ? '' : '<p class="hint">' + tr('Record payments from your bank and UPI messages. Read on this phone only.') + '</p>') +
-          '<div class="row"><button class="primary" data-action="sms-native"' + (ui.smsBusy ? ' disabled' : '') + '>' +
-          tr(ui.smsBusy ? 'Reading…' : state.smsAuto ? 'Check for new messages' : 'Read bank SMS') + '</button>' +
-          ((state.sortQueue || []).length || ui.importAsk || ui.importFound ? '' : '<button class="ghost" data-action="import-open">' + tr('Import past payments') + '</button>') + '</div>' +
-          (state.smsAuto
-            ? '<div class="callout"><b>' + tr(state.smsAlerts ? 'Notifications for new bank SMS are on' : 'Get a notification when a bank SMS arrives') + '</b>' +
-              '<div>' + (state.smsAlerts
-                ? '<button class="ghost" data-action="alerts-off">' + tr('Turn off') + '</button>'
-                : '<button class="primary" data-action="alerts-on">' + tr('Turn on notifications') + '</button>') + '</div></div>'
-            : '') +
-          smsPreview() + '</section>'
-        : '<section class="card"><div class="card-head">' + titled('Import from bank SMS', 'sms') + '</div>' +
-          '<label class="field" for="sms-text">' + tr('Messages') + '<textarea id="sms-text" placeholder="Rs.450.00 debited from a/c **1234 on 21-10-26 to VPA swiggy@icici…">' + esc(ui.smsText) + '</textarea></label>' +
-          '<div class="row"><button class="primary" data-action="sms-read">' + tr('Read messages') + '</button><button data-action="sms-sample">' + tr('Paste sample messages') + '</button></div>' +
-          smsPreview() +
-          '</section>') +
-
+      '</form>') + '</section>';
+    const leaks = Core.leakSummary(state, t);
+    const leakAsks = Core.leakSuggestions(state, t).length;
+    const smsNew = (ui.smsRows || []).filter((x) => x.checked).length;
+    return hub('spend',
+      sortCard() +
+      importCard() +
+      needsCheckCard() +
+      incomeCard() +
+      addCard, [
+        { key: 'viz-where', group: 'Your spending', icon: 'where', label: 'Where it went', tone: 'mint', viz: 'where', badge: null, html: () => vizCard() },
+        { key: 'viz-when', group: 'Your spending', icon: 'when', label: 'When', tone: 'mint', viz: 'when', badge: null, html: () => vizCard() },
+        { key: 'viz-trend', group: 'Your spending', icon: 'trend', label: 'Month by month', tone: 'mint', viz: 'trend', badge: null, html: () => vizCard() },
+        { key: 'leaks', group: 'Your spending', icon: 'drop', label: 'Little leaks', tone: 'mint',
+          badge: leakAsks ? { text: tr('{n} new', { n: leakAsks }), tone: 'bad' } : leaks.perMonth ? { text: shortInr(leaks.perMonth) } : null, html: () => leaksCard() },
+        { key: 'payments', group: 'Records', icon: 'list', label: 'Payments', tone: 'teal', badge: { text: String(list.filter((x) => Core.inCycle(x.date, cyc)).length) },
+          html: () =>
       '<section class="card"><div class="card-head">' + titled('Payments', 'payments') +
       '<div class="seg" role="group" aria-label="' + tr('Show') + '"><button data-action="tx-filter" data-filter="cycle" aria-pressed="' + (ui.txFilter === 'cycle') + '">' + tr('This cycle') + '</button>' +
       '<button data-action="tx-filter" data-filter="all" aria-pressed="' + (ui.txFilter === 'all') + '">' + tr('All') + '</button></div></div>' +
@@ -2101,8 +2191,32 @@
           }).join('') + '</tbody></table></div>' +
           (list.length > shown.length ? '<p class="hint">' + tr('Showing the latest 200.') + '</p>' : '')
         : '<p class="hint">' + tr('No payments yet.') + '</p>') +
-      '</section>'
-    );
+      '</section>' },
+        { key: 'bills', group: 'Records', icon: 'bill', label: 'Bills to pay', tone: 'teal',
+          badge: (() => { const n = (state.bills || []).filter((b) => (Number(b.estimate) || 0) > 0 && Core.billDue(b, cyc) && !Core.billPaidIn(state, b, cyc)).length; return n ? { text: tr('{n} due', { n }), tone: 'bad' } : { text: '✓', tone: 'good' }; })(),
+          html: () => billsCard() || '<section class="card"><h2>' + tr('Bills to pay') + '</h2><p class="hint">' + tr('No bills due before payday.') + '</p></section>' },
+        { key: 'sms', group: 'Records', icon: 'sms', label: 'Bank SMS', tone: 'teal',
+          badge: smsNew ? { text: String(smsNew), tone: 'bad' } : state.smsAuto ? { text: tr('Auto'), tone: 'good' } : null,
+          html: () => importCard() +
+      (NATIVE
+        ? '<section class="card"><div class="card-head">' + titled('Bank SMS', 'sms') + (state.smsAuto ? modeChip(true) : '') + '</div>' +
+          (state.smsAuto ? '' : '<p class="hint">' + tr('Record payments from your bank and UPI messages. Read on this phone only.') + '</p>') +
+          '<div class="row"><button class="primary" data-action="sms-native"' + (ui.smsBusy ? ' disabled' : '') + '>' +
+          tr(ui.smsBusy ? 'Reading…' : state.smsAuto ? 'Check for new messages' : 'Read bank SMS') + '</button>' +
+          ((state.sortQueue || []).length || ui.importAsk || ui.importFound ? '' : '<button class="ghost" data-action="import-open">' + tr('Import past payments') + '</button>') + '</div>' +
+          (state.smsAuto
+            ? '<div class="callout"><b>' + tr(state.smsAlerts ? 'Notifications for new bank SMS are on' : 'Get a notification when a bank SMS arrives') + '</b>' +
+              '<div>' + (state.smsAlerts
+                ? '<button class="ghost" data-action="alerts-off">' + tr('Turn off') + '</button>'
+                : '<button class="primary" data-action="alerts-on">' + tr('Turn on notifications') + '</button>') + '</div></div>'
+            : '') +
+          smsPreview() + '</section>'
+        : '<section class="card"><div class="card-head">' + titled('Import from bank SMS', 'sms') + '</div>' +
+          '<label class="field" for="sms-text">' + tr('Messages') + '<textarea id="sms-text" placeholder="Rs.450.00 debited from a/c **1234 on 21-10-26 to VPA swiggy@icici…">' + esc(ui.smsText) + '</textarea></label>' +
+          '<div class="row"><button class="primary" data-action="sms-read">' + tr('Read messages') + '</button><button data-action="sms-sample">' + tr('Paste sample messages') + '</button></div>' +
+          smsPreview() +
+          '</section>') },
+      ]);
   }
 
   function smsPreview() {
@@ -2339,15 +2453,7 @@
     const ro = alloc.rollover;
     const rolls = state.savings.rollovers || [];
     const edited = alloc.budgets.some((b) => !b.auto);
-    return (
-      rolloverCard() +
-      '<section class="card lang-card"><div class="card-head"><h2>' + tr('Language') + '</h2>' +
-      '<div class="seg" role="group" aria-label="' + tr('Language') + '">' + I18N.LANGS.map(([code, name]) =>
-        '<button data-action="set-lang" data-lang="' + code + '" lang="' + code + '" aria-pressed="' + (I18N.getLang() === code) + '">' + name + '</button>').join('') + '</div></div>' +
-      '<label class="check"><input id="sounds-on" type="checkbox"' + (s.sounds === false ? '' : ' checked') + '> ' + tr('Sounds (quiet when the phone is on silent)') + '</label></section>' +
-      (state.onboarding && ui.onboardHidden ? '<div class="callout"><b>' + tr('Finish setting up · step {step} of {total}', { step: state.onboarding.step, total: ONBOARD_STEPS }) + '</b>' +
-        '<div><button class="primary" data-action="onboard-resume">' + tr('Continue') + '</button></div></div>' : '') +
-      (s.salary ? '' : '<div class="callout"><b>' + tr('Start here.') + '</b><span class="hint">' + tr('Enter your salary and payday, then your fixed payments. Everything else can come later.') + '</span></div>') +
+    const salaryCard =
       '<section class="card">' + titled('Salary', 'salary') + '<div class="form-grid">' +
       numInput('salary', 'settings.salary', s.salary || '', 'Monthly salary in hand (₹)') +
       numInput('payday', 'settings.payday', s.payday, 'Payday (day of month)', ' max="31"') +
@@ -2355,16 +2461,25 @@
         esc(state.balanceCheck && state.balanceCheck.date === today() ? state.balanceCheck.amount : '') + '" placeholder="' +
         (state.balanceCheck ? tr('Last entered {date}: {amount}', { date: fmtDate(state.balanceCheck.date), amount: inr(state.balanceCheck.amount) }) : tr('Optional')) + '"></label>' +
       '</div>' +
-      thisMonthPay() + payHistory() + '</section>' +
+      thisMonthPay() + payHistory() + '</section>';
+    const sharedOut = Math.max(0, alloc.pool);
+    const lastBackup = state.lastBackup;
+    return hub('plan',
+      rolloverCard() +
+      (state.onboarding && ui.onboardHidden ? '<div class="callout"><b>' + tr('Finish setting up · step {step} of {total}', { step: state.onboarding.step, total: ONBOARD_STEPS }) + '</b>' +
+        '<div><button class="primary" data-action="onboard-resume">' + tr('Continue') + '</button></div></div>' : '') +
+      (s.salary ? '' : '<div class="callout"><b>' + tr('Start here.') + '</b><span class="hint">' + tr('Enter your salary and payday, then your fixed payments. Everything else can come later.') + '</span></div>') +
+      (s.salary ? '' : salaryCard) +
       (ui.paydayOpen ? paydayCard() : '') +
-      aiPlanCard() +
-
+      '<section class="card" id="plan-summary">' + planSummary() + '</section>', [
+        { key: 'salary', group: 'Your money', icon: 'rupee', label: 'Salary', tone: 'mint', hide: !s.salary, badge: { text: shortInr(s.salary) }, html: () => salaryCard },
+        { key: 'fixed', group: 'Your money', icon: 'repeat', label: 'Fixed payments', tone: 'mint', badge: plan.fixedTotal ? { text: shortInr(plan.fixedTotal) } : null, html: () =>
       '<section class="card"><div class="card-head">' + titled('Fixed payments', 'fixed') + '<span class="hint">' + tr('Rent, EMIs, subscriptions') + '</span></div>' +
       '<div class="edit-rows">' + state.fixed.map((f) =>
         '<div class="edit-row">' + listField('fixed', f, 'name', 'Name', 'text') + listField('fixed', f, 'amount', 'Amount (₹)', 'number') +
         listField('fixed', f, 'dueDay', 'Due day', 'number', ' max="31"') + removeButton('fixed', f) + '</div>').join('') + '</div>' +
-      '<div><button data-action="list-add" data-list="fixed">' + tr('Add fixed payment') + '</button></div></section>' +
-
+      '<div><button data-action="list-add" data-list="fixed">' + tr('Add fixed payment') + '</button></div></section>' },
+        { key: 'bills', group: 'Your money', icon: 'bolt', label: 'Bills that vary', tone: 'mint', badge: (state.bills || []).length ? { text: String(state.bills.length) } : null, html: () =>
       '<section class="card"><div class="card-head">' + titled('Bills that vary', 'bills') + '<span class="hint">' + tr('Electricity, gas, water, recharges') + '</span></div>' +
       '<div class="edit-rows">' + (state.bills || []).map((b) =>
         '<div class="edit-row cols-bill">' + listField('bills', b, 'name', 'Name', 'text') + listField('bills', b, 'estimate', 'About (₹)', 'number') +
@@ -2374,8 +2489,16 @@
       (state.fixed.length
         ? '<select id="fixed-to-bill" aria-label="' + tr('Fixed payment to move') + '">' + state.fixed.map((f) => '<option value="' + esc(f.id) + '">' + esc(f.name || tr('Unnamed')) + '</option>').join('') + '</select>' +
           '<button class="ghost" data-action="fixed-to-bill">' + tr('Move from fixed payments') + '</button>'
-        : '') + '</div></section>' +
-
+        : '') + '</div></section>' },
+        { key: 'yearly', group: 'Your money', icon: 'yearly', label: 'Yearly costs', tone: 'mint', badge: plan.sinking ? { text: tr('{amount}/mo', { amount: shortInr(plan.sinking) }) } : null, html: () =>
+      '<section class="card"><div class="card-head">' + titled('Yearly costs', 'yearly') + '<span class="hint">' + tr('Festivals, insurance, servicing, school fees') + '</span></div>' +
+      '<div class="edit-rows">' + state.sinking.map((f) =>
+        '<div class="edit-row">' + listField('sinking', f, 'name', 'Name', 'text') + listField('sinking', f, 'amount', 'Per year (₹)', 'number') +
+        '<label class="field" for="sinking-' + esc(f.id) + '-month"><span>' + tr('Month') + '</span><select id="sinking-' + esc(f.id) + '-month" data-list="sinking" data-id="' + esc(f.id) + '" data-field="month">' +
+        MONTH_NAMES.map((m, i) => '<option value="' + (i + 1) + '"' + (Number(f.month) === i + 1 ? ' selected' : '') + '>' + monthName(i) + '</option>').join('') + '</select></label>' +
+        removeButton('sinking', f) + '</div>').join('') + '</div>' +
+      '<div><button data-action="list-add" data-list="sinking">' + tr('Add yearly cost') + '</button></div></section>' },
+        { key: 'setaside', group: 'Your plan', icon: 'shield', label: 'Set aside', tone: 'amber', badge: plan.savingsTotal ? { text: shortInr(plan.savingsTotal) } : null, html: () =>
       '<section class="card"><div class="card-head">' + titled('Set aside each month', 'setaside') + modeChip(state.savings.auto) + '</div>' +
       '<div class="form-grid">' +
       numInput('emergency-monthly', 'savings.emergencyMonthly', sv.emergencyMonthly - ro.emergency, 'Emergency fund (₹)') +
@@ -2389,16 +2512,8 @@
         : '') +
       (state.savings.auto
         ? sv.notes.map((n) => '<p class="hint">' + esc(n) + '</p>').join('')
-        : '<div class="row"><span class="hint">' + tr('You set these amounts.') + '</span><button class="ghost" data-action="savings-auto">' + tr('Work them out for me') + '</button></div>') + '</section>' +
-
-      '<section class="card"><div class="card-head">' + titled('Yearly costs', 'yearly') + '<span class="hint">' + tr('Festivals, insurance, servicing, school fees') + '</span></div>' +
-      '<div class="edit-rows">' + state.sinking.map((f) =>
-        '<div class="edit-row">' + listField('sinking', f, 'name', 'Name', 'text') + listField('sinking', f, 'amount', 'Per year (₹)', 'number') +
-        '<label class="field" for="sinking-' + esc(f.id) + '-month"><span>' + tr('Month') + '</span><select id="sinking-' + esc(f.id) + '-month" data-list="sinking" data-id="' + esc(f.id) + '" data-field="month">' +
-        MONTH_NAMES.map((m, i) => '<option value="' + (i + 1) + '"' + (Number(f.month) === i + 1 ? ' selected' : '') + '>' + monthName(i) + '</option>').join('') + '</select></label>' +
-        removeButton('sinking', f) + '</div>').join('') + '</div>' +
-      '<div><button data-action="list-add" data-list="sinking">' + tr('Add yearly cost') + '</button></div></section>' +
-
+        : '<div class="row"><span class="hint">' + tr('You set these amounts.') + '</span><button class="ghost" data-action="savings-auto">' + tr('Work them out for me') + '</button></div>') + '</section>' },
+        { key: 'budgets', group: 'Your plan', icon: 'sliders', label: 'Flexible budgets', tone: 'amber', badge: { text: shortInr(sharedOut) }, html: () =>
       '<section class="card"><div class="card-head">' + titled('Flexible budgets', 'flex') + '<span class="hint">' + tr('{amount} to spend this month', { amount: inr(Math.max(0, alloc.pool)) }) + '</span></div>' +
       '<div class="edit-rows">' + alloc.budgets.map((b) => {
         const item = state.budgets.find((x) => x.id === b.id);
@@ -2409,14 +2524,18 @@
       (alloc.budgets.length && alloc.autoPool === 0 && alloc.budgets.some((b) => b.auto) && alloc.pool > 0
         ? '<p class="hint warn">' + tr('Your own amounts use all of the money left, so the automatic budgets are at ₹0.') + '</p>' : '') +
       '<div class="row"><button data-action="list-add" data-list="budgets">' + tr('Add category') + '</button>' +
-      (edited ? '<button class="ghost" data-action="budgets-auto">' + tr('Share everything out automatically') + '</button>' : '') + '</div></section>' +
-
-      '<section class="card" id="plan-summary">' + planSummary() + '</section>' +
-
-      privacyCard() +
-      dataCard() +
-      smsCleanup()
-    );
+      (edited ? '<button class="ghost" data-action="budgets-auto">' + tr('Share everything out automatically') + '</button>' : '') + '</div></section>' },
+        { key: 'aiplan', group: 'Your plan', icon: 'sparkle', label: 'Plan with AI', tone: 'amber', hide: !aiPlanCard(), badge: null, html: () => aiPlanCard() },
+        { key: 'lang', group: 'Settings', icon: 'lang', label: 'Language & sounds', tone: 'teal', badge: { text: (I18N.LANGS.find((x) => x[0] === I18N.getLang()) || ['', ''])[1] }, html: () =>
+      '<section class="card lang-card"><div class="card-head"><h2>' + tr('Language') + '</h2>' +
+      '<div class="seg" role="group" aria-label="' + tr('Language') + '">' + I18N.LANGS.map(([code, name]) =>
+        '<button data-action="set-lang" data-lang="' + code + '" lang="' + code + '" aria-pressed="' + (I18N.getLang() === code) + '">' + name + '</button>').join('') + '</div></div>' +
+      '<label class="check"><input id="sounds-on" type="checkbox"' + (s.sounds === false ? '' : ' checked') + '> ' + tr('Sounds (quiet when the phone is on silent)') + '</label></section>' },
+        { key: 'privacy', group: 'Settings', icon: 'lock', label: 'Privacy', tone: 'teal', badge: null, html: () => privacyCard() },
+        { key: 'data', group: 'Settings', icon: 'data', label: 'Backup & data', tone: 'teal',
+          badge: lastBackup ? { text: '✓', tone: 'good' } : { text: '!', tone: 'bad' }, html: () => dataCard() },
+        { key: 'smsclean', group: 'Settings', icon: 'broom', label: 'Clean up SMS', tone: 'teal', hide: !smsCleanup(), badge: null, html: () => smsCleanup() },
+      ]);
   }
 
   // ---------- privacy and backup ----------
@@ -3086,13 +3205,10 @@
         '</div></section>';
     }
 
-    return (
-      rolloverCard() +
-      journeyCard() +
-      leakBanner() +
-      bossCard() +
-      lenderCard() +
-      cardsSection() +
+    const L = Core.lenderTasks(state, t);
+    const j = Core.debtJourney(state, t);
+    const cardsDue = (state.cards || []).filter((c) => { const st = Core.cardStatus(state, c, t); return st.remaining > 0 && st.daysToDue <= 7; }).length;
+    const loansCard =
       '<section class="card" id="loans-card"><div class="card-head">' + titled('Loans', 'loans') + '</div>' +
       (state.debts.length ? '' : '<p class="hint">' + tr('No loans added.') + '</p>') +
       '<div class="edit-rows">' + state.debts.map((d) =>
@@ -3105,8 +3221,22 @@
         return '<div class="list-item"><div class="grow"><div class="title">' + esc(d.name) + '</div><div class="meta">' + tr('{rate}% a year', { rate: d.rate }) + '</div></div>' +
           '<div class="amt ' + (d.rate >= 15 ? 'bad' : '') + '">' + tr('{amount} interest/month', { amount: inr(i) }) + '</div></div>';
       }).join('') + '</div>' : '') +
-      '</section>' + compare
-    );
+      '</section>';
+    return hub('debts',
+      rolloverCard() +
+      journeyCard() +
+      leakBanner() +
+      (L && L.follow ? '<section class="card">' + followUp(L.follow) + '</section>' : ''), [
+        { key: 'bosses', group: 'Your loans', icon: 'target', label: 'Loans to beat', tone: 'coral', hide: !j || j.stage === 'free',
+          badge: j && j.bosses ? { text: shortInr(j.bosses.reduce((a, b) => a + b.balance, 0)) } : null, html: () => bossCard() },
+        { key: 'loans', group: 'Your loans', icon: 'loan', label: 'Loans', tone: 'coral',
+          badge: state.debts.length ? { text: String(state.debts.filter((d) => d.balance > 0).length) } : { text: tr('Add'), tone: '' }, html: () => loansCard },
+        { key: 'plans', group: 'Your loans', icon: 'plans', label: 'Debt-free plans', tone: 'coral', hide: !compare, badge: null, html: () => compare },
+        { key: 'cards', group: 'Cards & calls', icon: 'card', label: 'Credit cards', tone: 'teal',
+          badge: cardsDue ? { text: tr('{n} due', { n: cardsDue }), tone: 'bad' } : (state.cards || []).length ? { text: String(state.cards.length) } : null, html: () => cardsSection() },
+        { key: 'calls', group: 'Cards & calls', icon: 'phone', label: 'Calls to lenders', tone: 'teal', hide: !L,
+          badge: L && L.pending ? { text: '?', tone: 'bad' } : L && L.current ? { text: tr('Next') } : L ? { text: '✓', tone: 'good' } : null, html: () => lenderCard() },
+      ]);
   }
 
   // ---------- grow & safety ----------
@@ -3135,17 +3265,8 @@
       ['Emergency fund', p.emergency], ['Extra toward debts', p.debtExtra], ['Grow budget', p.invest], ['Yearly costs', p.sinking],
     ].filter((x) => x[1] > 0);
 
-    return (
+    return hub('grow',
       (movedThisCycle ? '<div class="callout good"><b>' + tr('{amount} saved from daily leftovers this month', { amount: inr(movedThisCycle) }) + '</b><span class="hint">' + tr('Every unspent day you move to savings or a loan gets you closer to a loan-free life.') + '</span></div>' : '') +
-      '<section class="card"><div class="card-head">' + titled('This month’s set-aside', 'setaside') + '<span class="hint">' + tr('Cycle starting {date}', { date: fmtDate(cyc.start) }) + '</span></div>' +
-      (setAside.length
-        ? '<div class="summary">' + setAside.map((x) => '<div class="line"><span>' + tr(x[0]) + '</span><span>' + inr(x[1]) + '</span></div>').join('') + '</div>' +
-          (recorded
-            ? '<p class="good">' + tr('Recorded for this cycle. Your balances below include it.') + '</p>'
-            : '<div><button class="primary" data-action="record-savings">' + tr('I’ve moved this money aside') + '</button></div>')
-        : '<p class="hint">' + tr('Nothing set aside yet. Add amounts in the Plan tab.') + '</p>') +
-      '</section>' +
-
       '<section class="card">' + freedomHeader() +
       '<div class="form-grid">' + numInput('emergency-balance', 'savings.emergencyBalance', sv.emergencyBalance, 'Saved so far (₹)') +
       '<label class="field" for="emergency-target"><span>' + tr('Target') + '</span><select id="emergency-target" data-bind="savings.emergencyTargetMonths">' +
@@ -3155,7 +3276,18 @@
       '<p class="hint">' + fundNote + '</p>' +
       (Core.personal(state) ? '<p class="hint">' + tr('<b>Where to keep it:</b> one month of needs in your savings account, the rest in a sweep-in FD or a liquid fund. Both pay more and give money back within about a day.') + '</p>' : '') +
       '</section>' +
-
+      '', [
+        { key: 'setaside', group: 'Save', icon: 'shield', label: 'This month’s set-aside', tone: 'mint',
+          badge: setAside.length ? (recorded ? { text: '✓', tone: 'good' } : { text: shortInr(setAside.reduce((a, x) => a + x[1], 0)) }) : null, html: () =>
+      '<section class="card"><div class="card-head">' + titled('This month’s set-aside', 'setaside') + '<span class="hint">' + tr('Cycle starting {date}', { date: fmtDate(cyc.start) }) + '</span></div>' +
+      (setAside.length
+        ? '<div class="summary">' + setAside.map((x) => '<div class="line"><span>' + tr(x[0]) + '</span><span>' + inr(x[1]) + '</span></div>').join('') + '</div>' +
+          (recorded
+            ? '<p class="good">' + tr('Recorded for this cycle. Your balances below include it.') + '</p>'
+            : '<div><button class="primary" data-action="record-savings">' + tr('I’ve moved this money aside') + '</button></div>')
+        : '<p class="hint">' + tr('Nothing set aside yet. Add amounts in the Plan tab.') + '</p>') +
+      '</section>' },
+        { key: 'yearly', group: 'Save', icon: 'pot', label: 'Yearly costs', tone: 'mint', hide: !state.sinking.length, badge: { text: String(state.sinking.length) }, html: () =>
       (state.sinking.length
         ? '<section class="card"><h2>' + tr('Yearly costs') + '</h2><div class="bars">' + state.sinking.map((f) => {
           const saved = Number(f.saved) || 0;
@@ -3163,10 +3295,9 @@
           return '<div class="bar-row"><div class="bar-top"><span>' + esc(f.name) + ' · ' + monthName((Number(f.month) || 1) - 1) + '</span><span class="amt">' + tr('{amount} of {target}', { amount: inr(saved), target: inr(f.amount) }) + '</span></div>' +
             '<div class="bar"><span class="marigold" style="width:' + pct.toFixed(1) + '%"></span></div></div>';
         }).join('') + '</div></section>'
-        : '') +
-
-      viewEmergency() +
-
+        : '') },
+        { key: 'emergency', group: 'Save', icon: 'big', label: 'Emergency plan', tone: 'mint', badge: state.adjustment ? { text: tr('On'), tone: 'bad' } : null, html: () => viewEmergency() },
+        { key: 'invest', group: 'Grow & learn', icon: 'sprout', label: 'Grow', tone: 'teal', badge: sv.investSaved ? { text: shortInr(sv.investSaved) } : null, html: () =>
       '<section class="card"><div class="card-head">' + titled('Grow', Core.personal(state) ? 'invest' : 'grow') + '<span class="hint">' + tr('Money set aside to invest') + '</span></div>' +
       '<div class="tiles" style="grid-template-columns:repeat(2,minmax(0,1fr))">' +
       tile('Set aside so far', inr(sv.investSaved), 'From your Grow budget') +
@@ -3175,11 +3306,11 @@
         ? investGuide()
         : '<div class="callout"><b>' + tr('Ready to invest this money?') + '</b>' +
           '<span>' + tr('Talk to a <b>SEBI-registered investment adviser</b> before investing. They can look at your goals and suggest options that suit you. All investments carry risk, and the decision is yours.') + '</span></div>') +
-      '</section>' +
-
+      '</section>' },
+        { key: 'learn', group: 'Grow & learn', icon: 'book', label: 'Learn the basics', tone: 'teal', badge: null, html: () =>
       '<section class="card"><h2>' + tr('Learn the basics') + '</h2>' + LESSONS.map((l) =>
-        '<details class="lesson"><summary>' + tr(l[0]) + '</summary><p>' + tr(l[1]) + '</p></details>').join('') + '</section>'
-    );
+        '<details class="lesson"><summary>' + tr(l[0]) + '</summary><p>' + tr(l[1]) + '</p></details>').join('') + '</section>' },
+      ]);
   }
 
   const STAGE_TITLES = {
@@ -3332,6 +3463,16 @@
     const t = today();
     switch (a) {
       case 'tab': setTab(btn.dataset.tab); return;
+      case 'page-open':
+        if (btn.dataset.viz) {
+          ui.viz = btn.dataset.viz;
+          try { localStorage.setItem(VIZ_KEY, ui.viz); } catch (e) { /* private mode */ }
+        }
+        openPage(btn.dataset.tab || tab, btn.dataset.key);
+        return;
+      case 'page-back':
+        if (history.state && history.state.page) history.back(); else closePage();
+        return;
       case 'start-own':
         state = emptyState();
         state.onboarding = { step: 1 };
@@ -3410,9 +3551,9 @@
         state.settings.payoffOrder = btn.dataset.order === 'snowball' ? 'snowball' : 'avalanche';
         save(); break;
       case 'goto-loans': {
+        openPage('debts', 'loans');
         const card = document.getElementById('loans-card');
         if (!card) return;
-        card.scrollIntoView({ block: 'start' });
         const first = Array.from(card.querySelectorAll('input')).find((i) => !i.value || i.value === '0');
         if (first) first.focus({ preventScroll: true });
         return;
@@ -3482,10 +3623,6 @@
         celebrate(tr('Updated. Your dates and plan now use the new numbers.'));
         break;
       }
-      case 'chart-toggle':
-        ui.chartOpen = !ui.chartOpen;
-        try { localStorage.setItem(CHART_KEY, ui.chartOpen ? '1' : ''); } catch (e) { /* private mode */ }
-        break;
       case 'fab-add':
         ui.txKind = 'out';
         setTab('spend');
@@ -3498,8 +3635,7 @@
       case 'backup-make': makeBackup(); return;
       case 'backup-go':
         ui.backupForm = {}; ui.restore = null;
-        setTab('plan');
-        { const card = document.getElementById('data-card'); if (card) card.scrollIntoView({ block: 'start' }); }
+        openPage('plan', 'data');
         return;
       case 'backup-later': state.backupNudge = t; save(); break;
       case 'restore-open': ui.restore = {}; ui.backupForm = null; break;
@@ -3551,7 +3687,7 @@
       case 'borrow-recover':
         ui.emergency.amount = String(ui.borrow.amount);
         ui.borrow = null;
-        setTab('grow');
+        openPage('grow', 'emergency');
         setTimeout(() => { const el = document.getElementById('em-amount'); if (el) el.scrollIntoView({ block: 'center' }); }, 0);
         return;
       case 'rollover-use': {
@@ -3689,7 +3825,7 @@
       case 'card-answer-emi': {
         const c = state.cards.find((x) => x.id === btn.dataset.id);
         ui.cardPlan = { cardId: c.id, emi: { rate: 16, months: 6, fee: 0 }, emiAmount: 0 };
-        setTab('debts');
+        openPage('debts', 'cards');
         const plan = document.getElementById('card-plan');
         if (plan) plan.scrollIntoView({ block: 'start' });
         return;
@@ -4153,6 +4289,7 @@
     else if (ev.key === 'Escape' && ui.borrow) { ui.borrow = null; rerenderKeepScroll(); }
     else if (ev.key === 'Escape' && document.getElementById('report-card')) { ui.report = false; ui.reportHidden = true; ui.reportThenPay = false; rerenderKeepScroll(); }
     else if (ev.key === 'Escape' && ui.reset) { ui.reset = null; rerenderKeepScroll(); }
+    else if (ev.key === 'Escape' && ui.page) { if (history.state && history.state.page) history.back(); else closePage(); }
   });
 
   window.addEventListener('hashchange', () => {
@@ -4640,7 +4777,6 @@
 
   setLang(loadLang());
   try {
-    ui.chartOpen = localStorage.getItem(CHART_KEY) === '1';
     ui.viz = ['where', 'when', 'trend'].indexOf(localStorage.getItem(VIZ_KEY)) !== -1 ? localStorage.getItem(VIZ_KEY) : 'where';
   } catch (e) { /* private mode */ }
   state = load();

@@ -51,7 +51,7 @@ The home-screen widget changes colour with the zone, with the same signs as the 
 
 The zone label shows in bold next to the sign, with text that stays readable on each colour, in light and dark mode. The app sends the zone to the widget along with today's amount. If "hide amounts while locked" (see 3) is on, the widget still shows the colour and sign, but not the amount.
 
-## 6. Less open at once: icon grid by category, with the essentials always open
+## 6. Less open at once: icon grid by category, with the essentials always open (built)
 Today every card is open, so screens read like a long report. The idea (from a PhonePe-style home screen): small icons grouped by category, each opening its card only when tapped. Proposed mix, to confirm before building:
 - **Always open, never collapsed:** today's limit with the zone colour and sign, and Days of Freedom. These are the pain point and must stay visible.
 - **Warnings never collapse:**

@@ -841,3 +841,30 @@ details.prep ul { margin: 6px 0 0; padding-left: 20px; color: var(--muted); font
 .warn-text { color: var(--warn); font-weight: 650; }
 .backup-form, .restore-form { gap: 10px; }
 #data-card { display: grid; gap: 12px; }
+
+/* Icon grid: each tab's cards as grouped icons, four to a row, with live badges. */
+.hub-group { display: grid; gap: 12px; padding-bottom: 14px; }
+.hub-group h2 { font-size: 1.05rem; }
+.hub-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px 6px; }
+.hub-tile { display: flex; flex-direction: column; align-items: center; gap: 7px; background: none; border: 0; padding: 4px 0 0; color: var(--ink); font: inherit; cursor: pointer; min-width: 0; }
+.hub-icon { position: relative; width: 56px; height: 56px; border-radius: 18px; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent); transition: transform 0.12s ease-out; }
+.hub-icon svg { width: 27px; height: 27px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.hub-tile:active .hub-icon { transform: scale(0.94); }
+.hub-tile:focus-visible { outline: none; }
+.hub-tile:focus-visible .hub-icon { box-shadow: 0 0 0 3px var(--ink); }
+.tone-mint .hub-icon { background: var(--good-soft); color: var(--good); }
+.tone-amber .hub-icon { background: var(--warn-soft); color: var(--warn); }
+.tone-coral .hub-icon { background: var(--bad-soft); color: var(--bad); }
+.hub-label { font-size: 0.78rem; font-weight: 600; line-height: 1.2; text-align: center; overflow-wrap: anywhere; }
+/* A badge sits on the icon's top edge, like a tag. */
+.hub-badge { position: absolute; top: -8px; left: 50%; transform: translateX(-50%); white-space: nowrap; max-width: 76px; overflow: hidden; text-overflow: ellipsis;
+  font-size: 0.66rem; font-weight: 750; line-height: 1; padding: 4px 6px; border-radius: 99px; background: var(--surface); color: var(--ink); box-shadow: 0 0 0 1.5px var(--line); font-variant-numeric: tabular-nums; }
+.hub-badge.bad { background: var(--coral); color: #fff; box-shadow: none; }
+.hub-badge.good { background: var(--good); color: var(--surface); box-shadow: none; }
+@media (prefers-reduced-motion: reduce) { .hub-icon { transition: none; } }
+
+/* A card opened from an icon: its own page with a Back bar. */
+.page-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; position: sticky; top: 0; z-index: 5; background: var(--bg); padding: 4px 0 6px; }
+.page-back { display: inline-flex; align-items: center; gap: 4px; border: 0; background: var(--surface); box-shadow: var(--shadow); border-radius: 99px; padding: 8px 14px 8px 8px; font: inherit; font-weight: 700; color: var(--ink); }
+.page-back svg { width: 20px; height: 20px; }
+.page-group { font-size: 0.78rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }

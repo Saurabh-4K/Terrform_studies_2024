@@ -27,6 +27,32 @@ Everything the app can do today, screen by screen, with the rules it follows. Fo
 
 ---
 
+## Layout: essentials open, the rest as icons
+Every tab keeps what always matters open, and shows its other cards as small icons in groups, four to a row. Tap an icon and that card opens as its own page; **Back** (or the phone's back button) returns to the icons.
+- **Always open:**
+  - Runway: today's limit with the zone, and Days of Freedom
+  - Spend: the form to add a payment
+  - Plan: *Where the salary goes*
+  - Debts: the debt journey and the interest you're losing each day
+  - Grow: the emergency fund
+- **Warnings never fold away:**
+  - red zone options
+  - card bills due
+  - SMS payments to check
+  - payments waiting to be sorted
+  - the payday check-in
+  - money received to assign
+  - "how did your call go?"
+  - the weekly recap
+  - the backup reminder
+- **Icons carry live badges** so nothing important hides: *2 due* on Bills to pay, *3 over* on Budgets, the next payday's date, the debt-free month, *3 new* on Little leaks, ✓ on Backup & data, *Next* on Calls to lenders.
+- **The groups:**
+  - Runway: *This month* (This round, Bills to pay, Coming up, Next payday), *Check & plan* (Big expense?, Runway graph, Budgets, Insights), *Money* (Balance, Debt-free date, Credit cards)
+  - Spend: *Your spending* (Where it went, When, Month by month, Little leaks), *Records* (Payments, Bills to pay, Bank SMS)
+  - Plan: *Your money* (Salary, Fixed payments, Bills that vary, Yearly costs), *Your plan* (Set aside, Flexible budgets, Plan with AI), *Settings* (Language & sounds, Privacy, Backup & data, Clean up SMS)
+  - Debts: *Your loans* (Loans to beat, Loans, Debt-free plans), *Cards & calls* (Credit cards, Calls to lenders)
+  - Grow: *Save* (This month's set-aside, Yearly costs, Emergency plan), *Grow & learn* (Grow, Learn the basics)
+
 ## 1. Privacy and your data
 
 Plan → **Your privacy** lists what the app does and never does, and each line is true of the app as built:
