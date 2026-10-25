@@ -1169,3 +1169,57 @@ test('lender calls: list, one easy call, 60 days of numbers, then a better rate'
   s.journey.calls.push({ id: 'c2', task: 'deal', debtId: 'd1', date: '2026-10-26', follow: '2026-10-27', result: 'yes' });
   assert.equal(Core.lenderTasks(s, '2026-10-27').current, null);
 });
+
+test('round result: won without borrowing, days won and over, planned against actual, a goal', () => {
+  const s = baseState({ days: {} });
+  // Round of October (31 days); today is 2 Nov
+  s.days['2026-10-10'] = { allowance: 500 };
+  s.days['2026-10-11'] = { allowance: 500 };
+  s.days['2026-10-12'] = { allowance: 500 };
+  s.transactions.push(
+    { id: 'a', date: '2026-10-10', amount: 300, category: 'Food' },
+    { id: 'b', date: '2026-10-11', amount: 700, category: 'Food' },
+    { id: 'c', date: '2026-10-12', amount: 2000, category: 'Emergency' }, // doesn't count against the day
+    { id: 'd', kind: 'move', date: '2026-10-01', amount: 3000, category: 'Savings', useFor: 'emergency', setAside: '2026-10-01' },
+  );
+  let r = Core.roundResult(s, '2026-11-02');
+  assert.equal(r.won, true);
+  assert.deepEqual([r.tally.won, r.tally.over, r.tally.none, r.tally.logged, r.tally.total], [2, 1, 28, 4, 31]);
+  assert.deepEqual(r.rows.map((x) => [x.key, x.planned, x.actual, x.good]), [
+    ['pay', 50000, 50000, true], ['flex', 15500, 1000, true], ['saved', 0, 3000, true], ['borrowed', 0, 0, true],
+  ]);
+  assert.equal(r.change, null);
+  assert.deepEqual(r.goal, { kind: 'save' }); // nothing moved from daily leftovers
+  // A card spend: the round wasn't won, and the goal is no card for daily spending
+  s.transactions.push({ id: 'e', date: '2026-10-20', amount: 1200, category: 'Shopping', paidFrom: 'c1' });
+  r = Core.roundResult(s, '2026-11-02');
+  assert.equal(r.won, false);
+  assert.equal(r.borrowed, 1200);
+  assert.deepEqual(r.goal, { kind: 'borrow' });
+  // With a snapshot from the round's start: then and now
+  s.rounds = { '2026-10-01': { date: '2026-10-03', freedom: 1, debt: 50000 } };
+  s.savings.emergencyBalance = 2500; // basics 15,000 a month = 500 a day
+  assert.deepEqual(Core.roundResult(s, '2026-11-02').change, { since: '2026-10-03', freedom: [1, 5], debt: [50000, 0] });
+});
+
+test('weekly recap: the 7 days to yesterday in small wins', () => {
+  const s = baseState({ days: {}, debts: [{ id: 'd1', name: 'Loan', balance: 60000, rate: 18, minPayment: 3000, dueDay: 5 }] });
+  for (let i = 18; i <= 24; i++) s.days['2026-10-' + i] = { allowance: 400 };
+  s.transactions.push(
+    { id: 'a', date: '2026-10-18', amount: 350, category: 'Food' },
+    { id: 'b', date: '2026-10-19', amount: 900, category: 'Food' },
+    { id: 'c', kind: 'move', date: '2026-10-20', amount: 600, category: 'Savings', useFor: 'debt', debtId: 'd1', debtPaid: 600 },
+    { id: 'd', kind: 'move', date: '2026-10-21', amount: 1000, category: 'Savings', useFor: 'emergency' },
+    { id: 'e', date: '2026-10-17', amount: 999, category: 'Food' }, // before the week
+  );
+  const w = Core.weekRecap(s, '2026-10-25');
+  assert.equal(w.from, '2026-10-18');
+  assert.equal(w.to, '2026-10-24');
+  // Only the 19th is over: moving money to a loan or the fund never makes a day "over"
+  assert.deepEqual([w.tally.won, w.tally.over, w.tally.logged], [6, 1, 4]);
+  assert.equal(w.saved, 1000);
+  assert.equal(w.debtPaid, 600);
+  assert.equal(w.daysCloser, 6); // 3,000 a month on loans = 100 a day
+  assert.equal(w.freedomGained, 1); // basics 18,000 a month = 600 a day
+  assert.equal(w.borrowed, 0);
+});

@@ -798,3 +798,36 @@ details.prep ul { margin: 6px 0 0; padding-left: 20px; color: var(--muted); font
 .follow .form-grid { margin-top: 4px; }
 .choices-row { display: flex; flex-wrap: wrap; gap: 8px; }
 @media (prefers-reduced-motion: reduce) { .boss-bar > span { transition: none; } }
+
+/* Round result: won or over, the round's days, then and now, planned and actual. */
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.round-result { display: flex; align-items: center; gap: 12px; border-radius: 14px; padding: 14px; background: var(--warn-soft); border-left: 5px solid var(--caution); }
+.round-result.won { background: var(--good-soft); border-left-color: var(--good); }
+.round-result b { display: block; font-family: var(--font-display); font-size: 1.35rem; line-height: 1.15; }
+.round-result.won b { color: var(--good); }
+.round-result span { font-size: 0.9rem; }
+.rr-icon { font-size: 2rem; line-height: 1; }
+.rr-days { font-weight: 650; font-size: 0.9rem; }
+.rr-change { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.rr-change > div { background: var(--surface-2); border-radius: 12px; padding: 10px 12px; display: grid; gap: 2px; }
+.rr-change b { font-family: var(--font-display); font-size: 1.15rem; font-variant-numeric: tabular-nums; }
+.rr-change b.good { color: var(--good); }
+.rr-change b.bad { color: var(--bad); }
+.rr-table { width: 100%; border-collapse: collapse; font-size: 0.88rem; font-variant-numeric: tabular-nums; }
+.rr-table th, .rr-table td { padding: 6px 4px; border-bottom: 1px solid var(--line); text-align: right; }
+.rr-table th[scope="row"], .rr-table thead th:first-child { text-align: left; font-weight: 600; }
+.rr-table thead th { font-size: 0.75rem; color: var(--muted); font-weight: 650; }
+.rr-table td.good { color: var(--good); font-weight: 650; }
+.rr-table td.warn { color: var(--warn); font-weight: 650; }
+.rr-goal { border-radius: 12px; padding: 12px 14px; background: var(--accent-soft); display: grid; gap: 4px; }
+
+/* Weekly recap on the Runway tab. */
+.week-card { display: grid; gap: 10px; }
+.week-card.good { background: var(--good-soft); }
+.week-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; font-size: 0.92rem; }
+.week-list li { display: flex; gap: 8px; align-items: baseline; }
+.week-list li::before { content: "•"; color: var(--muted); }
+.week-list li.wk-clean, .week-list li.wk-saved, .week-list li.wk-debt { color: var(--good); font-weight: 600; }
+.week-list li.wk-clean::before, .week-list li.wk-saved::before, .week-list li.wk-debt::before { content: "✓"; color: var(--good); }
+.week-list li.wk-borrow { color: var(--bad); font-weight: 600; }
+.rr-table th[scope="row"] { text-transform: none; letter-spacing: 0; font-size: 0.88rem; color: var(--ink); }

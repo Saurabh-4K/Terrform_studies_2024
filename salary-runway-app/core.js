@@ -1801,6 +1801,111 @@
     };
   }
 
+  // ---------- round result and weekly recap ----------
+
+  // Spent and saved on a day: saved money can't be spent either. Emergencies don't count against the day.
+  function daySpent(state, date) {
+    return sum(state.transactions.filter((x) =>
+      (isFlexible(x) && x.date === date && x.category !== 'Emergency') || (isMove(x) && !x.setAside && (x.forDate || x.date) === date)), (x) => x.amount);
+  }
+
+  // Spending alone on a day: whether the day was won. Moving money to savings or a loan never makes a day "over".
+  function daySpending(state, date) {
+    return sum(state.transactions.filter((x) => isFlexible(x) && x.date === date && x.category !== 'Emergency'), (x) => x.amount);
+  }
+
+  // Days in [from, to]: won (within that day's limit), over, or not tracked (the app wasn't opened).
+  function dayTally(state, from, to) {
+    const days = state.days || {};
+    const out = { won: 0, over: 0, none: 0, logged: 0, total: 0 };
+    const logged = new Set(state.transactions.map((t) => t.date));
+    for (let d = from; d <= to; d = addDays(d, 1)) {
+      out.total++;
+      if (logged.has(d)) out.logged++;
+      const rec = days[d];
+      if (!rec) out.none++;
+      else if (daySpending(state, d) <= rec.allowance) out.won++;
+      else out.over++;
+    }
+    return out;
+  }
+
+  function borrowedIn(state, from, to) {
+    const txs = state.transactions.filter((t) => t.date >= from && t.date <= to);
+    return sum(txs.filter((t) => (isFlexible(t) && t.paidFrom && t.paidFrom !== 'account') || (isIncome(t) && t.borrowed)), (t) => t.amount);
+  }
+
+  // Paid toward loans beyond the EMIs: leftovers and money received sent to a loan.
+  function extraToLoans(state, from, to) {
+    return sum(state.transactions.filter((t) => t.date >= from && t.date <= to && t.useFor === 'debt' && t.debtId), (t) => Number(t.debtPaid) || t.amount);
+  }
+
+  // What the loans add up to, and Days of Freedom: kept at the start of each round to compare at the end.
+  function roundSnapshot(state, todayIso) {
+    const f = freedomDays(state, todayIso);
+    return { date: todayIso, freedom: f ? f.days : 0, debt: Math.round(sum(state.debts, (d) => Math.max(0, Number(d.balance) || 0))) };
+  }
+
+  /*
+   * The round that ended at the last payday, as a result: reached payday
+   * without borrowing (won) or not, days won and over, days logged (the bad
+   * ones count too), planned against actual, and one goal for the next round.
+   * With a snapshot from the round's start: Days of Freedom and debt, then and now.
+   */
+  function roundResult(state, todayIso) {
+    const r = monthReport(state, todayIso);
+    const c = r.cycle;
+    const last = r.last;
+    const plan = monthlyPlan(Object.assign({}, state, { adjustment: null }), c.start);
+    const slip = (state.payslips || {})[c.start];
+    const pay = { planned: slip ? Number(slip.usual) || 0 : Number(state.settings.salary) || 0, actual: slip ? Number(slip.amount) || 0 : Number(state.settings.salary) || 0 };
+    const txs = state.transactions.filter((t) => inCycle(t.date, c));
+    const flexSpent = sum(txs.filter((t) => isFlexible(t) && t.category !== 'Emergency'), (t) => t.amount);
+    const saved = sum(txs.filter((t) => isMove(t)), (t) => t.amount);
+    const borrowed = borrowedIn(state, c.start, last);
+    const rows = [
+      { key: 'pay', planned: pay.planned, actual: pay.actual, good: pay.actual >= pay.planned },
+      { key: 'flex', planned: plan.flexTotal, actual: Math.round(flexSpent), good: flexSpent <= plan.flexTotal },
+      { key: 'saved', planned: plan.emergency + plan.invest + plan.debtExtra, actual: Math.round(saved), good: saved >= plan.emergency + plan.invest + plan.debtExtra },
+      { key: 'borrowed', planned: 0, actual: Math.round(borrowed), good: borrowed === 0 },
+    ];
+    const tally = dayTally(state, c.start, last);
+    const snap = (state.rounds || {})[c.start];
+    const now = roundSnapshot(state, todayIso);
+    const change = snap ? { since: snap.date, freedom: [snap.freedom, now.freedom], debt: [snap.debt, now.debt] } : null;
+    let goal;
+    if (borrowed > 0) goal = { kind: 'borrow' };
+    else if (r.overspent) goal = { kind: 'budget', name: r.overspent.name, amount: r.overspent.budget };
+    else if (r.swept.total === 0) goal = { kind: 'save' };
+    else goal = { kind: 'again', won: tally.won };
+    return Object.assign(r, { won: borrowed === 0, borrowed, rows, tally, change, goal });
+  }
+
+  /*
+   * The week that ended yesterday, in small wins: days won, days logged,
+   * saved, extra paid on loans (and how many days of loan payments that
+   * is: that much closer to debt-free), and anything borrowed.
+   */
+  function weekRecap(state, todayIso) {
+    const to = addDays(todayIso, -1);
+    const from = addDays(todayIso, -7);
+    const tally = dayTally(state, from, to);
+    const txs = state.transactions.filter((t) => t.date >= from && t.date <= to);
+    const toFund = sum(txs.filter((t) => isMove(t) && !t.setAside && t.useFor === 'emergency'), (t) => t.amount);
+    // Saved: to the fund or savings. Money sent to a loan is counted on its own line.
+    const saved = sum(txs.filter((t) => isMove(t) && !t.setAside && t.useFor !== 'debt'), (t) => t.amount);
+    const debtPaid = extraToLoans(state, from, to);
+    const plan = monthlyPlan(Object.assign({}, state, { adjustment: null }), todayIso);
+    const perDay = (plan.debtMin + plan.debtExtra) / 30;
+    const f = freedomDays(state, todayIso);
+    return {
+      from, to, tally, saved: Math.round(saved), debtPaid: Math.round(debtPaid),
+      daysCloser: perDay > 0 ? Math.floor(debtPaid / perDay) : 0,
+      freedomGained: f && f.daily > 0 ? Math.floor(toFund / f.daily) : 0,
+      borrowed: Math.round(borrowedIn(state, from, to)),
+    };
+  }
+
   // ---------- spending, three ways ----------
 
   // Basics: what has to be paid whatever happens. Everything else is a choice.
@@ -2401,6 +2506,7 @@
     recordCardPayment, convertCardBalance, answerCardDue, cardLateFee, cardRate, CARD_RATE, undoCardConvert, cardFreeDays, byCategory, DEFAULT_SPLIT,
     isLoanCredit, borrowedThisCycle, borrowCheck, rolloverOptions, personal, investPlan, sipValue, ASSUMED_RETURN, setTranslator,
     payoffOrder, tickDebts, debtJourney, lenderTasks, lastBorrowed,
+    daySpent, daySpending, dayTally, roundSnapshot, roundResult, weekRecap,
     monthReport, aiReport, LEAKS, leakNames, leakOf, leakSummary, leakSuggestions, spendWhere, spendWhen, spendTrend, BASICS,
   };
 

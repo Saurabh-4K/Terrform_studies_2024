@@ -92,8 +92,12 @@ Backup, restore, example data, erase, and **Clean up SMS imports** (removes SMS-
 - **"This is my new usual pay from now on"** for raises or a new tax slab.
 - Can be changed later from the Plan tab. Changing it undoes the old record, including a bonus entry.
 
-### Month-end report card
-When a new salary cycle starts (the payday check-in is due, or the bank's salary SMS arrived), a one-screen report on the cycle that just ended opens first. It also opens before *Record this month's pay* on the Plan tab, and *Last month's report card* there opens it any time.
+### Round result (month-end report card)
+When a new salary cycle starts (the payday check-in is due, or the bank's salary SMS arrived), the result of the round that just ended opens first. It also opens before *Record this month's pay* on the Plan tab, and *Last month's report card* there opens it any time.
+- **Round won 🏆** (chime and confetti) when payday was reached without borrowing; otherwise **Round over**: *₹1,200 borrowed this round. The next round is a fresh start.*
+- **The round's days** as tiles (won, over, not tracked), with *18 days won · 9 over · 23 of 30 days logged*. Logging the days that went over is praised: it keeps the numbers true.
+- **Then and now:** Days of Freedom (*3 → 6*) and loans left (*₹2.1L → ₹2.0L*) since the round was first opened. The app notes both at the start of every round.
+- **Planned and actual:** pay, daily spending against the budgets, saved and set aside against the plan, and borrowed against ₹0, each with ✓ or !.
 - **Wins (green):**
   - **Card-free days:** days with no credit card spending, e.g. *29 of 30*.
   - **Saved from daily leftovers:** money moved to the emergency fund, loans or savings, with the split. Payday set-asides aren't counted.
@@ -102,7 +106,13 @@ When a new salary cycle starts (the payday check-in is due, or the bank's salary
   - **Most over budget:** the flexible category furthest over its budget, with spent vs budget.
   - **Small payment leaks:** *7 small payments under ₹200 added up to ₹1,030.* Bills don't count.
 - A watch-out with nothing to report turns green: *Every category stayed within its budget.*
-- **Take lessons into next month** closes it and opens this month's payday check-in, then the payday reset. Shown once per cycle; Escape closes it for now.
+- **Next round:** one goal from the round: no card for daily spending (if something was borrowed), keep the category most over budget within its budget, move one day's leftover to savings, or win as many days again.
+- **Start the next round** closes it and opens this month's payday check-in, then the payday reset. Shown once per cycle; Escape closes it for now.
+
+### Weekly recap (Runway tab)
+Once a week, under the round board: the last 7 days in small wins. Days won (and over), days logged, money saved (*+1 Day of Freedom*), extra paid on loans (*about 2 days closer to debt-free*: the extra ÷ what goes to loans each day), and *Nothing borrowed* or what was borrowed. **On to next week** closes it until the next one.
+
+A day is **won** when that day's spending stayed within its limit. Moving money to savings or a loan never makes a day "over", and payday set-asides don't count against payday.
 
 ### Plan next month with AI (free)
 Plan tab → **Plan next month with AI**, or *Get next month's plan from an AI chat* on the report card. It makes a text report to give any free AI chat (ChatGPT, Gemini, Claude); the app itself has no AI and sends nothing.

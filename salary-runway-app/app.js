@@ -554,6 +554,8 @@
     if (document.getElementById('report-card') && !ui.reportFocused) {
       ui.reportFocused = true;
       document.getElementById('report-card').focus();
+      // A round won: the chime and confetti, once.
+      if (Core.roundResult(state, today()).won) { sound('chime'); confetti(); }
     }
     if (ui.borrow && ui.borrow.focus) {
       ui.borrow.focus = false;
@@ -637,6 +639,7 @@
       freedomCard() +
       '</section>' +
       roundBoard(cyc, r) +
+      weekCard() +
       debtFreeCard() +
       savedCard() +
       cardHomeNotes(cyc) +
@@ -1098,7 +1101,8 @@
    * This round, day by day: won (inside the day's limit), over, today, to
    * come. Logging a bad day still counts: the next day starts fresh.
    */
-  function roundBoard(cyc, r) {
+  // One tile per day of a round: won, over, not tracked, today or still to come.
+  function roundTiles(cyc) {
     const t = today();
     let won = 0;
     let over = 0;
@@ -1111,18 +1115,26 @@
       else if (d < t) {
         const day = state.days && state.days[d];
         if (!day) { cls = 'none'; tip += ': ' + tr('not tracked'); }
-        else if (spentOn(d) <= day.allowance) { cls = 'won'; won++; tip += ': ' + tr('won ({spent} of {limit})', { spent: inr(spentOn(d)), limit: inr(day.allowance) }); }
-        else { cls = 'over'; over++; tip += ': ' + tr('over ({spent} of {limit})', { spent: inr(spentOn(d)), limit: inr(day.allowance) }); }
+        else if (Core.daySpending(state, d) <= day.allowance) { cls = 'won'; won++; tip += ': ' + tr('won ({spent} of {limit})', { spent: inr(Core.daySpending(state, d)), limit: inr(day.allowance) }); }
+        else { cls = 'over'; over++; tip += ': ' + tr('over ({spent} of {limit})', { spent: inr(Core.daySpending(state, d)), limit: inr(day.allowance) }); }
       }
       tiles.push('<span class="round-tile ' + cls + '" title="' + esc(tip) + '">' + (cls === 'won' ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12l4 4 10-10" stroke="currentColor" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>' : '') + '</span>');
     }
+    return { won, over, html: '<div class="round-grid" role="img" aria-label="' + esc(tr('{won} days won, {over} over', { won, over })) + '">' + tiles.join('') + '</div>' };
+  }
+
+  function roundBoard(cyc, r) {
+    const t = today();
+    const g = roundTiles(cyc);
+    const won = g.won;
+    const over = g.over;
     const y = Core.addDays(t, -1);
     const yDay = state.days && state.days[y];
-    const recover = yDay && y >= cyc.start && spentOn(y) > yDay.allowance
+    const recover = yDay && y >= cyc.start && Core.daySpending(state, y) > yDay.allowance
       ? '<p class="round-recover">' + tr('Yesterday went over. Today’s limit already takes it into account: keep to {amount} and you’re back on track.', { amount: inr(r.dailyAllowance) }) + '</p>' : '';
     const b = Core.borrowedThisCycle(state, t);
     return '<section class="card round-card"><div class="card-head"><h2>' + tr('This round') + '</h2><span class="hint">' + tr('{from} – {to} · day {day} of {days}', { from: fmtDate(cyc.start), to: fmtDate(Core.addDays(cyc.next, -1)), day: r.idxToday + 1, days: cyc.days }) + '</span></div>' +
-      '<div class="round-grid" role="img" aria-label="' + esc(tr('{won} days won, {over} over', { won, over })) + '">' + tiles.join('') + '</div>' +
+      g.html +
       '<div class="viz-legend"><span><i class="round-key won"></i>' + tr('Won {n}', { n: won }) + '</span><span><i class="round-key over"></i>' + tr('Over {n}', { n: over }) + '</span><span><i class="round-key today"></i>' + tr('Today') + '</span></div>' +
       '<p class="round-borrowed ' + (b.total ? 'bad' : 'good') + '">' + tr('Borrowed this round: {amount}', { amount: inr(b.total) }) + (b.total ? '' : ' ✓') + '</p>' + recover + '</section>';
   }
@@ -1278,9 +1290,33 @@
       loans = stat('quiet', tr('Extra paid on loans'), inr(0), tr('Move a day’s leftover to a loan to cut its interest.'));
     }
     const o = r.overspent;
+    const rr = Core.roundResult(state, today());
+    const tally = rr.tally;
+    const banner = rr.won
+      ? '<div class="round-result won"><span class="rr-icon" aria-hidden="true">🏆</span><div><b>' + tr('Round won') + '</b><span>' + tr('You reached payday without borrowing.') + '</span></div></div>'
+      : '<div class="round-result"><span class="rr-icon" aria-hidden="true">↻</span><div><b>' + tr('Round over') + '</b><span>' + tr('{amount} borrowed this round. The next round is a fresh start.', { amount: inr(rr.borrowed) }) + '</span></div></div>';
+    const days = '<p class="rr-days">' + tr('{won} days won · {over} over · {logged} of {days} days logged', { won: tally.won, over: tally.over, logged: tally.logged, days: tally.total }) + '</p>' +
+      (tally.over > 0 && tally.logged > 0 ? '<p class="hint">' + tr('Logging the days that went over is what keeps your numbers true. That counts as a win too.') + '</p>' : '');
+    const ch = rr.change;
+    const thenNow = ch
+      ? '<div class="rr-change">' +
+        '<div><span class="hint">' + tr('Days of Freedom') + '</span><b class="' + (ch.freedom[1] > ch.freedom[0] ? 'good' : ch.freedom[1] < ch.freedom[0] ? 'bad' : '') + '">' + ch.freedom[0] + ' → ' + ch.freedom[1] + '</b></div>' +
+        (ch.debt[0] || ch.debt[1] ? '<div><span class="hint">' + tr('Loans left') + '</span><b class="' + (ch.debt[1] < ch.debt[0] ? 'good' : ch.debt[1] > ch.debt[0] ? 'bad' : '') + '">' + shortInr(ch.debt[0]) + ' → ' + shortInr(ch.debt[1]) + '</b></div>' : '') +
+        '</div><p class="hint">' + tr('Since {date}, when this round was first opened.', { date: fmtDate(ch.since) }) + '</p>'
+      : '';
+    const ROW = { pay: 'Pay', flex: 'Daily spending', saved: 'Saved and set aside', borrowed: 'Borrowed' };
+    const table = '<table class="rr-table"><thead><tr><th scope="col"></th><th scope="col">' + tr('Planned') + '</th><th scope="col">' + tr('Actual') + '</th></tr></thead><tbody>' +
+      rr.rows.map((x) => '<tr><th scope="row">' + tr(ROW[x.key]) + '</th><td>' + inr(x.planned) + '</td><td class="' + (x.good ? 'good' : 'warn') + '">' + inr(x.actual) + ' ' + (x.good ? '✓' : '!') + '</td></tr>').join('') +
+      '</tbody></table>';
+    const goal = rr.goal.kind === 'borrow' ? tr('No credit card for daily spending. Keep to today’s limit instead.')
+      : rr.goal.kind === 'budget' ? tr('Keep {name} within {amount}.', { name: label(rr.goal.name), amount: inr(rr.goal.amount) })
+        : rr.goal.kind === 'save' ? tr('Move one day’s leftover to savings or a loan.')
+          : tr(rr.goal.won === 1 ? 'Win {n} day again, or one more.' : 'Win {n} days again, or one more.', { n: rr.goal.won });
     return '<div class="reset-modal-overlay report-overlay" role="presentation"><div class="reset-modal-card report-card" role="dialog" aria-modal="true" aria-labelledby="report-title" id="report-card" tabindex="-1">' +
-      '<span class="eyebrow">' + tr('Month-end report card · {from} – {to}', { from: fmtDate(r.cycle.start), to: fmtDate(r.last) }) + '</span>' +
-      '<h2 id="report-title">' + tr('How last month went') + '</h2>' +
+      '<span class="eyebrow">' + tr('Round result · {from} – {to}', { from: fmtDate(r.cycle.start), to: fmtDate(r.last) }) + '</span>' +
+      '<h2 id="report-title" class="visually-hidden">' + tr('How last month went') + '</h2>' +
+      banner + roundTiles(r.cycle).html + days + thenNow +
+      '<span class="report-section">' + tr('Planned and actual') + '</span>' + table +
       '<span class="report-section good">' + tr('Wins') + '</span>' +
       stat(r.cardFree > 0 ? 'good' : 'quiet', tr('Card-free days'), tr('{n} of {days}', { n: r.cardFree, days: r.days }),
         tr(r.cardFree === r.days ? 'Not a rupee borrowed on a credit card.' : 'Days with no credit card spending.')) +
@@ -1296,9 +1332,39 @@
         ? stat('warn', tr('Small payment leaks'), inr(r.small.total),
           tr(r.small.count === 1 ? '1 small payment under ₹{under} added up to {amount}.' : '{n} small payments under ₹{under} added up to {amount}.', { n: r.small.count, under: r.small.under, amount: inr(r.small.total) }))
         : stat('good', tr('Small payment leaks'), tr('None'), tr('No payments under ₹{under}.', { under: r.small.under }))) +
-      '<button class="primary report-go" data-action="report-done">' + tr('Take lessons into next month') + '</button>' +
+      '<div class="rr-goal"><span class="eyebrow">' + tr('Next round') + '</span><b>' + goal + '</b></div>' +
+      '<button class="primary report-go" data-action="report-done">' + tr('Start the next round') + '</button>' +
       '<button class="link report-ai" data-action="ai-report-share">' + tr('Get next month’s plan from an AI chat') + '</button>' +
       '</div></div>';
+  }
+
+  // ---------- weekly recap ----------
+
+  // Once a week, on the Runway tab: the last 7 days in small wins.
+  function weekRecapDue() {
+    if (state.isDemo || !state.settings.salary) return false;
+    const t = today();
+    if (state.recapSeen) return Core.daysBetween(state.recapSeen, t) >= 7;
+    const first = state.transactions.reduce((m, x) => (!m || x.date < m ? x.date : m), null);
+    return !!first && Core.daysBetween(first, t) >= 7;
+  }
+
+  function weekCard() {
+    if (!weekRecapDue()) return '';
+    const w = Core.weekRecap(state, today());
+    const k = w.tally;
+    const good = w.borrowed === 0 && k.won >= 5;
+    const items = [
+      ['won', tr('{n} of 7 days won', { n: k.won }) + (k.over ? ' · ' + tr('{n} over', { n: k.over }) : '')],
+      ['log', tr('{n} of 7 days logged', { n: k.logged })],
+    ];
+    if (w.saved > 0) items.push(['saved', tr('{amount} saved', { amount: inr(w.saved) }) + (w.freedomGained > 0 ? ' · ' + tr(w.freedomGained === 1 ? '+{n} Day of Freedom' : '+{n} Days of Freedom', { n: w.freedomGained }) : '')]);
+    if (w.debtPaid > 0) items.push(['debt', tr('{amount} extra on loans', { amount: inr(w.debtPaid) }) + (w.daysCloser > 0 ? ' · ' + tr(w.daysCloser === 1 ? 'about {n} day closer to debt-free' : 'about {n} days closer to debt-free', { n: w.daysCloser }) : '')]);
+    items.push(w.borrowed ? ['borrow', tr('{amount} borrowed', { amount: inr(w.borrowed) })] : ['clean', tr('Nothing borrowed')]);
+    return '<section class="card week-card' + (good ? ' good' : '') + '"><div class="card-head"><h2>' + tr(good ? 'A strong week!' : k.won > 0 ? 'Your week: small wins add up' : 'A new week starts today') + '</h2>' +
+      '<span class="hint">' + tr('{from} – {to}', { from: fmtDate(w.from), to: fmtDate(w.to) }) + '</span></div>' +
+      '<ul class="week-list">' + items.map((x) => '<li class="wk-' + x[0] + '">' + x[1] + '</li>').join('') + '</ul>' +
+      '<div><button class="primary" data-action="week-done" data-good="' + (good ? 1 : '') + '">' + tr('On to next week') + '</button></div></section>';
   }
 
   // ---------- before you borrow ----------
@@ -1460,18 +1526,13 @@
   }
 
   // Spent and saved on a day: saved money can't be spent either.
-  function spentOn(date) {
-    return state.transactions
-      .filter((x) => (Core.isFlexible(x) && x.date === date && x.category !== 'Emergency') ||
-        (Core.isMove(x) && (x.forDate || x.date) === date))
-      .reduce((s, x) => s + x.amount, 0);
-  }
+  function spentOn(date) { return Core.daySpent(state, date); }
 
   // Days in a row, up to yesterday, spent within the daily amount.
   function withinStreak() {
     let n = 0;
     let d = Core.addDays(today(), -1);
-    while (state.days && state.days[d] && spentOn(d) <= state.days[d].allowance) { n++; d = Core.addDays(d, -1); }
+    while (state.days && state.days[d] && Core.daySpending(state, d) <= state.days[d].allowance) { n++; d = Core.addDays(d, -1); }
     return n;
   }
 
@@ -2640,18 +2701,26 @@
 
   // ---------- the debt journey ----------
 
-  // Once per render: loan EMIs after their due dates, and when the journey began.
+  // Once per render: loan EMIs after their due dates, when the journey began, and where each round started.
   function tickJourney() {
     if (state.isDemo) return;
     const t = today();
-    const before = JSON.stringify([state.debts, state.journey]);
+    const before = JSON.stringify([state.debts, state.journey, state.rounds]);
+    if (state.settings.salary) {
+      const start = Core.cycleFor(t, Number(state.settings.payday) || 1).start;
+      state.rounds = state.rounds || {};
+      if (!state.rounds[start]) {
+        state.rounds[start] = Core.roundSnapshot(state, t);
+        Object.keys(state.rounds).sort().slice(0, -13).forEach((k) => { delete state.rounds[k]; });
+      }
+    }
     Core.tickDebts(state, t).forEach((d) => askRollover({ from: d.name || 'Your loan', amount: Number(d.minPayment) || 0, kind: 'loan' }));
     if (state.debts.some((d) => Number(d.balance) > 0)) {
       state.journey = state.journey || { start: t, calls: [] };
       const j = Core.debtJourney(state, t);
       if (j && j.best > (Number(state.journey.best) || 0)) state.journey.best = j.best;
     }
-    if (JSON.stringify([state.debts, state.journey]) !== before) save();
+    if (JSON.stringify([state.debts, state.journey, state.rounds]) !== before) save();
   }
 
   const STAGES = [
@@ -3269,6 +3338,11 @@
         break;
       }
       case 'call-cancel': ui.callYes = null; break;
+      case 'week-done':
+        state.recapSeen = t;
+        save();
+        if (btn.dataset.good) celebrate(tr('Another week closer to a loan-free life.'));
+        break;
       case 'call-now': {
         const c = ((state.journey || {}).calls || []).find((x) => x.id === btn.dataset.id);
         if (c) { c.follow = t; save(); }
