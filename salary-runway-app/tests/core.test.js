@@ -418,9 +418,9 @@ test('interest leak counts loans and overdue card bills, not card bills paid on 
   let l = Core.interestLeak(s, '2026-10-12');
   assert.equal(Math.round(l.daily), 46); // 120,000 x 14% / 365
   assert.equal(l.high, false);
-  // After the 25 Oct due date the unpaid 10,000 at 42% starts costing.
+  // After the 25 Oct due date the unpaid 10,000 at 42% plus 18% GST (49.6%) starts costing: 13.59 a day.
   l = Core.interestLeak(s, '2026-10-26');
-  assert.equal(Math.round(l.daily), 46 + 12);
+  assert.equal(Math.round(l.daily), Math.round(120000 * 14 / 36500 + 10000 * 49.6 / 36500));
   assert.equal(l.high, true);
   // 0% EMI: no leak.
   assert.equal(Core.interestLeak(baseState({ debts: [{ id: 'z', name: 'No-cost EMI', balance: 20000, rate: 0, minPayment: 2000, dueDay: 5 }] }), '2026-10-05').daily, 0);
@@ -998,4 +998,35 @@ test('debt-free dates: minimums only against the plan', () => {
   s.debts[0].minPayment = 1000; s.savings.debtExtra = 0;
   assert.equal(Core.debtFreeDates(s, '2026-11-01').now.never, true);
   assert.equal(Core.debtFreeDates(baseState(), '2026-11-01'), null);
+});
+
+test('credit card due date: paid in full costs nothing; less moves the rest to Debts with GST, and a late fee below the minimum', () => {
+  const mk = () => {
+    const s = baseState({ cards: [{ id: 'c1', name: 'HDFC', last4: '1234', limit: 100000, statementDay: 5, dueDay: 25, created: '2026-09-01' }] });
+    s.transactions.push({ id: 'k', date: '2026-09-20', amount: 20000, category: 'Shopping', paidFrom: 'c1' });
+    return s;
+  };
+  // Bill of 20,000 from the 5 Oct statement, due 25 Oct
+  let s = mk();
+  assert.equal(Core.cardStatus(s, s.cards[0], '2026-10-25').remaining, 20000);
+  let r = Core.answerCardDue(s, 'c1', 'full', 0, '2026-10-25');
+  assert.equal(r.kind, 'full');
+  assert.equal(s.debts.length, 0);
+  assert.equal(Core.cardStatus(s, s.cards[0], '2026-10-26').remaining, 0);
+  assert.equal(s.cards[0].answered, '2026-10-25');
+
+  // Missed: the whole bill carried at 42% + GST = 49.6%, plus the ₹950 late fee + GST
+  s = mk();
+  r = Core.answerCardDue(s, 'c1', 'missed', 0, '2026-10-26');
+  assert.equal(r.kind, 'carried');
+  assert.equal(r.fee, Math.round(950 * 1.18));
+  assert.deepEqual([s.debts[0].balance, s.debts[0].rate], [20000 + 1121, 49.6]);
+  assert.equal(Core.cardStatus(s, s.cards[0], '2026-10-26').remaining, 0);
+
+  // Paid more than the minimum (₹1,000): no late fee, interest on the rest
+  s = mk();
+  r = Core.answerCardDue(s, 'c1', 'part', 5000, '2026-10-25');
+  assert.deepEqual([r.rest, r.fee, s.debts[0].balance], [15000, 0, 15000]);
+  assert.equal(r.monthly, Math.round((15000 * 49.6) / 1200));
+  assert.deepEqual([Core.cardLateFee(400), Core.cardLateFee(4000), Core.cardLateFee(60000)], [0, 500, 1300]);
 });

@@ -649,7 +649,7 @@
     if (!card) return null;
     const st = cardStatus(state, card, todayIso);
     const z = zoneStatus(state, todayIso);
-    const rate = Number(card.rate) || 42;
+    const rate = cardRate(card);
     const due = st.remaining;
     const short = z.zone === 'red' ? Math.min(due, Math.ceil(z.shortBy / 100) * 100) : 0;
     const payNow = Math.max(st.minLeft, due - short);
@@ -709,6 +709,41 @@
    * monthly payment is counted in every month's plan. Payments start with the
    * card's next bill; an EMI processing fee is charged on the card, as banks do.
    */
+  /*
+   * What a card costs when the bill isn't paid in full. Nobody needs to know
+   * their card's rate: these are the usual Indian figures. Paying the whole
+   * bill by the due date costs nothing.
+   * - interest about 3.5% a month (42% a year) plus 18% GST on it
+   * - a late fee only when not even the minimum is paid, by how much was due
+   */
+  const CARD_RATE = 42;
+  const GST = 0.18;
+  function cardRate(card) { return Math.round((Number(card && card.rate) || CARD_RATE) * (1 + GST) * 10) / 10; }
+  function cardLateFee(due) {
+    return due <= 500 ? 0 : due <= 5000 ? 500 : due <= 10000 ? 750 : due <= 25000 ? 950 : due <= 50000 ? 1100 : 1300;
+  }
+
+  /*
+   * On the due date: did the bill get paid? 'full' records the payment (no
+   * interest). 'part' (with `paid`) and 'missed' record what was paid and
+   * move the rest to Debts as a carried balance at the card rate with GST,
+   * plus the late fee with GST when not even the minimum was paid. EMI
+   * conversions go through convertCardBalance. Asked once per bill.
+   */
+  function answerCardDue(state, cardId, answer, paid, todayIso) {
+    const card = (state.cards || []).find((c) => c.id === cardId);
+    if (!card) return null;
+    const st = cardStatus(state, card, todayIso);
+    card.answered = st.due;
+    paid = answer === 'full' ? st.remaining : answer === 'part' ? Math.max(0, Math.min(st.remaining, Math.round(Number(paid) || 0))) : 0;
+    if (paid > 0) recordCardPayment(state, cardId, paid, todayIso, 'account');
+    const rest = st.remaining - paid;
+    if (rest <= 0) return { kind: 'full', paid };
+    const fee = paid < st.minLeft ? Math.round(cardLateFee(st.total) * (1 + GST)) : 0;
+    const res = convertCardBalance(state, cardId, rest, { kind: 'revolve', lateFee: fee }, todayIso);
+    return { kind: 'carried', paid, rest, fee, debt: res.debt, monthly: Math.round((res.debt.balance * res.debt.rate) / 1200) };
+  }
+
   function convertCardBalance(state, cardId, amount, opts, dateIso) {
     const card = (state.cards || []).find((c) => c.id === cardId);
     if (!card || !(amount > 0)) return null;
@@ -720,7 +755,9 @@
       const q = emiQuote(amount, opts.rate, opts.months, 0);
       debt = { id: newId('d'), name: card.name + ' EMI', balance: amount, rate: Number(opts.rate) || 0, minPayment: q.emi, dueDay: card.dueDay, fromCard: card.id, months: q.months, starts };
     } else {
-      debt = { id: newId('d'), name: card.name + ' carried balance', balance: amount, rate: Number(card.rate) || 42, minPayment: Math.max(200, Math.round(amount * 0.05)), dueDay: card.dueDay, fromCard: card.id, starts };
+      // Interest with GST, and a late fee (with GST) when one was charged.
+      const owed = amount + Math.round(Number(opts && opts.lateFee) || 0);
+      debt = { id: newId('d'), name: card.name + ' carried balance', balance: owed, rate: cardRate(card), minPayment: Math.max(200, Math.round(owed * 0.05)), dueDay: card.dueDay, fromCard: card.id, starts };
     }
     state.debts.push(debt);
     const tx = { id: newId('cc'), kind: 'cardconvert', cardId, date: dateIso, amount, note: debt.name, debtId: debt.id, source: 'manual' };
@@ -1321,7 +1358,7 @@
     });
     (state.cards || []).forEach((c) => {
       const st = cardStatus(state, c, todayIso);
-      if (st.overdue) items.push({ name: tr('{name} (overdue bill)', { name: c.name }), balance: st.remaining, rate: Number(c.rate) || 42 });
+      if (st.overdue) items.push({ name: tr('{name} (overdue bill)', { name: c.name }), balance: st.remaining, rate: cardRate(c) });
     });
     items.forEach((x) => { x.daily = (x.balance * x.rate) / 36500; });
     const daily = sum(items, (x) => x.daily);
@@ -2069,7 +2106,7 @@
     salaryFor, salaryHistory, paydayReset, suggestUse, freedomDays, interestLeak, nextPaydayPreview,
     billShare, billPot, billsMonthly, billPaidIn, billDue, payBill, undoBillPayment, zoneStatus, ESSENTIAL_CATEGORIES,
     isCardTransfer, statementOn, dueAfter, cardOwedAt, cardReserve, cardStatus, emiQuote, revolveQuote, cardBillPlan,
-    recordCardPayment, convertCardBalance, undoCardConvert, cardFreeDays, byCategory, DEFAULT_SPLIT,
+    recordCardPayment, convertCardBalance, answerCardDue, cardLateFee, cardRate, CARD_RATE, undoCardConvert, cardFreeDays, byCategory, DEFAULT_SPLIT,
     isLoanCredit, borrowedThisCycle, borrowCheck, rolloverOptions, personal, investPlan, sipValue, ASSUMED_RETURN, setTranslator,
     monthReport, aiReport, spendWhere, spendWhen, spendTrend, BASICS,
   };

@@ -274,17 +274,23 @@ For a refund, money from home, money returned, cashback, side income or extra pa
 
 **Why:** card spending doesn't leave your bank account today, so a month looks better than it is, and the bill lands on next month's salary.
 
-- **Up to 10 cards:** name, last 4 digits, limit, statement day, due day, interest rate (42% if unknown), and what you owe when adding the card (last statement, its due date, and spending since).
+- **Up to 10 cards:** name, last 4 digits, limit, statement day, due day, and what you owe when adding the card (last statement, its due date, and spending since). **No interest rate to enter:** paying the whole bill on time costs nothing, and the app uses the usual Indian card figures otherwise (about 3.5% a month, 42% a year, plus 18% GST on it, and the usual late-fee slabs: ₹0 up to ₹500 due, then ₹500, ₹750, ₹950, ₹1,100, up to ₹1,300 above ₹50,000).
 - **Card spending counts as spent the day it happens.** Budgets, today's amount and zones stay honest, and the money is treated as kept aside for the bill. Paying the bill only moves money to the card, so it isn't counted twice. A balance check subtracts card spending not yet paid.
 - **Each card shows:** the bill and its statement date, amount paid, **amount left to pay by the due date**, spending since the statement (next bill), and **limit used**, with a note above 30% because staying under it helps your credit score.
-- **Reminders** on the Runway tab a week before the due date, and when overdue.
+- **Reminders** on the Runway tab a week before the due date: *Pay the whole ₹12,500 by 25 Nov and it costs nothing. Paying less, even the minimum, starts interest of about 3.5% a month plus GST.*
+- **On the due date it asks: did you pay it?** (Runway and Debts tabs, once per bill)
+  - **Paid in full:** the payment is recorded. No interest.
+  - **Paid part** (enter how much): the rest moves to Debts as *HDFC carried balance* at 42% + GST (49.6% a year), with a 5% minimum, so the payoff plan and debt-free date include it.
+  - **Missed it:** the whole bill moves to Debts the same way, **plus the late fee with GST** (charged only when not even the minimum was paid).
+  - **Converted to EMI:** opens the EMI plan on the Debts tab; the EMI becomes a loan in Debts.
+  - *₹20,000 moved to Debts as HDFC carried balance: about ₹873 a month in interest with GST and a late fee of about ₹1,121.*
+- **Paid from a card** says: *Borrowed until you pay the bill due 25 Nov. Pay that whole bill and it's free; pay less, even the minimum, and interest of about 3.5% a month plus GST starts.*
 - **Each card payment shows a warning:** "Borrowed ₹1,000 on HDFC card… next bill so far ₹3,000", plus "this lands on next month's salary" when you're not in the green.
 - **Plan this payment**, with each option's real cost:
   - **Full:** no interest. Suggested whenever you're not in the red, because the money was kept aside.
   - **Minimum:** next month's interest, and how many months and how much interest it takes to clear at the minimum. Labelled "This is how the card trap starts."
   - **Part:** pay what you can.
   - **Convert to EMI:** enter the bank's amount, rate (22% default), months (3, 6, 9, 12, 18 or 24) and processing fee. The app compares it with carrying the same amount on the card ("EMI saves ₹1,563"). **Suggested only when you can't pay in full and it's clearly cheaper**, always with "An EMI is still a loan". After converting, it moves to Debts and every month's plan, **starting with the next bill**; the fee is charged on the card.
-- **Overdue bill:** shows the monthly interest it now costs, with *Move to loans* for a payoff plan.
 - Spending recorded before a card is added (from SMS) links to it automatically once you add it.
 
 ## 11. Debts tab: loans and payoff plans

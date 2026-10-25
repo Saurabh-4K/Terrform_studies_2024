@@ -162,6 +162,7 @@
     payBill: null,
     cardForm: null,
     cardPlan: null,
+    cardAnswer: null,
     cardRemove: null,
     paydayOpen: false,
     smsBusy: false,
@@ -2286,23 +2287,17 @@
 
   function paidFromOptions(selected) {
     return '<option value="account"' + (!selected || selected === 'account' ? ' selected' : '') + '>' + tr('Bank account / UPI / debit card (paid from my money)') + '</option>' +
-      (state.cards || []).map((c) => {
-        const rate = Number(c.rate) || 42;
-        return '<option value="' + esc(c.id) + '"' + (selected === c.id ? ' selected' : '') + '>' + cardLabel(c) + ' ' +
-          tr(rate >= 15 ? '(borrows from next paycheck @ {rate}%)' : '(credit card @ {rate}%)', { rate }) + '</option>';
-      }).join('');
+      (state.cards || []).map((c) => '<option value="' + esc(c.id) + '"' + (selected === c.id ? ' selected' : '') + '>' + cardLabel(c) + ' ' +
+        tr('(credit card: free only if the whole bill is paid on time)') + '</option>').join('');
   }
 
   // The red line under a "Paid from" choice when it's a card.
   function borrowWarning(cardId) {
     const c = (state.cards || []).find((x) => x.id === cardId);
     if (!c) return '';
-    const rate = Number(c.rate) || 42;
     // Today's spending goes on the next statement, not the one already issued.
     const due = Core.dueAfter(c, Core.statementOn(c, Core.addMonths(today(), 1)));
-    return rate >= 15
-      ? tr('Borrowed money at {rate}% a year. Counted as spent today; it’s on the bill due {date}.', { rate, date: fmtDate(due) })
-      : tr('On {card} at {rate}% a year. Counted as spent today.', { card: esc(c.name), rate });
+    return tr('Borrowed until you pay the bill due {date}. Counted as spent today. Pay that whole bill and it’s free; pay less, even the minimum, and interest of about 3.5% a month plus GST starts.', { date: fmtDate(due) });
   }
 
   function cardsSection() {
@@ -2323,19 +2318,15 @@
       '<div class="bar"><span class="' + (st.usedPct > 50 ? 'bad' : st.usedPct > 30 ? 'warn' : '') + '" style="width:' + pct + '%"></span></div>' +
       (st.usedPct > 30 ? '<span class="hint">' + tr('Keeping this under 30% of the limit helps your credit score.') + '</span>' : '') + '</div>';
     let html = '<div class="card-item"><div class="check-top"><div class="grow"><div class="title">' + cardLabel(c) + '</div>' +
-      '<div class="meta">' + tr('Statement on the {statement}, due on the {due} · {rate}% a year', { statement: ordinal(c.statementDay), due: ordinal(c.dueDay), rate: c.rate || 42 }) + '</div></div>' +
+      '<div class="meta">' + tr('Statement on the {statement}, due on the {due}', { statement: ordinal(c.statementDay), due: ordinal(c.dueDay) }) + '</div></div>' +
       '<button class="ghost" data-action="card-edit" data-id="' + esc(c.id) + '">' + tr('Edit') + '</button></div>' + meter +
       '<div class="summary">' +
       '<div class="line"><span>' + (st.statementDate ? tr('Bill from {date}', { date: fmtDate(st.statementDate) }) : tr('Bill')) + '</span><span>' + inr(st.total) + '</span></div>' +
       (st.paidSince ? '<div class="line"><span>' + tr('Paid so far') + '</span><span class="good">' + inr(st.paidSince) + '</span></div>' : '') +
       '<div class="line total"><span>' + (st.remaining ? tr('To pay by {date}', { date: fmtDate(st.due) }) : tr('Bill paid')) + '</span><span' + (st.overdue ? ' class="bad"' : '') + '>' + inr(st.remaining) + '</span></div>' +
       '<div class="line"><span>' + tr('Spent since (next bill)') + '</span><span>' + inr(st.unbilled) + '</span></div></div>';
-    if (st.overdue) {
-      const interest = Math.round((st.remaining * (Number(c.rate) || 42)) / 1200);
-      html += '<div class="callout bad"><b>' + tr('{amount} wasn’t paid by {date}.', { amount: inr(st.remaining), date: fmtDate(st.due) }) + '</b>' +
-        '<span class="hint">' + tr('It now costs about {amount} interest a month, and new spending stops being interest-free. Pay it now, or move it to your loans so the payoff plan tracks it.', { amount: inr(interest) }) + '</span>' +
-        '<div class="row"><button class="primary" data-action="card-plan" data-id="' + esc(c.id) + '">' + tr('Plan payment') + '</button>' +
-        '<button data-action="card-revolve" data-id="' + esc(c.id) + '">' + tr('Move to loans') + '</button></div></div>';
+    if (st.remaining && st.daysToDue <= 0 && c.answered !== st.due) {
+      html += cardDueQuestion(c, st);
     } else if (st.remaining) {
       html += '<div class="row"><button class="primary" data-action="card-plan" data-id="' + esc(c.id) + '">' + tr(ui.cardPlan && ui.cardPlan.cardId === c.id ? 'Hide payment plan' : 'Plan this payment') + '</button></div>';
     }
@@ -2416,7 +2407,6 @@
       f('cf-name', 'Name', 'text', c.name || '', ' placeholder="' + tr('HDFC card') + '"') +
       f('cf-last4', 'Last 4 digits', 'text', c.last4 || '', ' inputmode="numeric" maxlength="4" placeholder="1234"') +
       f('cf-limit', 'Credit limit (₹)', 'number', c.limit || '') +
-      f('cf-rate', 'Interest (% a year)', 'number', c.rate || 42) +
       f('cf-stmt', 'Statement day', 'number', c.statementDay || '', ' max="31" placeholder="5"') +
       f('cf-due', 'Due day', 'number', c.dueDay || '', ' max="31" placeholder="25"') +
       '</div><p class="hint">' + tr('Statement day and due day are on your card statement or in your bank app.') + '</p>' +
@@ -2437,7 +2427,7 @@
     const last4 = v('cf-last4').replace(/\D/g, '');
     const day = (x) => Math.min(31, Math.max(1, Math.round(Number(x) || 0)));
     ui.cardForm.draft = {};
-    ['cf-name', 'cf-last4', 'cf-limit', 'cf-rate', 'cf-stmt', 'cf-due', 'cf-owed', 'cf-owed-due', 'cf-unbilled'].forEach((id) => {
+    ['cf-name', 'cf-last4', 'cf-limit', 'cf-stmt', 'cf-due', 'cf-owed', 'cf-owed-due', 'cf-unbilled'].forEach((id) => {
       if (document.getElementById(id)) ui.cardForm.draft[id] = v(id);
     });
     const fail = (id, msg) => { ui.cardForm.error = msg; ui.cardForm.bad = id; ui.cardForm.focus = true; };
@@ -2446,7 +2436,7 @@
     if (!Number(v('cf-stmt'))) return fail('cf-stmt', tr('Enter the statement day and due day from your card statement.'));
     if (!Number(v('cf-due'))) return fail('cf-due', tr('Enter the statement day and due day from your card statement.'));
     if ((state.cards || []).some((c) => c.last4 === last4 && c.id !== ui.cardForm.id)) return fail('cf-last4', tr('You already have a card ending {last4}.', { last4 }));
-    const fields = { name, last4, limit: Math.max(0, Number(v('cf-limit')) || 0), rate: Number(v('cf-rate')) || 42, statementDay: day(v('cf-stmt')), dueDay: day(v('cf-due')) };
+    const fields = { name, last4, limit: Math.max(0, Number(v('cf-limit')) || 0), statementDay: day(v('cf-stmt')), dueDay: day(v('cf-due')) };
     state.cards = state.cards || [];
     let card = ui.cardForm.id ? state.cards.find((c) => c.id === ui.cardForm.id) : null;
     if (card) Object.assign(card, fields);
@@ -2481,6 +2471,21 @@
   }
 
   // Card bills due within a week, or overdue, and this cycle's card spending.
+  // On the due date (or after): did the bill get paid?
+  function cardDueQuestion(c, st) {
+    const v = { card: cardLabel(c), amount: inr(st.remaining), date: fmtDate(st.due), min: inr(st.minLeft), fee: inr(Math.round(Core.cardLateFee(st.total) * 1.18)) };
+    const part = ui.cardAnswer === c.id;
+    return '<div class="callout ' + (st.overdue ? 'bad' : 'warn') + ' card-due"><b>' + tr(st.daysToDue === 0 ? '{card} bill of {amount} is due today. Did you pay it?' : '{card} bill of {amount} was due {date}. Did you pay it?', v) + '</b>' +
+      (part
+        ? '<div class="row"><label class="field grow-field" for="card-paid"><span>' + tr('How much did you pay? (₹)') + '</span><input id="card-paid" type="number" inputmode="numeric" min="1" max="' + st.remaining + '"></label></div>' +
+          '<div class="row"><button class="primary" data-action="card-answer" data-answer="part" data-id="' + esc(c.id) + '">' + tr('Save') + '</button><button class="ghost" data-action="card-answer-back">' + tr('Back') + '</button></div>'
+        : '<div class="card-due-grid"><button class="primary" data-action="card-answer" data-answer="full" data-id="' + esc(c.id) + '">' + tr('Paid in full') + '</button>' +
+          '<button data-action="card-answer-part" data-id="' + esc(c.id) + '">' + tr('Paid part') + '</button>' +
+          '<button data-action="card-answer" data-answer="missed" data-id="' + esc(c.id) + '">' + tr('Missed it') + '</button>' +
+          '<button data-action="card-answer-emi" data-id="' + esc(c.id) + '">' + tr('Converted to EMI') + '</button></div>') +
+      '<span class="hint">' + tr('Paid in full: no interest. Anything less: interest of about 3.5% a month plus GST on what’s left. Less than the minimum ({min}) also adds a late fee of about {fee}.', v) + '</span></div>';
+  }
+
   function cardHomeNotes(cyc) {
     const t = today();
     const cards = state.cards || [];
@@ -2488,12 +2493,11 @@
     let html = '';
     cards.forEach((c) => {
       const st = Core.cardStatus(state, c, t);
-      if (st.remaining > 0 && (st.overdue || st.daysToDue <= 7)) {
+      if (st.remaining > 0 && st.daysToDue <= 0 && c.answered !== st.due) html += cardDueQuestion(c, st);
+      else if (st.remaining > 0 && st.daysToDue <= 7 && st.daysToDue > 0) {
         const v = { card: cardLabel(c), amount: inr(st.remaining), date: fmtDate(st.due), days: plural(st.daysToDue, 'day') };
-        html += '<div class="callout ' + (st.overdue ? 'bad' : 'warn') + '"><b>' + tr(st.overdue ? '{card} bill: {amount} was due {date}'
-          : st.daysToDue === 0 ? '{card} bill: {amount} due today' : st.daysToDue === 1 ? '{card} bill: {amount} due tomorrow' : '{card} bill: {amount} due in {days}', v) + '</b>' +
-          '<span class="hint">' + tr('Pay it in full to avoid interest. The money was kept aside when you spent it.') + '</span>' +
-          '<div><button class="primary" data-action="tab" data-tab="debts">' + tr('Plan payment') + '</button></div></div>';
+        html += '<div class="callout warn"><b>' + tr(st.daysToDue === 1 ? '{card} bill: {amount} due tomorrow' : '{card} bill: {amount} due in {days}', v) + '</b>' +
+          '<span class="hint">' + tr('Pay the whole {amount} by {date} and it costs nothing. Paying less, even the minimum, starts interest of about 3.5% a month plus GST. The money was kept aside when you spent it.', v) + '</span></div>';
       }
     });
     const onCards = state.transactions.filter((x) => Core.isFlexible(x) && x.paidFrom && x.paidFrom !== 'account' && Core.inCycle(x.date, cyc))
@@ -3018,6 +3022,30 @@
         if (!res) return;
         ui.cardPlan = null; save();
         toast(tr('{amount} moved to an EMI: {n} × {emi} a month, in your plan from next month.', { amount: inr(amount), n: res.debt.months, emi: inr(res.debt.minPayment) }));
+        break;
+      }
+      case 'card-answer-part': ui.cardAnswer = btn.dataset.id; break;
+      case 'card-answer-back': ui.cardAnswer = null; break;
+      case 'card-answer-emi': {
+        const c = state.cards.find((x) => x.id === btn.dataset.id);
+        ui.cardPlan = { cardId: c.id, emi: { rate: 16, months: 6, fee: 0 }, emiAmount: 0 };
+        setTab('debts');
+        const plan = document.getElementById('card-plan');
+        if (plan) plan.scrollIntoView({ block: 'start' });
+        return;
+      }
+      case 'card-answer': {
+        const id = btn.dataset.id;
+        const c = state.cards.find((x) => x.id === id);
+        const paid = btn.dataset.answer === 'part' ? Number((document.getElementById('card-paid') || {}).value) || 0 : 0;
+        if (btn.dataset.answer === 'part' && !paid) { toast('Enter how much you paid'); return; }
+        const res = Core.answerCardDue(state, id, btn.dataset.answer, paid, t);
+        ui.cardAnswer = null;
+        save();
+        if (!res) break;
+        if (res.kind === 'full') celebrate(tr('{card} bill paid in full. No interest.', { card: c.name }));
+        else toast(tr('{amount} moved to Debts as {name}: about {monthly} a month in interest with GST', { amount: inr(res.rest), name: res.debt.name, monthly: inr(res.monthly) }) +
+          (res.fee ? ' ' + tr('and a late fee of about {fee}.', { fee: inr(res.fee) }) : '.'));
         break;
       }
       case 'card-revolve': {
