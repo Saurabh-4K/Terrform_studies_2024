@@ -1074,4 +1074,5 @@
   "Find payments": "भुगतान ढूँढें",
   "Your sorting is saved. Continue any time from the Spend tab.": "आपका छाँटना सेव है. खर्च टैब से कभी भी जारी रखें.",
   "Cash": "नकद",
+  "Statement day and due day are on your card statement or in your bank app.": "स्टेटमेंट दिन और ड्यू दिन आपके कार्ड स्टेटमेंट या बैंक ऐप में होते हैं.",
 };

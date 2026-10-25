@@ -1074,4 +1074,5 @@
   "Find payments": "देयके शोधा",
   "Your sorting is saved. Continue any time from the Spend tab.": "तुमचे लावलेले जतन झाले. खर्च टॅबमधून कधीही पुढे करा.",
   "Cash": "रोख",
+  "Statement day and due day are on your card statement or in your bank app.": "स्टेटमेंट दिवस आणि देय दिवस तुमच्या कार्ड स्टेटमेंटवर किंवा बँक ॲपमध्ये असतात.",
 };

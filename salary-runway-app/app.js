@@ -480,6 +480,9 @@
         '<button class="primary" data-action="start-own">' + tr('Start with my numbers') + '</button></div>'
       : '';
     const views = { home: viewHome, spend: viewSpend, plan: viewPlan, debts: viewDebts, grow: viewGrow };
+    // The field being typed in, so a redraw can give it back its focus.
+    const active = document.activeElement;
+    const keep = active && active.id && /^(INPUT|SELECT|TEXTAREA)$/.test(active.tagName) ? active.id : null;
     app.innerHTML =
       '<div class="shell">' +
       '<header class="topbar"><div class="brand">' +
@@ -499,6 +502,14 @@
       (tab !== 'spend' && state.settings.salary ? '<button class="fab" data-action="fab-add" aria-label="' + tr('Add an expense') + '"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></svg></button>' : '') +
       resetModal() + helpModal() + explainModal() + borrowModal() + reportModal();
     if (tab === 'home') { drawRunway(); animateRunway(); }
+    if (ui.cardForm && ui.cardForm.focus && ui.cardForm.bad && document.getElementById(ui.cardForm.bad)) {
+      ui.cardForm.focus = false;
+      const bad = document.getElementById(ui.cardForm.bad);
+      bad.scrollIntoView({ block: 'center' });
+      bad.focus({ preventScroll: true });
+    } else if (keep && document.getElementById(keep)) {
+      try { document.getElementById(keep).focus({ preventScroll: true }); } catch (e) { /* not focusable */ }
+    }
     if (ui.reset) {
       const first = document.querySelector('#reset-card input, #reset-card button.primary');
       if (first) first.focus();
@@ -1059,11 +1070,6 @@
       '<div class="round-grid" role="img" aria-label="' + esc(tr('{won} days won, {over} over', { won, over })) + '">' + tiles.join('') + '</div>' +
       '<div class="viz-legend"><span><i class="round-key won"></i>' + tr('Won {n}', { n: won }) + '</span><span><i class="round-key over"></i>' + tr('Over {n}', { n: over }) + '</span><span><i class="round-key today"></i>' + tr('Today') + '</span></div>' +
       '<p class="round-borrowed ' + (b.total ? 'bad' : 'good') + '">' + tr('Borrowed this round: {amount}', { amount: inr(b.total) }) + (b.total ? '' : ' ✓') + '</p>' + recover + '</section>';
-  }
-
-  function monthYear(iso) {
-    const d = Core.parseISO(iso);
-    return monthName(d.getMonth()) + ' ' + d.getFullYear();
   }
 
   // Two debt-free dates: no change (minimums only) and with the plan.
@@ -2115,9 +2121,12 @@
   function listField(list, item, field, name, type, extra) {
     const id = list + '-' + item.id + '-' + field;
     // Built-in category names are shown in the current language.
-    const value = list === 'budgets' && field === 'name' ? label(item[field]) : item[field];
+    let value = list === 'budgets' && field === 'name' ? label(item[field]) : item[field];
+    // An empty number box, not a 0 to delete first: typing 14 next to a 0 made 140.
+    const blank = type === 'number' && !Number(value);
+    if (blank) value = '';
     return '<label class="field" for="' + id + '"><span>' + tr(name) + '</span><input id="' + id + '" type="' + type + '"' +
-      (type === 'number' ? ' inputmode="numeric" min="0" step="any"' : '') +
+      (type === 'number' ? ' inputmode="numeric" min="0" step="any"' + (blank && !/placeholder=/.test(extra || '') ? ' placeholder="0"' : '') : '') +
       ' data-list="' + list + '" data-id="' + esc(item.id) + '" data-field="' + field + '" value="' + esc(value) + '"' + (extra || '') + '></label>';
   }
 
@@ -2397,8 +2406,11 @@
 
   function cardForm() {
     const c = ui.cardForm.id ? state.cards.find((x) => x.id === ui.cardForm.id) : {};
+    // What was typed stays when a field needs fixing.
+    const draft = ui.cardForm.draft || {};
     const f = (id, name, type, value, extra) => '<label class="field" for="' + id + '"><span>' + tr(name) + '</span><input id="' + id + '" type="' + type + '"' +
-      (type === 'number' ? ' inputmode="numeric" min="0"' : '') + ' value="' + esc(value == null ? '' : value) + '"' + (extra || '') + '></label>';
+      (type === 'number' ? ' inputmode="numeric" min="0"' : '') + ' value="' + esc(draft[id] != null ? draft[id] : value == null ? '' : value) + '"' +
+      (ui.cardForm.bad === id ? ' aria-invalid="true" aria-describedby="cf-error"' : '') + (extra || '') + '></label>';
     return '<div class="card-form"><h3>' + (c.id ? tr('Edit {card}', { card: cardLabel(c) }) : tr('Add a credit card')) + '</h3>' +
       '<div class="form-grid">' +
       f('cf-name', 'Name', 'text', c.name || '', ' placeholder="' + tr('HDFC card') + '"') +
@@ -2407,13 +2419,13 @@
       f('cf-rate', 'Interest (% a year)', 'number', c.rate || 42) +
       f('cf-stmt', 'Statement day', 'number', c.statementDay || '', ' max="31" placeholder="5"') +
       f('cf-due', 'Due day', 'number', c.dueDay || '', ' max="31" placeholder="25"') +
-      '</div>' +
+      '</div><p class="hint">' + tr('Statement day and due day are on your card statement or in your bank app.') + '</p>' +
       (c.id ? '' :
         '<p class="hint">' + tr('What you owe right now, from your card app or last statement:') + '</p><div class="form-grid">' +
         f('cf-owed', 'Amount due on last statement (₹)', 'number', '') +
         f('cf-owed-due', 'Its due date', 'date', '') +
         f('cf-unbilled', 'Spent since that statement (₹)', 'number', '') + '</div>') +
-      (ui.cardForm.error ? '<p class="bad">' + esc(ui.cardForm.error) + '</p>' : '') +
+      (ui.cardForm.error ? '<p class="bad" id="cf-error" role="alert">' + esc(ui.cardForm.error) + '</p>' : '') +
       '<div class="row"><button class="primary" data-action="card-save">' + tr(c.id ? 'Save' : 'Add card') + '</button>' +
       '<button class="ghost" data-action="card-cancel">' + tr('Cancel') + '</button>' +
       (c.id ? '<span class="spacer"></span><button class="danger" data-action="card-remove" data-id="' + esc(c.id) + '">' + tr('Remove card') + '</button>' : '') + '</div></div>';
@@ -2424,10 +2436,16 @@
     const name = v('cf-name').trim();
     const last4 = v('cf-last4').replace(/\D/g, '');
     const day = (x) => Math.min(31, Math.max(1, Math.round(Number(x) || 0)));
-    if (!name) { ui.cardForm.error = tr('Give the card a name, like “HDFC card”.'); return; }
-    if (last4.length !== 4) { ui.cardForm.error = tr('Enter the last 4 digits of the card number, so bank SMS can be matched to it.'); return; }
-    if (!Number(v('cf-stmt')) || !Number(v('cf-due'))) { ui.cardForm.error = tr('Enter the statement day and due day from your card statement.'); return; }
-    if ((state.cards || []).some((c) => c.last4 === last4 && c.id !== ui.cardForm.id)) { ui.cardForm.error = tr('You already have a card ending {last4}.', { last4 }); return; }
+    ui.cardForm.draft = {};
+    ['cf-name', 'cf-last4', 'cf-limit', 'cf-rate', 'cf-stmt', 'cf-due', 'cf-owed', 'cf-owed-due', 'cf-unbilled'].forEach((id) => {
+      if (document.getElementById(id)) ui.cardForm.draft[id] = v(id);
+    });
+    const fail = (id, msg) => { ui.cardForm.error = msg; ui.cardForm.bad = id; ui.cardForm.focus = true; };
+    if (!name) return fail('cf-name', tr('Give the card a name, like “HDFC card”.'));
+    if (last4.length !== 4) return fail('cf-last4', tr('Enter the last 4 digits of the card number, so bank SMS can be matched to it.'));
+    if (!Number(v('cf-stmt'))) return fail('cf-stmt', tr('Enter the statement day and due day from your card statement.'));
+    if (!Number(v('cf-due'))) return fail('cf-due', tr('Enter the statement day and due day from your card statement.'));
+    if ((state.cards || []).some((c) => c.last4 === last4 && c.id !== ui.cardForm.id)) return fail('cf-last4', tr('You already have a card ending {last4}.', { last4 }));
     const fields = { name, last4, limit: Math.max(0, Number(v('cf-limit')) || 0), rate: Number(v('cf-rate')) || 42, statementDay: day(v('cf-stmt')), dueDay: day(v('cf-due')) };
     state.cards = state.cards || [];
     let card = ui.cardForm.id ? state.cards.find((c) => c.id === ui.cardForm.id) : null;
@@ -2733,8 +2751,8 @@
 
   function listDefaults(list) {
     switch (list) {
-      case 'fixed': return { id: uid(), name: '', amount: 0, dueDay: 1 };
-      case 'debts': return { id: uid(), name: '', balance: 0, rate: 0, minPayment: 0, dueDay: 1 };
+      case 'fixed': return { id: uid(), name: '', amount: 0, dueDay: '' };
+      case 'debts': return { id: uid(), name: '', balance: 0, rate: 0, minPayment: 0, dueDay: '' };
       case 'sinking': return { id: uid(), name: '', amount: 0, month: 1, saved: 0 };
       case 'bills': return { id: uid(), name: '', estimate: 0, everyMonths: 1, nextDue: today(), added: today() };
       default: return { id: uid(), name: '', amount: 0, auto: true };
@@ -3188,7 +3206,14 @@
     return d + '-' + m + '-' + y.slice(2);
   }
 
-  document.addEventListener('change', (ev) => {
+  /*
+   * A change is handled a moment later, once the tap that caused it has
+   * focused the next field, so the redraw keeps that field focused (and
+   * the phone's keyboard open) instead of losing it.
+   */
+  document.addEventListener('change', (ev) => setTimeout(() => onChange(ev)));
+
+  function onChange(ev) {
     const el = ev.target;
     if (el.id === 'sounds-on') {
       state.settings.sounds = el.checked;
@@ -3279,7 +3304,7 @@
     if (el.dataset.smsCheck !== undefined) { ui.smsRows[Number(el.dataset.smsCheck)].checked = el.checked; rerenderKeepScroll(); return; }
     if (el.dataset.smsCat !== undefined) { ui.smsRows[Number(el.dataset.smsCat)].parsed.category = el.value; return; }
     if (el.dataset.em === 'type') { ui.emergency.type = el.value; }
-  });
+  }
 
   document.addEventListener('input', (ev) => {
     const el = ev.target;

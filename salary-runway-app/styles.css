@@ -12,6 +12,7 @@
   --ink: #0c3b3d;
   --muted: #4b6b6d;
   --line: #ddd5bd;
+  --field-line: #8f856a;
   --accent: #0c3b3d;
   --accent-ink: #f5f1e3;
   --accent-soft: rgba(12, 59, 61, 0.09);
@@ -41,6 +42,7 @@
     --ink: #f2eee0;
     --muted: #a9bdba;
     --line: #1f4446;
+    --field-line: #5b8a8b;
     --accent: #79e3c3;
     --accent-ink: #072628;
     --accent-soft: rgba(121, 227, 195, 0.14);
@@ -65,6 +67,7 @@
   --ink: #f2eee0;
   --muted: #a9bdba;
   --line: #1f4446;
+  --field-line: #5b8a8b;
   --accent: #79e3c3;
   --accent-ink: #072628;
   --accent-soft: rgba(121, 227, 195, 0.14);
@@ -215,12 +218,13 @@ input[type="text"], input[type="number"], input[type="date"], select, textarea {
   width: 100%;
   min-width: 0;
   background: var(--bg);
-  border: 1px solid var(--line);
+  border: 1px solid var(--field-line);
   border-radius: 10px;
   padding: 9px 11px;
   font-size: 0.95rem;
   color: var(--ink);
 }
+input[aria-invalid="true"], select[aria-invalid="true"] { border: 2px solid var(--bad); }
 textarea { min-height: 110px; resize: vertical; line-height: 1.4; font-size: 0.85rem; }
 input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-visible, a:focus-visible, summary:focus-visible {
   outline: 2px solid var(--accent);
