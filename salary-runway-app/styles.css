@@ -1041,3 +1041,12 @@ details.prep ul { margin: 6px 0 0; padding-left: 20px; color: var(--muted); font
 .tx-row .tx-sub select { font-size: 0.8rem; padding: 2px 22px 2px 8px; min-height: 0; height: auto; width: auto; max-width: 160px; border-radius: 8px; background-position: right 6px center; }
 .tx-row .tx-del { border: 0; background: none; box-shadow: none; padding: 4px; min-height: 0; min-width: 0; width: auto; height: auto; font-size: 0.85rem; color: var(--muted); }
 .tx-sub > * { flex: none; }
+
+/* Edit a payment: tap its name. */
+button.tx-title { display: flex; align-items: center; gap: 6px; background: none; border: 0; box-shadow: none; padding: 0; min-height: 0; font: inherit; font-weight: 650; color: var(--ink); text-align: left; cursor: pointer; max-width: 100%; }
+.tx-pen { width: 13px; height: 13px; flex: none; fill: none; stroke: var(--muted); stroke-width: 2; stroke-linejoin: round; }
+.edit-card { gap: 12px; }
+.edit-head { display: flex; align-items: center; gap: 12px; }
+/* A toast with an Undo button. */
+.toast.with-action { display: flex; align-items: center; gap: 14px; }
+.toast.with-action button { background: none; border: 0; box-shadow: none; min-height: 0; padding: 4px 6px; font: inherit; font-weight: 800; color: var(--mint); text-transform: uppercase; letter-spacing: 0.04em; }

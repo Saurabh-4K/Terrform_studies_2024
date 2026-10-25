@@ -241,6 +241,7 @@
 
   // ---------- app lock: the data on this phone, encrypted ----------
 
+  let saveCount = 0; // every save counts up, so an undo knows if anything changed since
   let dataKey = null; // AES key for the data, in memory only while unlocked
   let sealedBlob = null; // the encrypted data, before it's opened
   let locked = false; // the lock screen is showing
@@ -281,8 +282,10 @@
     return s;
   }
 
-  function save() {
+  // quiet: the app's own bookkeeping (today's limit, loan EMIs), which shouldn't stop an undo.
+  function save(quiet) {
     if (!state) return;
+    if (!quiet) saveCount++;
     if (lockCfg().on) {
       // Locked: nothing to save. Unlocked: encrypt, one save after another so the newest wins.
       if (!dataKey) return;
@@ -594,7 +597,7 @@
       ).join('') +
       '</div></nav>' +
       (tab !== 'spend' && state.settings.salary ? '<button class="fab" data-action="fab-add" aria-label="' + tr('Add an expense') + '"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></svg></button>' : '') +
-      resetModal() + helpModal() + explainModal() + borrowModal() + reportModal() + onboardModal() + tourModal();
+      resetModal() + helpModal() + explainModal() + borrowModal() + reportModal() + onboardModal() + tourModal() + editModal();
     if (tab === 'home') { drawRunway(); animateRunway(); }
     if (document.getElementById('onboard-card') && ui.onboardFocus) {
       ui.onboardFocus = false;
@@ -611,6 +614,11 @@
     if (ui.reset) {
       const first = document.querySelector('#reset-card input, #reset-card button.primary');
       if (first) first.focus();
+    }
+    if (document.getElementById('edit-card') && ui.editFocus) {
+      ui.editFocus = false;
+      const first = document.querySelector('#edit-card input');
+      if (first) first.focus(); else document.getElementById('edit-card').focus();
     }
     if (document.getElementById('report-card') && !ui.reportFocused) {
       ui.reportFocused = true;
@@ -1727,7 +1735,7 @@
       state.days[t] = Object.assign(day, { allowance });
       // Keep about two rounds of days, for the round board.
       Object.keys(state.days).filter((d) => d < Core.addDays(t, -70)).forEach((d) => { delete state.days[d]; });
-      save();
+      save(true);
     }
   }
 
@@ -2622,6 +2630,112 @@
       ]);
   }
 
+  // ---------- edit a payment, and undo ----------
+
+  // Bill and card payments are tied to the bill's learned amount or the card's statement: only their note can change.
+  function txLocked(x) {
+    return Core.isBillPayment(x) || Core.isCardTransfer(x);
+  }
+
+  function editModal() {
+    const x = ui.editTx && state.transactions.find((t) => t.id === ui.editTx);
+    if (!x) return '';
+    const t = today();
+    const isIn = Core.isIncome(x);
+    const saved = Core.isMove(x);
+    const locked = txLocked(x);
+    const flex = !isIn && !saved && !locked;
+    const field = (id, labelText, input) => '<label class="field" for="' + id + '"><span>' + tr(labelText) + '</span>' + input + '</label>';
+    return '<div class="reset-modal-overlay edit-overlay" role="presentation"><div class="reset-modal-card edit-card" role="dialog" aria-modal="true" aria-labelledby="edit-title" id="edit-card" tabindex="-1">' +
+      '<div class="edit-head">' + catIcon(x) + '<h2 id="edit-title">' + tr(isIn ? 'Edit money received' : saved ? 'Edit money saved' : 'Edit payment') + '</h2></div>' +
+      (locked ? '<p class="hint">' + tr('This is a bill or card payment, so its amount and date are tied to the bill. To change them, delete it and record it again.') + '</p>' : '') +
+      '<div class="form-grid">' +
+      (locked ? '' : field('edit-amount', 'Amount (₹)', '<input id="edit-amount" type="number" inputmode="decimal" min="1" step="1" value="' + esc(x.amount) + '">') +
+        field('edit-date', 'Date', '<input id="edit-date" type="date" max="' + t + '" value="' + esc(x.date) + '">')) +
+      field('edit-note', isIn ? 'From' : 'Where / what', '<input id="edit-note" type="text" value="' + esc(x.note || '') + '">') +
+      (flex || isIn ? field('edit-cat', 'Category', '<select id="edit-cat">' + (isIn ? incomeCategoryOptions(x.category) : categoryOptions(x.category)) + '</select>') : '') +
+      (flex && (state.cards || []).length ? '<label class="field wide" for="edit-from"><span>' + tr('Paid from') + '</span><select id="edit-from">' + paidFromOptions(x.paidFrom || 'account') + '</select></label>' : '') +
+      '</div>' +
+      (ui.editError ? '<p class="bad" role="alert">' + ui.editError + '</p>' : '') +
+      '<div class="row"><button class="primary" data-action="edit-save">' + tr('Save changes') + '</button><button class="ghost" data-action="edit-cancel">' + tr('Cancel') + '</button></div>' +
+      '</div></div>';
+  }
+
+  // Applies the edit and keeps everything tied to the payment right: a fund or loan it went to, money taken from the fund.
+  function saveEdit() {
+    const x = state.transactions.find((t) => t.id === ui.editTx);
+    if (!x) { ui.editTx = null; render(); return; }
+    const val = (id) => { const el = document.getElementById(id); return el ? el.value : null; };
+    const before = JSON.stringify(state);
+    const note = (val('edit-note') || '').trim();
+    if (!txLocked(x)) {
+      const amount = Math.round(Number(val('edit-amount')));
+      const date = val('edit-date');
+      if (!(amount > 0)) { ui.editError = tr('Enter an amount above ₹0.'); render(); return; }
+      if (!date || date > today()) { ui.editError = tr('Pick a date up to today.'); render(); return; }
+      if (Core.isIncome(x) || Core.isMove(x)) {
+        // Take back what it did to a fund or loan, change it, then do it again with the new amount.
+        const use = x.useFor;
+        const debtId = x.debtId;
+        if (use) undoIncomeUse(x);
+        x.amount = amount;
+        x.date = date;
+        if (use) setIncomeUse(x, use, debtId);
+      } else {
+        if (x.fromFund) state.savings.emergencyBalance = (Number(state.savings.emergencyBalance) || 0) + x.amount - amount;
+        x.amount = amount;
+        x.date = date;
+      }
+    }
+    x.note = note;
+    const cat = val('edit-cat');
+    if (cat && cat !== x.category) {
+      x.category = cat;
+      if (Core.isIncome(x)) {
+        x.borrowed = cat === LOAN_CATEGORY;
+        if (x.borrowed && !x.useFor) x.useFor = 'spend';
+      } else if (cat === 'Savings' && Core.isFlexible(x)) {
+        x.kind = 'move';
+        x.useFor = null;
+      } else {
+        const key = Core.normalizeMerchant(x.note);
+        if (key) state.merchantRules[key] = cat;
+      }
+    }
+    const from = val('edit-from');
+    if (from !== null) { if (from === 'account') delete x.paidFrom; else x.paidFrom = from; }
+    x.needsReview = Core.isMove(x) && !x.useFor;
+    ui.editTx = null; ui.editError = '';
+    save();
+    rerenderKeepScroll();
+    offerUndo('Saved', before);
+  }
+
+  // Undo: the state just before a change, usable only while nothing else has changed since.
+  function offerUndo(msg, before) {
+    ui.undo = { snap: before, at: saveCount };
+    const old = document.querySelector('.toast');
+    if (old) old.remove();
+    const el = document.createElement('div');
+    el.className = 'toast with-action';
+    el.setAttribute('role', 'status');
+    el.innerHTML = '<span>' + esc(tr(msg)) + '</span><button data-action="undo">' + tr('Undo') + '</button>';
+    document.body.appendChild(el);
+    setTimeout(() => { el.remove(); if (ui.undo && ui.undo.snap === before) ui.undo = null; }, 6000);
+  }
+
+  function undoLast() {
+    const u = ui.undo;
+    ui.undo = null;
+    const old = document.querySelector('.toast');
+    if (old) old.remove();
+    if (!u || u.at !== saveCount) { toast(tr('Too late to undo: something else changed since.')); return; }
+    state = migrate(Object.assign(emptyState(), JSON.parse(u.snap)));
+    save();
+    rerenderKeepScroll();
+    toast(tr('Undone'));
+  }
+
   // ---------- category icons, weekly chart, payments, calendar ----------
 
   // A solid glyph in a soft circle for each category. Never the warning colours (amber, coral): those stay for warnings.
@@ -2676,7 +2790,8 @@
       ? ' <button class="link" data-action="income-change" data-id="' + esc(x.id) + '">' + tr(x.useFor ? INCOME_USE_LABELS[x.useFor] : 'Choose what it does') + '</button>'
       : edit && saved && x.useFor ? ' <button class="link" data-action="saved-change" data-id="' + esc(x.id) + '">' + tr('Change') + '</button>' : '';
     return '<div class="tx-row' + (x.needsReview ? ' needs-check' : '') + '">' + catIcon(x) +
-      '<div class="tx-main"><div class="tx-title">' + txTitle(x) + (x.needsReview ? ' <span class="chip chip-check">' + tr('Check') + '</span>' : '') + '</div>' +
+      '<div class="tx-main"><button class="tx-title" data-action="tx-edit" data-id="' + esc(x.id) + '" aria-label="' + esc(tr('Edit {name}', { name: txTitle(x) })) + '">' + txTitle(x) +
+      (x.needsReview ? ' <span class="chip chip-check">' + tr('Check') + '</span>' : '') + '<svg class="tx-pen" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4l10.5-10.5-4-4L4 16z"/></svg></button>' +
       '<div class="tx-sub">' + sub + extra + '</div></div>' +
       '<div class="tx-side"><span class="tx-amt' + (isIn || saved ? ' good' : '') + '">' + (isIn ? '+' : '') + inr(x.amount) + '</span>' +
       (edit ? '<button class="icon tx-del" data-action="tx-delete" data-id="' + esc(x.id) + '" aria-label="' + tr('Delete') + '">✕</button>' : '') + '</div></div>';
@@ -3449,7 +3564,7 @@
       const j = Core.debtJourney(state, t);
       if (j && j.best > (Number(state.journey.best) || 0)) state.journey.best = j.best;
     }
-    if (JSON.stringify([state.debts, state.journey, state.rounds]) !== before) save();
+    if (JSON.stringify([state.debts, state.journey, state.rounds]) !== before) save(true);
   }
 
   const STAGES = [
@@ -3977,6 +4092,7 @@
       ui.helpFrom = ui.help; ui.help = null; rerenderKeepScroll(); return;
     }
     if (ev.target.classList && ev.target.classList.contains('borrow-overlay')) { ui.borrow = null; rerenderKeepScroll(); return; }
+    if (ev.target.classList && ev.target.classList.contains('edit-overlay')) { ui.editTx = null; rerenderKeepScroll(); return; }
     const btn = ev.target.closest('[data-action]');
     if (!btn) return;
     const a = btn.dataset.action;
@@ -3993,6 +4109,10 @@
       case 'tx-show': ui.txShow = btn.dataset.show; break;
       case 'cal-day': ui.calDay = btn.dataset.day; break;
       case 'cal-month': ui.calMonth = btn.dataset.month; ui.calDay = null; break;
+      case 'tx-edit': ui.editTx = btn.dataset.id; ui.editError = ''; ui.editFocus = true; break;
+      case 'edit-save': saveEdit(); return;
+      case 'edit-cancel': ui.editTx = null; ui.editError = ''; break;
+      case 'undo': undoLast(); return;
       case 'page-back':
         if (history.state && history.state.page) history.back(); else closePage();
         return;
@@ -4209,12 +4329,14 @@
       }
       case 'tx-filter': ui.txFilter = btn.dataset.filter; break;
       case 'tx-delete': {
+        const before = JSON.stringify(state);
         const tx = state.transactions.find((x) => x.id === btn.dataset.id);
         if (tx && (Core.isIncome(tx) || Core.isMove(tx))) undoIncomeUse(tx);
         if (tx && Core.isBillPayment(tx)) Core.undoBillPayment(state, tx);
         if (tx && tx.fromFund) state.savings.emergencyBalance = (Number(state.savings.emergencyBalance) || 0) + tx.amount;
         if (tx && tx.kind === 'cardconvert') Core.undoCardConvert(state, tx);
-        state.transactions = state.transactions.filter((x) => x.id !== btn.dataset.id); save(); toast('Deleted'); break;
+        state.transactions = state.transactions.filter((x) => x.id !== btn.dataset.id); save();
+        rerenderKeepScroll(); offerUndo('Deleted', before); return;
       }
       case 'tx-kind': ui.txKind = btn.dataset.kind; break;
       case 'help': ui.help = btn.dataset.help; break;
@@ -4852,6 +4974,7 @@
     else if (ev.key === 'Escape' && ui.borrow) { ui.borrow = null; rerenderKeepScroll(); }
     else if (ev.key === 'Escape' && document.getElementById('report-card')) { ui.report = false; ui.reportHidden = true; ui.reportThenPay = false; rerenderKeepScroll(); }
     else if (ev.key === 'Escape' && ui.reset) { ui.reset = null; rerenderKeepScroll(); }
+    else if (ev.key === 'Escape' && ui.editTx) { ui.editTx = null; rerenderKeepScroll(); }
     else if (ev.key === 'Escape' && ui.tour) tourEnd();
     else if (ev.key === 'Escape' && ui.page) { if (history.state && history.state.page) history.back(); else closePage(); }
     else if (ev.key === 'Escape' && tab === 'profile') { if (history.state && history.state.profile) history.back(); else closeProfile(); }

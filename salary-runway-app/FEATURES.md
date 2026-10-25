@@ -40,6 +40,14 @@ Everything the app can do today, screen by screen, with the rules it follows. Fo
 - **Payments** (Spend → Records): rows with icon, name, category and date, and the amount. You can search by shop or category, and filter with pills: *All, Money out, Money in, Saved*. The category can still be changed, and a payment deleted, from the row.
 - **Calendar** (Spend → Records): each day of the month shows what was spent, coral when over that day's limit, and money in, in green. Tap a day to see and edit its payments. Previous and next month are one tap away.
 
+## Edit and undo
+- **Edit a payment:** tap its name (the ✎) for an edit sheet.
+  - Spending: amount, date, where or what, category and paid from.
+  - Money received or saved: amount, date and note. A fund or loan it went to is corrected with it: ₹5,000 to a loan changed to ₹3,000 puts ₹2,000 back on the loan.
+  - Bill and card payments: only the note. Their amount is tied to the bill's learned amount or the card's statement, and the sheet says so.
+  - A new category for a shop is remembered for its next payments.
+- **Undo:** after a delete or an edit, *Deleted · UNDO* (or *Saved · UNDO*) shows for six seconds. Undo brings back exactly what was there, including anything the payment had changed. If something else was changed since, it says it's too late, rather than undoing that too.
+
 ## Profile, tour and app lock
 
 ### Profile (the round button at the top right)
