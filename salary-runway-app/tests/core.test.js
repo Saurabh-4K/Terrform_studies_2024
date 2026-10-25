@@ -1030,3 +1030,37 @@ test('credit card due date: paid in full costs nothing; less moves the rest to D
   assert.equal(r.monthly, Math.round((15000 * 49.6) / 1200));
   assert.deepEqual([Core.cardLateFee(400), Core.cardLateFee(4000), Core.cardLateFee(60000)], [0, 500, 1300]);
 });
+
+test('little leaks: tagged payees, a month of it in Days of Freedom, suggestions and a challenge', () => {
+  const s = baseState({ budgets: [{ id: 'g', name: 'Groceries', amount: 6000 }, { id: 'f', name: 'Food', amount: 9500 }] });
+  // Basics: rent 15,000 + groceries 6,000 = 700 a day
+  s.transactions.push(
+    { id: 'a', date: '2026-10-05', amount: 400, category: 'Food', note: 'Swiggy' },
+    { id: 'b', date: '2026-10-20', amount: 300, category: 'Food', note: 'Zomato Ltd' },
+    { id: 'c', date: '2026-11-02', amount: 500, category: 'Food', note: 'Swiggy' },
+    { id: 'd', date: '2026-11-02', amount: 60, category: 'Misc', note: 'Raju Paan Shop' },
+    { id: 'e', date: '2026-11-02', amount: 999, category: 'Shopping', note: 'Myntra' },
+  );
+  // Suggested, not tagged: nothing counts yet
+  assert.deepEqual(Core.leakSuggestions(s, '2026-11-03').map((x) => [x.payee, x.leak, x.total]),
+    [['swiggy', 'Food delivery', 900], ['zomato ltd', 'Food delivery', 300], ['raju paan shop', 'Cigarettes', 60]]);
+  assert.equal(Core.leakSummary(s, '2026-11-03').leaks.length, 0);
+  // Tag Swiggy and Zomato as food delivery
+  s.leakRules = { swiggy: 'Food delivery', 'zomato ltd': 'Food delivery' };
+  let L = Core.leakSummary(s, '2026-11-03');
+  const fd = L.leaks.find((x) => x.name === 'Food delivery');
+  // 500 in 3 days is a 5,000 pace for the 30-day round: higher than last round's 700
+  assert.deepEqual([fd.thisRound, fd.count, fd.lastRound, fd.perMonth], [500, 1, 700, 5000]);
+  assert.equal(fd.freedom, 7.1); // 5,000 ÷ 700 a day
+  assert.deepEqual(fd.places.sort(), ['swiggy', 'zomato ltd']);
+  // A self-chosen challenge: cut 20% of 700 this round
+  s.leakGoals = { 'Food delivery': { cycle: '2026-11-01', pct: 20, base: 700 } };
+  L = Core.leakSummary(s, '2026-11-03');
+  assert.deepEqual(L.leaks[0].goal, { pct: 20, target: 560, left: 60 });
+  // Started mid-round, it counts from that day: 500 already spent + 80% of 700 for the 28 days left
+  s.leakGoals = { 'Food delivery': { cycle: '2026-11-01', pct: 20, base: 700, from: '2026-11-03', spentBefore: 500 } };
+  assert.deepEqual(Core.leakSummary(s, '2026-11-03').leaks[0].goal, { pct: 20, target: 500 + Math.round(560 * 28 / 30), left: Math.round(560 * 28 / 30) });
+  // Own leak names
+  s.customLeaks = ['Gutkha'];
+  assert.ok(Core.leakNames(s).indexOf('Gutkha') !== -1);
+});

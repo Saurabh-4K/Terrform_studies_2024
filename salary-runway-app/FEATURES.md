@@ -366,6 +366,15 @@ Built from your last three salary cycles, with every point in rupees:
 - When 40% or more of spending happens in the first week after payday
 - Before there's history: "Trends appear after your first full month"
 
+### Little leaks (Spend tab)
+
+Small habits that quietly cost a lot: cigarettes, liquor, tea and snacks, food delivery, betting and fantasy games, plus any leak you add yourself (for example gutkha).
+- **Tag a place once:** pick a shop or payee from your recent spends and choose its leak. Every payment to that place counts from then on.
+- **Suggestions with your consent:** the app spots likely leaks by shop name (Swiggy, Zomato, Dream11, paan shops, chai stalls) and asks "Count it as a little leak?" with Yes and No. Nothing is tagged without a Yes, and a No is remembered.
+- **What it costs:** for each leak, this round so far, last round, and a month's worth (last round's total, or this round's pace if that's higher). The total is shown as Days of Freedom: a month of leaks ÷ what your basics cost a day.
+- **Optional challenge:** cut one leak by 20%. Started mid-round, the target counts what you already spent plus the cut amount for the days left, so it is always reachable.
+- Leaks stay on your phone, like everything else.
+
 ## 14. Android app extras
 
 - **Home-screen widget "Spend today"** (3×2 by default, resizable):

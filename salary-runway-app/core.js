@@ -1667,6 +1667,82 @@
     return out;
   }
 
+  // ---------- little leaks ----------
+
+  /*
+   * Small, regular spends that add up. A leak is a tag on a payee (the shop
+   * or app), on top of the payment's category, so budgets stay as they are.
+   * Only money and what it costs in Days of Freedom are shown: no lectures.
+   */
+  const LEAKS = ['Cigarettes', 'Liquor', 'Tea & snacks', 'Food delivery', 'Betting & fantasy'];
+  // Payees that are clearly one of them: suggested, never tagged without a yes. "=" means a whole word.
+  const LEAK_HINTS = {
+    'Food delivery': ['swiggy', 'zomato', 'eatsure', '=box8', 'faasos'],
+    'Betting & fantasy': ['dream11', 'my11circle', '=mpl', 'winzo', 'rummy', 'poker', 'junglee', 'howzat', '=a23', 'fantasy', 'betway', 'parimatch', '1xbet', 'stake com'],
+    'Liquor': ['wine', 'liquor', 'beer', '=bar'],
+    'Cigarettes': ['paan', 'pan shop', 'tobacco', 'cigarette'],
+    'Tea & snacks': ['chai', 'tea stall', 'chaiwala', 'chaayos', 'chai point'],
+  };
+
+  function leakNames(state) {
+    const own = (state.customLeaks || []).filter((n) => LEAKS.indexOf(n) === -1);
+    return LEAKS.concat(own);
+  }
+
+  function leakOf(state, t) {
+    return (state.leakRules || {})[normalizeMerchant(t.note)] || null;
+  }
+
+  // Each leak this round and last: spent, a month's worth, and its cost in Days of Freedom.
+  function leakSummary(state, todayIso) {
+    const payday = Number(state.settings.payday) || 1;
+    const cyc = cycleFor(todayIso, payday);
+    const prev = previousCycle(cyc, payday);
+    const f = freedomDays(state, todayIso);
+    const flex = state.transactions.filter(isFlexible);
+    const days = daysBetween(cyc.start, todayIso) + 1;
+    const goals = state.leakGoals || {};
+    const rules = state.leakRules || {};
+    const leaks = leakNames(state).map((name) => {
+      const mine = flex.filter((t) => leakOf(state, t) === name);
+      const now = mine.filter((t) => inCycle(t.date, cyc) && t.date <= todayIso);
+      const last = sum(mine.filter((t) => inCycle(t.date, prev)), (t) => t.amount);
+      const thisRound = sum(now, (t) => t.amount);
+      // A month's worth: last round, or this round's pace if that's higher.
+      const perMonth = Math.max(last, Math.round((thisRound / days) * cyc.days));
+      const g = goals[name] && goals[name].cycle === cyc.start ? goals[name] : null;
+      // A challenge counts from the day it starts: what was spent before, plus the cut amount for the days left.
+      const target = g ? Math.round((Number(g.spentBefore) || 0) + g.base * (1 - g.pct / 100) * ((cyc.days - daysBetween(cyc.start, g.from || cyc.start)) / cyc.days)) : 0;
+      return {
+        name, thisRound, count: now.length, lastRound: last, perMonth,
+        freedom: f && perMonth > 0 ? Math.floor((perMonth / f.daily) * 10) / 10 : 0,
+        places: Object.keys(rules).filter((k) => rules[k] === name),
+        goal: g ? { pct: g.pct, target, left: target - thisRound } : null,
+      };
+    }).filter((x) => x.places.length || x.thisRound || x.lastRound);
+    const perMonth = sum(leaks, (x) => x.perMonth);
+    return { cycle: cyc, leaks, perMonth, freedom: f && perMonth > 0 ? Math.floor((perMonth / f.daily) * 10) / 10 : 0, daily: f ? f.daily : 0 };
+  }
+
+  // Payees from the last two rounds that look like a leak and haven't been answered yet.
+  function leakSuggestions(state, todayIso) {
+    const payday = Number(state.settings.payday) || 1;
+    const from = previousCycle(cycleFor(todayIso, payday), payday).start;
+    const rules = state.leakRules || {};
+    const no = state.leakDeclined || [];
+    const seen = {};
+    state.transactions.filter((t) => isFlexible(t) && t.date >= from && t.date <= todayIso).forEach((t) => {
+      const key = normalizeMerchant(t.note);
+      if (!key || rules[key] || no.indexOf(key) !== -1) return;
+      const leak = Object.keys(LEAK_HINTS).find((l) => LEAK_HINTS[l].some((w) => keywordMatches(key, w)));
+      if (!leak) return;
+      const x = seen[key] || (seen[key] = { payee: key, name: t.note, leak, total: 0, count: 0 });
+      x.total += t.amount;
+      x.count++;
+    });
+    return Object.keys(seen).map((k) => seen[k]).sort((a, b) => b.total - a.total);
+  }
+
   // ---------- report for an AI chat ----------
 
   /*
@@ -2108,7 +2184,7 @@
     isCardTransfer, statementOn, dueAfter, cardOwedAt, cardReserve, cardStatus, emiQuote, revolveQuote, cardBillPlan,
     recordCardPayment, convertCardBalance, answerCardDue, cardLateFee, cardRate, CARD_RATE, undoCardConvert, cardFreeDays, byCategory, DEFAULT_SPLIT,
     isLoanCredit, borrowedThisCycle, borrowCheck, rolloverOptions, personal, investPlan, sipValue, ASSUMED_RETURN, setTranslator,
-    monthReport, aiReport, spendWhere, spendWhen, spendTrend, BASICS,
+    monthReport, aiReport, LEAKS, leakNames, leakOf, leakSummary, leakSuggestions, spendWhere, spendWhen, spendTrend, BASICS,
   };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = Core;

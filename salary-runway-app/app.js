@@ -184,6 +184,7 @@
     importBusy: false,
     importFound: null,
     sortAsk: null,
+    leakTag: false,
     onboardHidden: false,
     onboardFocus: false,
     onboardError: '',
@@ -348,6 +349,12 @@
       'Pay isn’t the same every month. Record what came in and why it changed: a bonus, tax, leave or a deduction. This month’s budgets are planned on what actually came in.',
       'A lasting change, like a raise or a new tax slab? Tick <b>This is my new usual pay</b>.',
       'Your pay over the year is on the Plan tab.',
+    ]],
+    leaks: ['Little leaks', [
+      'Small spends that repeat: a packet of cigarettes, a quarter, chai and snacks, food delivery, a fantasy team. Each one is small; together they can cost days of freedom every month.',
+      '<b>Tag places</b>: pick a leak for a shop or app, and every payment there counts, now and later. Hisab Se suggests places that look like a leak, and only counts them if you say yes.',
+      'A month’s worth is last round’s total, or this round’s pace if that’s higher. <b>Days of Freedom</b>: that amount ÷ what your basics cost a day.',
+      'A challenge is your choice: cut 20% this round. No streaks to break, no lectures.',
     ]],
     viz: ['Your spending, 3 ways', [
       '<b>Where:</b> each category this month against its budget (coral past the budget line), and how much went on basics (groceries, health, bills) against everything else.',
@@ -1837,6 +1844,68 @@
       numbersTable([tr('Month'), tr('Spent'), tr('Saved'), tr('Borrowed')], months.map((m) => [name(m) + (m.current ? '*' : ''), inr(m.spent), inr(m.saved), inr(m.borrowed)]));
   }
 
+  // ---------- little leaks ----------
+
+  // Shown with its name in the current language; own leaks as typed.
+  function leakLabel(name) { return Core.LEAKS.indexOf(name) !== -1 ? tr(name) : esc(name); }
+
+  function leaksCard() {
+    if (!state.settings.salary || state.isDemo) return '';
+    const t = today();
+    const L = Core.leakSummary(state, t);
+    const sugg = Core.leakSuggestions(state, t).slice(0, 3);
+    const freedom = (x) => (x > 0 ? ' = ' + tr(x === 1 ? '1 Day of Freedom' : '{n} Days of Freedom', { n: x }) : '');
+    let html = '<section class="card leaks-card"><div class="card-head">' + titled('Little leaks', 'leaks') + '</div>';
+    if (!L.leaks.length) {
+      html += '<p class="hint">' + tr('Small, regular spends that add up: cigarettes, liquor, tea and snacks, food delivery, betting and fantasy apps, or your own. Tag the places you pay for them and see what they cost your freedom.') + '</p>';
+    } else {
+      html += '<p class="leak-total">' + tr('About {amount} a month', { amount: inr(L.perMonth) }) + '<b>' + freedom(L.freedom) + '</b></p>' +
+        L.leaks.map((x) => {
+          const g = x.goal;
+          return '<div class="leak-row"><div class="leak-top"><b>' + leakLabel(x.name) + '</b><span class="amt">' + inr(x.thisRound) + '</span></div>' +
+            '<span class="hint">' + tr(x.count === 1 ? '1 payment this round' : '{n} payments this round', { n: x.count }) + ' · ' +
+            tr('about {amount} a month', { amount: inr(x.perMonth) }) + freedom(x.freedom) + '</span>' +
+            (g
+              ? '<div class="leak-goal"><div class="bar"><span class="' + (g.left < 0 ? 'bad' : '') + '" style="width:' + Math.min(100, (x.thisRound / Math.max(1, g.target)) * 100).toFixed(0) + '%"></span></div>' +
+                '<span class="hint">' + (g.left >= 0 ? tr('Your challenge: cut {pct}%. {left} left of {target} this round.', { pct: g.pct, left: inr(g.left), target: inr(g.target) })
+                  : tr('Your challenge: cut {pct}%. {over} past {target} this round; next round is a fresh try.', { pct: g.pct, over: inr(-g.left), target: inr(g.target) })) + '</span></div>'
+              : (x.perMonth > 0 ? '<div><button class="ghost" data-action="leak-goal" data-leak="' + esc(x.name) + '">' + tr('Try cutting it by 20% this round') + '</button></div>' : '')) +
+            '</div>';
+        }).join('');
+    }
+    html += sugg.map((x) => '<div class="callout leak-sugg"><b>' + tr('{name} looks like {leak}. Count it as a little leak?', { name: esc(x.name), leak: leakLabel(x.leak).toLowerCase() }) + '</b>' +
+      '<span class="hint">' + tr('{amount} in {n} payments over the last two rounds.', { amount: inr(x.total), n: x.count }) + '</span>' +
+      '<div class="row"><button class="primary" data-action="leak-yes" data-payee="' + esc(x.payee) + '" data-leak="' + esc(x.leak) + '">' + tr('Yes') + '</button>' +
+      '<button class="ghost" data-action="leak-no" data-payee="' + esc(x.payee) + '">' + tr('No') + '</button></div></div>').join('');
+    html += ui.leakTag ? leakTagPanel() : '<div><button data-action="leak-tag">' + tr('Tag places') + '</button></div>';
+    return html + '</section>';
+  }
+
+  // The places paid in the last two rounds, each with a leak to pick (or none).
+  function leakTagPanel() {
+    const t = today();
+    const payday = Number(state.settings.payday) || 1;
+    const from = Core.previousCycle(Core.cycleFor(t, payday), payday).start;
+    const places = {};
+    state.transactions.filter((x) => Core.isFlexible(x) && x.date >= from && x.date <= t).forEach((x) => {
+      const key = Core.normalizeMerchant(x.note);
+      if (!key) return;
+      const p = places[key] || (places[key] = { key, name: x.note, total: 0 });
+      p.total += x.amount;
+    });
+    const list = Object.keys(places).map((k) => places[k]).sort((a, b) => b.total - a.total).slice(0, 15);
+    const rules = state.leakRules || {};
+    const names = Core.leakNames(state);
+    return '<div class="leak-tag"><p class="hint">' + tr('Pick a leak for a place and every payment there counts, now and later. Pick “Not a leak” to undo.') + '</p>' +
+      (list.length ? list.map((p) => '<label class="field leak-place" for="leak-' + esc(p.key) + '"><span>' + esc(p.name) + ' · ' + inr(p.total) + '</span>' +
+        '<select id="leak-' + esc(p.key) + '" data-leak-payee="' + esc(p.key) + '"><option value="">' + tr('Not a leak') + '</option>' +
+        names.map((n) => '<option value="' + esc(n) + '"' + (rules[p.key] === n ? ' selected' : '') + '>' + leakLabel(n) + '</option>').join('') + '</select></label>').join('')
+        : '<p class="hint">' + tr('No payments in the last two rounds yet.') + '</p>') +
+      '<div class="row"><label class="field grow-field" for="leak-own"><span>' + tr('Your own leak') + '</span><input id="leak-own" type="text" placeholder="' + tr('Paan, gutkha, lottery…') + '"></label>' +
+      '<button data-action="leak-own-add">' + tr('Add') + '</button></div>' +
+      '<div><button class="primary" data-action="leak-tag">' + tr('Done') + '</button></div></div>';
+  }
+
   function vizCard() {
     if (!state.settings.salary) return '';
     const views = [['where', 'Where'], ['when', 'When'], ['trend', 'Trend']];
@@ -1882,6 +1951,7 @@
       '<div class="wide"><button class="primary" type="submit">' + tr(moneyIn ? 'Add money received' : 'Add payment') + '</button></div>' +
       '</form>') + '</section>' +
       vizCard() +
+      leaksCard() +
 
       (NATIVE
         ? '<section class="card"><div class="card-head">' + titled('Bank SMS', 'sms') + (state.smsAuto ? modeChip(true) : '') + '</div>' +
@@ -2856,6 +2926,30 @@
         try { localStorage.setItem(VIZ_KEY, ui.viz); } catch (e) { /* private mode */ }
         break;
       case 'viz-tip': showVizTip(btn); return;
+      case 'leak-tag': ui.leakTag = !ui.leakTag; break;
+      case 'leak-yes':
+        state.leakRules = Object.assign({}, state.leakRules, { [btn.dataset.payee]: btn.dataset.leak });
+        save(); break;
+      case 'leak-no':
+        state.leakDeclined = (state.leakDeclined || []).concat(btn.dataset.payee).slice(-200);
+        save(); break;
+      case 'leak-goal': {
+        const x = Core.leakSummary(state, t).leaks.find((l) => l.name === btn.dataset.leak);
+        if (x) {
+          state.leakGoals = Object.assign({}, state.leakGoals, { [x.name]: { cycle: Core.cycleFor(t, Number(state.settings.payday) || 1).start, pct: 20, base: x.perMonth, from: t, spentBefore: x.thisRound } });
+          save();
+          const g = Core.leakSummary(state, t).leaks.find((l) => l.name === x.name).goal;
+          toast(tr('Challenge on: keep {leak} under {amount} this round.', { leak: leakLabel(x.name).toLowerCase(), amount: inr(g.target) }));
+        }
+        break;
+      }
+      case 'leak-own-add': {
+        const name = ((document.getElementById('leak-own') || {}).value || '').trim().slice(0, 30);
+        if (!name) return;
+        if (Core.leakNames(state).indexOf(name) === -1) state.customLeaks = (state.customLeaks || []).concat(name);
+        save(); toast(tr('{name} added. Pick it for the places where you pay for it.', { name }));
+        break;
+      }
       case 'explain': ui.explain = btn.dataset.explain; break;
       case 'explain-close': ui.explain = null; break;
       case 'chart-toggle':
@@ -3288,6 +3382,12 @@
 
   function onChange(ev) {
     const el = ev.target;
+    if (el.dataset.leakPayee !== undefined) {
+      const rules = Object.assign({}, state.leakRules);
+      if (el.value) rules[el.dataset.leakPayee] = el.value; else delete rules[el.dataset.leakPayee];
+      state.leakRules = rules;
+      save(); rerenderKeepScroll(); return;
+    }
     if (el.id === 'sounds-on') {
       state.settings.sounds = el.checked;
       save();

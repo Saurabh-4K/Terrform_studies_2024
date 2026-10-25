@@ -741,3 +741,12 @@ label.check input { width: 18px; height: 18px; accent-color: var(--accent); }
 .ob-unlock small { font-size: 0.85rem; color: #d5e3e0; }
 .ob-privacy { display: grid; gap: 8px; background: var(--surface-2); border-radius: 14px; padding: 12px 14px; font-size: 0.92rem; }
 .ob-loan { border-top: 1px solid var(--line); padding-top: 10px; }
+
+/* ---------- Little leaks ---------- */
+.leak-total { font-family: var(--font-display); font-size: 1.15rem; font-weight: 700; }
+.leak-total b { color: var(--bad); }
+.leak-row { display: grid; gap: 4px; padding: 10px 0; border-top: 1px solid var(--line); }
+.leak-top { display: flex; justify-content: space-between; gap: 8px; }
+.leak-goal { display: grid; gap: 4px; }
+.leak-tag { display: grid; gap: 10px; border-top: 1px solid var(--line); padding-top: 10px; }
+.leak-place span { font-weight: 600; }
