@@ -817,42 +817,6 @@ test('rollover: choices and the safety-first suggestion', () => {
   assert.equal(Core.rolloverOptions(s, 3000, '2026-10-10').recommended, 'debt');
 });
 
-test('where to invest: freedom first, then a split by age and risk comfort', () => {
-  const s = baseState({ debts: [{ id: 'd1', name: 'Card', balance: 50000, rate: 36, minPayment: 2500, dueDay: 7 }] });
-  s.savings.investMonthly = 3000;
-  assert.equal(Core.investPlan(s, '2026-10-10').stage, 'shield');
-  s.savings.emergencyBalance = 30000;
-  const d = Core.investPlan(s, '2026-10-10');
-  assert.equal(d.stage, 'debt');
-  assert.match(d.reason, /Card at 36%/);
-  s.debts[0].balance = 0;
-  assert.equal(Core.investPlan(s, '2026-10-10').stage, 'fund');
-  s.savings.emergencyBalance = 500000;
-  const g = Core.investPlan(s, '2026-10-10');
-  assert.equal(g.stage, 'invest');
-  // No age, medium risk: 60% equity, 30% debt, 10% gold, in whole hundreds.
-  assert.deepEqual([g.equity, g.debt, g.gold], [60, 30, 10]);
-  assert.deepEqual(g.lines.map((l) => l.amount), [1800, 900, 300]);
-  s.settings.age = 40; s.settings.risk = 'low';
-  const low = Core.investPlan(s, '2026-10-10');
-  assert.deepEqual([low.equity, low.debt], [45, 45]);
-  s.settings.age = 25; s.settings.risk = 'high';
-  assert.equal(Core.investPlan(s, '2026-10-10').equity, 85);
-});
-
-test('SIP projection grows monthly investments at the assumed rate', () => {
-  assert.equal(Core.sipValue(1000, 0, 10), 120000);
-  // ₹1,000 a month for 10 years at 12% a year: about ₹2.32 lakh.
-  assert.equal(Math.round(Core.sipValue(1000, 12, 10)), 232339);
-  const s = baseState();
-  s.savings.investMonthly = 2000;
-  s.settings.personal = false;
-  assert.equal(Core.personal(s), false);
-  assert.match(Core.rolloverOptions(s, 1000, '2026-10-10').options.find((o) => o.to === 'grow').detail, /SEBI-registered/);
-  s.settings.personal = true;
-  assert.match(Core.rolloverOptions(s, 1000, '2026-10-10').options.find((o) => o.to === 'grow').detail, /Grow tab/);
-});
-
 test('month-end report card: wins and watch-outs for the cycle that just ended', () => {
   const s = baseState({
     debts: [{ id: 'd1', name: 'Card loan', balance: 40000, rate: 36, minPayment: 2000, dueDay: 7 }],
@@ -889,41 +853,6 @@ test('month-end report card: wins and watch-outs for the cycle that just ended',
   assert.deepEqual(r.small, { count: 3, total: 469, under: 200 });
   assert.equal(r.active, true);
   assert.equal(Core.monthReport(s, '2026-10-15').active, false);
-});
-
-test('report for an AI chat: fixed questions, last month in full, two months before, this month so far', () => {
-  const s = baseState({
-    debts: [{ id: 'd1', name: 'Card loan', balance: 40000, rate: 36, minPayment: 2000, dueDay: 7 }],
-    cards: [{ id: 'c1', name: 'HDFC', last4: '1234', limit: 50000, rate: 42, statementDay: 5, dueDay: 25 }],
-    transactions: [
-      { id: 't1', date: '2026-10-03', amount: 900, category: 'Food', note: 'Swiggy | late', paidFrom: 'c1' },
-      { id: 't2', date: '2026-10-12', amount: 120, category: 'Food', note: 'Tea' },
-      { id: 'i1', kind: 'in', date: '2026-10-15', amount: 5000, category: 'Money received', note: 'KreditBee', borrowed: true },
-      { id: 'm1', kind: 'move', date: '2026-10-20', amount: 300, category: 'Savings', useFor: 'emergency' },
-      { id: 's1', date: '2026-09-10', amount: 2000, category: 'Food', note: 'Zomato' },
-      { id: 'a1', date: '2026-08-10', amount: 3000, category: 'Food', note: 'Dominos' },
-      { id: 'n1', date: '2026-11-02', amount: 50, category: 'Food', note: 'Chai' },
-    ],
-  });
-  const r = Core.aiReport(s, '2026-11-03', 'hi');
-  assert.equal(r.name, 'hisab-se-report-2026-11-03.txt');
-  const t = r.text;
-  assert.match(t, /Reply in Hindi/);
-  assert.match(t, /Never suggest a new loan, credit card/);
-  for (let i = 1; i <= 9; i++) assert.match(t, new RegExp('\\n' + i + '\\. \\*\\*'));
-  assert.match(t, /## Last month: 1 Oct 2026 – 31 Oct 2026/);
-  assert.match(t, /\| 3 Oct 2026 \| Spent \| ₹900 \| Food \| Swiggy   late \| HDFC card \|/);
-  assert.match(t, /Other money in: ₹5,000 from KreditBee \(BORROWED/);
-  assert.match(t, /Spent on credit cards: ₹900 on 1 of 31 days/);
-  assert.match(t, /Moved from leftovers: ₹300 to emergency fund/);
-  assert.match(t, /\| Card loan \| ₹40,000 \| 36% \| ₹2,000 \|/);
-  assert.match(t, /### 1 Sep 2026 – 30 Sep 2026[\s\S]*Food \| ₹2,000/);
-  assert.match(t, /### 1 Aug 2026 – 31 Aug 2026[\s\S]*Food \| ₹3,000/);
-  assert.match(t, /## This month so far: 1 Nov 2026 – 3 Nov 2026 \(day 3 of 30\)/);
-  // Older months are summaries: only last month lists every entry
-  assert.equal((t.match(/### Every entry/g) || []).length, 1);
-  s.settings.personal = false;
-  assert.doesNotMatch(Core.aiReport(s, '2026-11-03', 'en').text, /\n9\. /);
 });
 
 test('a bill with no amount yet isn’t due and sets nothing aside', () => {

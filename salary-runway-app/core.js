@@ -1496,7 +1496,7 @@
       use: 'grow',
       title: tr('Set aside to invest'),
       detail: tr('Adds to the {amount} you’ve set aside to invest.', { amount: rupeesIn(Number(state.savings.investSaved) || 0) }) + ' ' +
-        tr(personal(state) ? 'The Grow tab shows how to split it.' : 'Talk to a SEBI-registered investment adviser before investing it.'),
+        tr('Talk to a SEBI-registered investment adviser before investing it.'),
     });
 
     const s = suggestUse(state, todayIso, without.zeroPace ? tr('Without this money, at your current pace you run out on {date}, before payday.', { date: shortDate(without.zeroPace) }) : null);
@@ -1774,7 +1774,7 @@
       title: tr('Build your emergency fund'),
       detail: f ? tr('+{n} Days of Freedom every month.', { n: Math.floor(amount / f.daily) }) : tr('Adds {amount} a month to your emergency fund.', { amount: rupeesIn(amount) }),
     });
-    options.push({ to: 'grow', title: tr('Set aside to invest'), detail: tr('{amount} a month to invest.', { amount: rupeesIn(amount) }) + ' ' + tr(personal(state) ? 'The Grow tab shows how to split it.' : 'Talk to a SEBI-registered investment adviser about where.') });
+    options.push({ to: 'grow', title: tr('Set aside to invest'), detail: tr('{amount} a month to invest.', { amount: rupeesIn(amount) }) + ' ' + tr('Talk to a SEBI-registered investment adviser about where.') });
     options.push({ to: 'spend', title: tr('Spend it'), detail: tr('Your flexible budgets grow by {amount} a month.', { amount: rupeesIn(amount) }) });
     const s = suggestUse(state, todayIso, null);
     return { options, recommended: s.use === 'debt' && !debts.length ? 'emergency' : s.use, reason: s.reason };
@@ -2311,242 +2311,6 @@
 
   // ---------- report for an AI chat ----------
 
-  /*
-   * A text report to give any free AI chat (ChatGPT, Gemini, Claude…) for
-   * next month's plan. The questions come first and never change, so the
-   * answer has the same shape every month. Then: the setup today, last month
-   * in full (every entry) and the two months before as summaries, plus this
-   * month so far. Every number is worked out here; the AI only plans from it.
-   * The data stays in English (any AI reads it); the answer comes in the
-   * app's language.
-   */
-  const REPORT_LANGS = { en: 'English', mr: 'Marathi (मराठी)', hi: 'Hindi (हिंदी)' };
-  const USE_NAMES = { emergency: 'emergency fund', debt: 'loan', grow: 'savings', spend: 'spending' };
-
-  function monthAbbr(m) { return MONTHS[m].replace(/^./, (c) => c.toUpperCase()); }
-
-  function reportDate(iso) {
-    const d = parseISO(iso);
-    return d.getDate() + ' ' + monthAbbr(d.getMonth()) + ' ' + d.getFullYear();
-  }
-
-  function cell(s) { return String(s == null ? '' : s).replace(/[|\n]/g, ' ').trim(); }
-
-  function table(head, rows) {
-    return ['| ' + head.join(' | ') + ' |', '|' + head.map(() => '---').join('|') + '|']
-      .concat(rows.map((r) => '| ' + r.map(cell).join(' | ') + ' |')).join('\n');
-  }
-
-  // One salary cycle: pay, spending against budgets, savings, borrowing, leaks.
-  function cycleFacts(state, cycle, upTo) {
-    const end = upTo || addDays(cycle.next, -1);
-    const txs = state.transactions.filter((t) => inCycle(t.date, cycle) && t.date <= end);
-    const slip = (state.payslips || {})[cycle.start];
-    const flex = txs.filter(isFlexible);
-    const spent = byCategory(flex);
-    const plan = monthlyPlan(state, cycle.start);
-    const budgets = {};
-    plan.budgets.forEach((b) => { budgets[b.name] = b.amount; });
-    const cats = Object.keys(spent).concat(Object.keys(budgets).filter((n) => !(n in spent) && budgets[n] > 0));
-    const cardSpend = flex.filter((t) => t.paidFrom && t.paidFrom !== 'account');
-    const small = flex.filter((t) => t.amount < SMALL_PAYMENT && ['Bills', 'Emergency'].indexOf(t.category) === -1);
-    const saved = {};
-    txs.filter((t) => isMove(t)).forEach((t) => { const k = USE_NAMES[t.useFor] || 'savings'; saved[k] = (saved[k] || 0) + t.amount; });
-    const merchants = {};
-    flex.forEach((t) => { const m = normalizeMerchant(t.note) || t.category; merchants[m] = (merchants[m] || { name: t.note || t.category, total: 0, count: 0 }); merchants[m].total += t.amount; merchants[m].count++; });
-    return {
-      cycle, end, txs,
-      pay: slip ? Number(slip.amount) || 0 : Number(state.settings.salary) || 0,
-      payNote: slip && slip.reason ? slip.reason + (slip.note ? ': ' + slip.note : '') : '',
-      income: txs.filter(isIncome),
-      flexTotal: sum(flex, (t) => t.amount),
-      bills: sum(txs.filter(isBillPayment), (t) => t.amount),
-      cardPaid: sum(txs.filter((t) => t.kind === 'cardpay'), (t) => t.amount),
-      categories: cats.map((n) => ({ name: n, spent: spent[n] || 0, budget: budgets[n] || 0 })).sort((a, b) => b.spent - a.spent),
-      cardSpend: sum(cardSpend, (t) => t.amount),
-      cardDays: new Set(cardSpend.map((t) => t.date)).size,
-      days: daysBetween(cycle.start, end) + 1,
-      small: { count: small.length, total: sum(small, (t) => t.amount) },
-      saved,
-      borrowedIn: sum(txs.filter((t) => isIncome(t) && t.borrowed), (t) => t.amount),
-      merchants: Object.keys(merchants).map((k) => merchants[k]).sort((a, b) => b.total - a.total).slice(0, 5),
-    };
-  }
-
-  function factsText(f, full, state) {
-    const out = [];
-    out.push('- Salary received: ' + rupees(f.pay) + (f.payNote ? ' (' + f.payNote + ')' : ''));
-    f.income.forEach((t) => out.push('- Other money in: ' + rupees(t.amount) + ' from ' + (t.note || t.category || 'unknown') +
-      (t.borrowed ? ' (BORROWED: a loan or credit line)' : '') + (t.useFor ? ', used for ' + (USE_NAMES[t.useFor] || t.useFor) : '')));
-    out.push('- Flexible spending: ' + rupees(f.flexTotal) + ' · bills paid: ' + rupees(f.bills) + ' · credit card bills paid: ' + rupees(f.cardPaid));
-    out.push('- Spent on credit cards: ' + rupees(f.cardSpend) + ' on ' + f.cardDays + ' of ' + f.days + ' days');
-    out.push('- Small payments under ' + rupees(SMALL_PAYMENT) + ': ' + f.small.count + ', adding up to ' + rupees(f.small.total));
-    const saved = Object.keys(f.saved);
-    out.push('- Moved from leftovers: ' + (saved.length ? saved.map((k) => rupees(f.saved[k]) + ' to ' + k).join(', ') : 'nothing'));
-    if (f.borrowedIn) out.push('- Borrowed money received: ' + rupees(f.borrowedIn));
-    out.push('');
-    out.push(table(['Category', 'Spent', 'Budget', 'Over / under'], f.categories.map((c) => [
-      c.name, rupees(c.spent), c.budget ? rupees(c.budget) : '-', c.budget ? (c.spent > c.budget ? 'over by ' + rupees(c.spent - c.budget) : 'under by ' + rupees(c.budget - c.spent)) : '-',
-    ])));
-    if (f.merchants.length) {
-      out.push('');
-      out.push('Top places: ' + f.merchants.map((m) => cell(m.name) + ' ' + rupees(m.total) + ' (' + m.count + 'x)').join(', '));
-    }
-    if (full) {
-      const cards = {};
-      (state.cards || []).forEach((c) => { cards[c.id] = c.name + ' card'; });
-      const type = (t) => (isIncome(t) ? (t.borrowed ? 'Money in (borrowed)' : 'Money in') : isMove(t) ? 'Saved to ' + (USE_NAMES[t.useFor] || 'savings')
-        : isBillPayment(t) ? 'Bill' : t.kind === 'cardpay' ? 'Card bill paid' : t.kind === 'cardconvert' ? 'Card balance to EMI' : isTransfer(t) ? 'Moved between my wallets' : 'Spent');
-      out.push('');
-      out.push('### Every entry (' + f.txs.length + ')');
-      out.push(table(['Date', 'Type', 'Amount', 'Category', 'Note', 'Paid from'], f.txs.slice().sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0)).map((t) => [
-        reportDate(t.date), type(t), rupees(t.amount), t.category || '', t.note || '', t.paidFrom && t.paidFrom !== 'account' ? cards[t.paidFrom] || 'card' : isFlexible(t) ? 'bank / UPI / cash' : '',
-      ])));
-    }
-    return out.join('\n');
-  }
-
-  function aiReport(state, todayIso, lang) {
-    const payday = Number(state.settings.payday) || 1;
-    const now = cycleFor(todayIso, payday);
-    const last = previousCycle(now, payday);
-    const before = [previousCycle(last, payday)];
-    before.push(previousCycle(before[0], payday));
-    const span = (c) => reportDate(c.start) + ' – ' + reportDate(addDays(c.next, -1));
-    const plan = monthlyPlan(state, todayIso);
-    const f = freedomDays(state, todayIso);
-    const L = [];
-
-    L.push('# Hisab Se: my money report for next month’s plan');
-    L.push('Made on ' + reportDate(todayIso) + '. Last month: ' + span(last) + '. Next payday: ' + reportDate(now.next) + '.');
-    L.push('');
-    L.push('## Instructions for the AI (follow exactly)');
-    L.push('You are my personal money coach in India. My goal: live free of loans, never reach ₹0 before payday, and build savings so emergencies don’t need borrowing.');
-    L.push('- Use only the data in this report. Don’t guess numbers; if something you need is missing, say what is missing.');
-    L.push('- Never suggest a new loan, credit card, buy-now-pay-later, salary advance or borrowing from friends or apps.');
-    L.push('- Use ₹ with Indian commas (₹1,20,000). Be specific and short. Reply in ' + (REPORT_LANGS[lang] || 'English') + '.');
-    L.push('');
-    L.push('Answer with exactly these sections, in this order:');
-    L.push('1. **Last month in brief**: 3 lines: what went well, what went badly, the biggest risk now.');
-    L.push('2. **Trend**: last month against the 2 months before it (spending, saving, card use, borrowing), with numbers.');
-    L.push('3. **Next month’s budget**: a table: Category | Spent last month | Budget | Suggested budget | Why. The total must fit my pay after fixed payments, loan EMIs, bills and set-asides.');
-    L.push('4. **Debt plan**: which loan gets extra money first (highest interest first), how much a month, and the month each loan would be cleared.');
-    L.push('5. **Emergency fund**: how much to add each month, and when it reaches 1 month and 3 months of bills and basics.');
-    L.push('6. **Leaks to fix**: the 3 biggest avoidable spends from the entry list (places, small payments, card spending), each with the ₹ a month it would save.');
-    L.push('7. **Daily limit**: one number: what I can spend a day next month on flexible spending, and the date I check it again.');
-    L.push('8. **3 rules for next month**: short, specific, easy to follow.');
-    if (personal(state)) L.push('9. **Investing**: only if the emergency fund covers 1 month and no loan costs over 12% a year: how much to invest a month and where (a SIP in a Nifty 50 index fund, PPF). Otherwise say what must happen first.');
-    L.push('');
-
-    L.push('## My setup today');
-    L.push('- Usual monthly salary (in hand): ' + rupees(Number(state.settings.salary) || 0) + ', paid on day ' + payday + ' of the month');
-    if (state.fixed.length) L.push('- Fixed payments: ' + state.fixed.map((x) => cell(x.name) + ' ' + rupees(Number(x.amount) || 0) + (x.dueDay ? ' (day ' + x.dueDay + ')' : '')).join(', '));
-    if ((state.bills || []).length) L.push('- Bills that vary: ' + state.bills.map((b) => cell(b.name) + ' about ' + rupees(Number(b.estimate) || 0) + ((Number(b.everyMonths) || 1) > 1 ? ' every ' + b.everyMonths + ' months' : ' a month')).join(', '));
-    const debts = state.debts.filter((d) => d.balance > 0);
-    if (debts.length) {
-      L.push('- Loans:');
-      L.push(table(['Loan', 'Balance left', 'Interest a year', 'EMI / minimum'], debts.map((d) => [d.name, rupees(d.balance), (Number(d.rate) || 0) + '%', rupees(Number(d.minPayment) || 0)])));
-    } else L.push('- Loans: none');
-    (state.cards || []).forEach((c) => L.push('- Credit card ' + cell(c.name) + ': limit ' + rupees(Number(c.limit) || 0) + ', ' + (Number(c.rate) || 0) + '% a year, owed now ' + rupees(Math.max(0, cardOwedAt(state, c, todayIso)))));
-    L.push('- Emergency fund: ' + rupees(Number(state.savings.emergencyBalance) || 0) + (f ? ' (covers ' + f.days + ' days of bills and basics at ' + rupees(f.daily) + ' a day)' : '') + '; target ' + (Number(state.savings.emergencyTargetMonths) || 3) + ' months');
-    L.push('- Set aside each month now: emergency fund ' + rupees(plan.emergency) + ', extra to loans ' + rupees(plan.debtExtra) + ', investing ' + rupees(plan.invest) + ', yearly costs ' + rupees(plan.sinking));
-    (state.sinking || []).forEach((s) => L.push('- Saving for ' + cell(s.name) + ': ' + rupees(Number(s.amount) || 0) + (s.month ? ' due in ' + monthAbbr((Number(s.month) || 1) - 1) : '') + ', saved ' + rupees(Number(s.saved) || 0)));
-    L.push('- Flexible budgets this month: ' + plan.budgets.map((b) => b.name + ' ' + rupees(b.amount)).join(', '));
-    L.push('');
-
-    L.push('## Last month: ' + span(last));
-    L.push(factsText(cycleFacts(state, last), true, state));
-    L.push('');
-    L.push('## The two months before (summaries)');
-    before.forEach((c) => {
-      L.push('### ' + span(c));
-      L.push(factsText(cycleFacts(state, c), false, state));
-      L.push('');
-    });
-    const sofar = cycleFacts(state, now, todayIso);
-    if (sofar.txs.length) {
-      L.push('## This month so far: ' + reportDate(now.start) + ' – ' + reportDate(todayIso) + ' (day ' + sofar.days + ' of ' + now.days + ')');
-      L.push(factsText(sofar, false, state));
-      L.push('');
-    }
-    return { name: 'hisab-se-report-' + todayIso + '.txt', text: L.join('\n') };
-  }
-
-  // ---------- investing (personal mode) ----------
-
-  /*
-   * Personal mode: the app's owner uses it for themselves, so it can say
-   * where to invest. Off, it only sets the amount aside and points to a
-   * SEBI-registered adviser (for sharing or publishing the app).
-   */
-  function personal(state) { return state.settings.personal !== false; }
-
-  // Assumed long-run yearly returns for the projection. Not guaranteed.
-  const ASSUMED_RETURN = { equity: 11, debt: 7, gold: 8 };
-
-  // What `monthly` invested every month grows to after `years` at `rate`% a year.
-  function sipValue(monthly, rate, years) {
-    const i = rate / 1200;
-    const n = years * 12;
-    return i > 0 ? monthly * ((Math.pow(1 + i, n) - 1) / i) * (1 + i) : monthly * n;
-  }
-
-  /*
-   * Where the Grow budget goes, freedom first:
-   * 1. shield: a 30-day emergency fund comes before any investing
-   * 2. debt: loans at 15%+ come next (a sure return no investment beats)
-   * 3. fund: the emergency fund keeps growing to its target alongside
-   * 4. invest: everything is in place
-   * The split for money left 5+ years: equity is 100 minus age (60% without
-   * an age), moved by risk comfort, between 20% and 85%; gold 10%; the rest
-   * debt (PPF, EPF/VPF).
-   */
-  function investPlan(state, todayIso) {
-    const st = state.settings;
-    const risk = st.risk === 'low' || st.risk === 'high' ? st.risk : 'medium';
-    const age = Number(st.age) || 0;
-    const f = freedomDays(state, todayIso);
-    const days = f ? f.days : 0;
-    const p = monthlyPlan(Object.assign({}, state, { adjustment: null }), todayIso);
-    const months = Number(state.savings.emergencyTargetMonths) || 3;
-    const target = months * (p.fixedTotal + p.debtMin + p.variableBills + p.flexTotal);
-    const fund = Number(state.savings.emergencyBalance) || 0;
-    const costly = state.debts.filter((d) => d.balance > 0 && d.rate >= 15).sort((a, b) => b.rate - a.rate);
-
-    let stage = 'invest';
-    if (days < 30) stage = 'shield';
-    else if (costly.length) stage = 'debt';
-    else if (fund < target) stage = 'fund';
-
-    let equity = (age ? Math.min(80, Math.max(30, 100 - age)) : 60) + (risk === 'low' ? -15 : risk === 'high' ? 10 : 0);
-    equity = Math.min(85, Math.max(20, equity));
-    const gold = 10;
-    const debt = 100 - equity - gold;
-
-    const monthly = p.invest;
-    const share = (pct) => Math.floor((monthly * pct) / 100 / 100) * 100;
-    const amounts = { debt: share(debt), gold: share(gold) };
-    amounts.equity = monthly - amounts.debt - amounts.gold;
-    const lines = [
-      { key: 'equity', pct: equity, amount: amounts.equity, title: tr('Nifty 50 index fund, monthly SIP'),
-        detail: tr(risk === 'high' ? 'Direct plan. With high risk comfort, up to a third can go to a Nifty Next 50 or flexi-cap fund.' : 'Direct plan, low cost. Prices will fall at times: keep the SIP going and stay 5+ years.') },
-      { key: 'debt', pct: debt, amount: amounts.debt, title: tr('PPF, or VPF through your employer'),
-        detail: tr('Government-backed and steady. PPF is tax-free with a 15-year lock-in. Money needed in 1–3 years: FD or RD instead.') },
-      { key: 'gold', pct: gold, amount: amounts.gold, title: tr('Gold ETF or gold mutual fund'),
-        detail: tr('Balances the rest when markets fall. Better than jewellery: no making charges.') },
-    ];
-    const blended = (equity * ASSUMED_RETURN.equity + debt * ASSUMED_RETURN.debt + gold * ASSUMED_RETURN.gold) / 100;
-    const projection = monthly > 0 ? [5, 10, 20].map((y) => ({ years: y, invested: monthly * 12 * y, value: Math.round(sipValue(monthly, blended, y)) })) : [];
-
-    let reason;
-    if (stage === 'shield') reason = tr(days === 1 ? 'First, a 30-day emergency shield: you have {n} day. Investing before it means the next surprise goes on a card.' : 'First, a 30-day emergency shield: you have {n} days. Investing before it means the next surprise goes on a card.', { n: days });
-    else if (stage === 'debt') reason = tr('First, clear {name} at {rate}% a year. Paying it off is a sure {rate}% return; no investment reliably beats that.', { name: costly[0].name, rate: costly[0].rate });
-    else if (stage === 'fund') reason = tr('Your 30-day shield is up and there are no costly loans. Invest alongside the emergency fund while it grows to its {months}-month target.', { months });
-    else reason = tr('Emergency fund full and no costly loans: you’re ready to invest.');
-
-    return { stage, reason, risk, age, equity, debt, gold, monthly, lines, blended: Math.round(blended * 10) / 10, projection, costly: costly[0] || null };
-  }
-
   // ---------- bank SMS parsing ----------
 
   const CATEGORY_KEYWORDS = [
@@ -2752,11 +2516,11 @@
     billShare, billPot, billsMonthly, billPaidIn, billDue, payBill, undoBillPayment, zoneStatus, ESSENTIAL_CATEGORIES,
     isCardTransfer, statementOn, dueAfter, cardOwedAt, cardReserve, cardStatus, emiQuote, revolveQuote, cardBillPlan,
     recordCardPayment, convertCardBalance, answerCardDue, cardLateFee, cardRate, CARD_RATE, undoCardConvert, cardFreeDays, byCategory, DEFAULT_SPLIT,
-    isLoanCredit, borrowedThisCycle, borrowCheck, rolloverOptions, personal, investPlan, sipValue, ASSUMED_RETURN, setTranslator,
+    isLoanCredit, borrowedThisCycle, borrowCheck, rolloverOptions, setTranslator,
     payoffOrder, tickDebts, debtJourney, lenderTasks, lastBorrowed,
     encryptBackup, openBackup, backupInfo, toB64, fromB64, isTransfer, walletBalances, goalStatus, goalsMonthly, budgetEnvelopes, netWorth, reportRange, budgetHistory,
     daySpent, daySpending, dayTally, roundSnapshot, roundResult, weekRecap,
-    monthReport, aiReport, LEAKS, leakNames, leakOf, leakSummary, leakSuggestions, spendWhere, spendWhen, spendTrend, BASICS,
+    monthReport, LEAKS, leakNames, leakOf, leakSummary, leakSuggestions, spendWhere, spendWhen, spendTrend, BASICS,
   };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = Core;

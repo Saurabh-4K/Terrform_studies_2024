@@ -7,7 +7,7 @@ A **Profile** button in the top bar (an avatar or person icon) opens one screen 
 - **Appearance:** Light, Dark, or Same as phone. Today the app only follows the phone's setting.
 - **Language:** English, मराठी, हिंदी (moved here from the Plan tab).
 - **Privacy and data protection:** the "Your privacy" details move here. They come off the Plan tab, so the main screens stay about money.
-- **Your data:** backup file, restore, erase everything, clean up SMS imports, personal mode.
+- **Your data:** backup file, restore, erase everything, clean up SMS imports.
 - **App lock** with fingerprint, face or the phone's screen lock (see 3).
 - **See the app tour** (see 2).
 - About: version and build number.
@@ -73,6 +73,5 @@ Today every card is open, so screens read like a long report. The idea (from a P
 ## Still pending from the review list
 - A clearer Debts screen when there are no debts.
 - Group the Plan tab's inputs, hide advanced settings, and show the result summary first.
-- Grow tab: show the investment split only after a minimum emergency cushion exists.
 - Tagline: "Make your salary last".
 - Step 9 of the plan: Pro version and monetisation, after the daily flow has been used for a round or two.

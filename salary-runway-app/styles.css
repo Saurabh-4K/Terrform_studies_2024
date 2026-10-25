@@ -308,7 +308,6 @@ details.lesson summary::after { content: "+"; color: var(--muted); font-weight: 
 details.lesson[open] summary::after { content: "−"; }
 details.lesson p { color: var(--muted); margin-top: 6px; font-size: 0.9rem; max-width: 65ch; }
 
-.disclaimer { font-size: 0.78rem; color: var(--muted); text-align: center; max-width: 60ch; margin: 0 auto; }
 
 /* ---------- nav ---------- */
 .tabbar {
@@ -476,12 +475,6 @@ label.check input { width: 18px; height: 18px; accent-color: var(--accent); }
 .borrow-card:focus { outline: none; }
 #borrow-form .field { min-width: 140px; }
 
-/* ---------- where to invest (personal mode) ---------- */
-.invest-line .hint { margin-top: 4px; }
-.bar span.k-equity { background: var(--accent); }
-.bar span.k-debt { background: var(--good); opacity: 0.6; }
-.bar span.k-gold { background: var(--caution); }
-
 /* ---------- month-end report card ---------- */
 .report-card { gap: 8px; }
 .report-card h2 { margin-bottom: 2px; }
@@ -502,7 +495,6 @@ label.check input { width: 18px; height: 18px; accent-color: var(--accent); }
 .report-sub { grid-column: 1 / -1; color: var(--muted); font-size: 0.8rem; line-height: 1.35; }
 .report-go { width: 100%; margin-top: 6px; }
 .report-card:focus { outline: none; }
-.report-ai { align-self: center; }
 
 /* ---------- Hisab Se: the Runway card ---------- */
 .coach-line { font-family: var(--font-display); font-weight: 650; font-size: 1.3rem; line-height: 1.25; letter-spacing: -0.01em; text-wrap: balance; }

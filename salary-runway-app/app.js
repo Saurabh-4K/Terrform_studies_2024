@@ -401,12 +401,6 @@
       '<b>Green:</b> at this pace, your money lasts until payday. <b>Careful:</b> bills and basics are covered, but this pace runs out early. <b>Red:</b> the money left doesn’t cover the bills and basics still to come (the red band on the graph).',
       '<b>Left to spend today</b> is what you can spend today and still reach payday. Money you move to savings today counts against it, since you can’t spend it any more.',
     ]],
-    aiplan: ['Plan next month with AI', [
-      '<b>Share report</b> opens your phone’s share menu: pick ChatGPT, Gemini or Claude to attach it, or Drive or Files to keep it. <b>Copy text</b> copies it to paste into any AI chat.',
-      'The questions are at the top of the report and stay the same every month, so the AI answers in the same shape each time: last month in brief, the trend, a budget table, a debt plan, the emergency fund, leaks to fix, a daily limit and 3 rules.',
-      'It has every entry from last month, with notes and places, and summaries of the two months before. Nothing leaves the phone until you share or paste it.',
-      'Best on payday, when last month is complete. The AI is asked to answer in the app’s language. Its plan is advice from a chat; check it against the app’s numbers.',
-    ]],
     payday: ['Payday check-in', [
       'Pay isn’t the same every month. Record what came in and why it changed: a bonus, tax, leave or a deduction. This month’s budgets are planned on what actually came in.',
       'A lasting change, like a raise or a new tax slab? Tick <b>This is my new usual pay</b>.',
@@ -532,14 +526,6 @@
       'Medical bills, a car repair, a family function or a tax bill. Enter the cost and see how to absorb it without new debt.',
       'The emergency fund is used first, then this month’s money. Grow and extra debt payments pause and flexible budgets are cut until the gap is made back.',
     ]],
-    invest: ['Where to invest', [
-      '<b>Freedom first:</b> a 30-day emergency shield, then loans at 15%+ interest, then investing alongside the emergency fund until it reaches its target.',
-      '<b>By when you need the money:</b> within a year: savings account, FD or liquid fund. 1–3 years: FD, RD or a short-duration debt fund. 3–5 years: a mix, or a balanced advantage fund. 5+ years: the split shown here.',
-      '<b>The split:</b> equity is 100 minus your age (60% if you leave age empty), lower for low risk comfort and higher for high, plus 10% gold. The rest goes to safe debt like PPF.',
-      '<b>Tax:</b> in the new tax regime (the default), PPF and ELSS give no 80C deduction, so choose them for returns and safety. In the old regime, up to ₹1.5 lakh a year in 80C lowers your tax.',
-      'The projection assumes equity 11%, debt 7% and gold 8% a year. Nothing is guaranteed, and PPF and FD rates change: check before you invest.',
-      'These are general rules of thumb for your own use, not personalised advice. Turn off Personal mode in the Plan tab before sharing the app.',
-    ]],
     borrow: ['Before you borrow', [
       'Enter a big expense to see how to pay it without a loan.',
       '<b>Needed now</b> (a repair, a hospital bill): your emergency fund goes first, since that’s what it’s for. Then this month’s Grow and extra loan payment, then this month’s money down to bills and basics.',
@@ -603,9 +589,6 @@
       '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8.5" r="3.8"/><path d="M4.5 20c1.2-3.8 4-5.6 7.5-5.6s6.3 1.8 7.5 5.6"/></svg></button></header>' +
       banner +
       '<main id="view" class="stack" style="gap:16px">' + views[tab]() + '</main>' +
-      '<p class="disclaimer">' + tr(Core.personal(state)
-        ? 'Personal mode: investment guidance here is general rules of thumb for your own use, not personalised advice.'
-        : 'Hisab Se is a budgeting tool. It does not give investment advice and is not registered with SEBI or RBI.') + '</p>' +
       '</div>' +
       '<nav class="tabbar" aria-label="' + tr('Sections') + '"><div class="tabbar-inner">' +
       TABS.map((t) =>
@@ -1127,50 +1110,6 @@
     state.salarySeen = { cycle: cyc.start, amount: p.amount, date: p.date || today() };
   }
 
-  // The month's report for any AI chat, with the questions inside.
-  function aiPlanCard() {
-    if (!state.settings.salary || state.isDemo) return '';
-    return '<section class="card">' + titled('Plan next month with AI', 'aiplan') +
-      '<p class="hint">' + tr('A report of last month (every entry) and the two months before, with the questions for the AI already inside. Give it to any free AI chat: ChatGPT, Gemini or Claude.') + '</p>' +
-      '<div class="row"><button class="primary" data-action="ai-report-share">' + tr('Share report') + '</button>' +
-      '<button data-action="ai-report-copy">' + tr('Copy text') + '</button></div></section>';
-  }
-
-  function shareAiReport() {
-    const r = Core.aiReport(state, today(), I18N.getLang());
-    if (ShareFile) {
-      Promise.resolve().then(() => ShareFile.share({ name: r.name, text: r.text, title: tr('Plan next month with AI') })).catch(() => toast('Couldn’t open the share menu'));
-      return;
-    }
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(new Blob([r.text], { type: 'text/plain;charset=utf-8' }));
-    a.download = r.name;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-  }
-
-  function copyAiReport() {
-    const text = Core.aiReport(state, today(), I18N.getLang()).text;
-    const fallback = () => {
-      const area = document.createElement('textarea');
-      area.value = text;
-      area.setAttribute('readonly', '');
-      area.style.position = 'fixed';
-      area.style.opacity = '0';
-      document.body.appendChild(area);
-      area.select();
-      let ok = false;
-      try { ok = document.execCommand('copy'); } catch (e) { /* not supported */ }
-      area.remove();
-      toast(ok ? 'Report copied. Paste it into an AI chat.' : 'Couldn’t copy. Use Share report instead.');
-    };
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(text).then(() => toast('Report copied. Paste it into an AI chat.'), fallback);
-    } else fallback();
-  }
-
   function thisMonthPay() {
     if (!state.settings.salary) return '';
     const cyc = Core.cycleFor(today(), Number(state.settings.payday) || 1);
@@ -1565,7 +1504,6 @@
         : stat('good', tr('Small payment leaks'), tr('None'), tr('No payments under ₹{under}.', { under: r.small.under }))) +
       '<div class="rr-goal"><span class="eyebrow">' + tr('Next round') + '</span><b>' + goal + '</b></div>' +
       '<button class="primary report-go" data-action="report-done">' + tr('Start the next round') + '</button>' +
-      '<button class="link report-ai" data-action="ai-report-share">' + tr('Get next month’s plan from an AI chat') + '</button>' +
       '</div></div>';
   }
 
@@ -2392,7 +2330,7 @@
     const freedom = (x) => (x > 0 ? ' = ' + tr(x === 1 ? '1 Day of Freedom' : '{n} Days of Freedom', { n: x }) : '');
     let html = '<section class="card leaks-card"><div class="card-head">' + titled('Little leaks', 'leaks') + '</div>';
     if (!L.leaks.length) {
-      html += '<p class="hint">' + tr('Small, regular spends that add up: cigarettes, liquor, tea and snacks, food delivery, betting and fantasy apps, or your own. Tag the places you pay for them and see what they cost your freedom.') + '</p>';
+      html += '<p class="hint">' + tr('Small spends that add up: cigarettes, tea, food delivery, betting apps. Tag where you pay for them to see what they cost.') + '</p>';
     } else {
       html += '<p class="leak-total">' + tr('About {amount} a month', { amount: inr(L.perMonth) }) + '<b>' + freedom(L.freedom) + '</b></p>' +
         L.leaks.map((x) => {
@@ -2907,7 +2845,6 @@
         ? '<p class="hint warn">' + tr('Your own amounts use all of the money left, so the automatic budgets are at ₹0.') + '</p>' : '') +
       '<div class="row"><button data-action="list-add" data-list="budgets">' + tr('Add category') + '</button>' +
       (edited ? '<button class="ghost" data-action="budgets-auto">' + tr('Share everything out automatically') + '</button>' : '') + '</div></section>' },
-        { key: 'aiplan', group: 'Your plan', icon: 'sparkle', label: 'Plan with AI', tone: 'amber', hide: !aiPlanCard(), badge: null, html: () => aiPlanCard() },
       ]);
   }
 
@@ -3425,6 +3362,7 @@
     return '<section class="card about-card"><span class="profile-logo big">' + LOGO + '</span><h2>Hisab Se</h2>' +
       '<p><b>' + tr('Make your salary last') + '</b></p>' +
       '<p class="hint">' + tr('Know each day how much you can spend and still reach payday without borrowing. Everything stays on your phone.') + '</p>' +
+      '<p class="hint">' + tr('Hisab Se is a budgeting tool. It does not give investment advice and is not registered with SEBI or RBI.') + '</p>' +
       '<p class="hint">' + (BUILD ? tr('Build {n}', { n: BUILD }) : tr('Browser preview')) + '</p></section>';
   }
 
@@ -3690,7 +3628,6 @@
         '</div>';
     }
     return '<section class="card" id="data-card">' + titled('Your data', 'data') +
-      '<label class="check"><input id="personal-mode" type="checkbox"' + (Core.personal(state) ? ' checked' : '') + '> ' + tr('Personal mode: show where to invest (for my own use)') + '</label>' +
       '<p class="' + (last ? 'good' : 'warn-text') + '">' + (last ? tr('Last backup: {date}.', { date: fmtDate(last, true) }) : tr('No backup yet. If this phone is lost or reset, your data goes with it.')) + '</p>' +
       (b || r ? '' : '<div class="row"><button class="primary" data-action="backup-open">' + tr('Make a backup file') + '</button><button data-action="restore-open">' + tr('Restore from a backup') + '</button></div>') +
       form +
@@ -4426,7 +4363,6 @@
       '<div class="bar-row"><div class="bar-top"><span>' + tr('{amount} of {target}', { amount: inr(sv.emergencyBalance), target: inr(target) }) + '</span><span class="amt">' + Math.round(fundPct) + '%</span></div>' +
       '<div class="bar"><span style="width:' + fundPct.toFixed(1) + '%"></span></div></div>' +
       '<p class="hint">' + fundNote + '</p>' +
-      (Core.personal(state) ? '<p class="hint">' + tr('<b>Where to keep it:</b> one month of needs in your savings account, the rest in a sweep-in FD or a liquid fund. Both pay more and give money back within about a day.') + '</p>' : '') +
       '</section>' +
       '', [
         { key: 'setaside', group: 'Save', icon: 'shield', label: 'This month’s set-aside', tone: 'mint',
@@ -4452,47 +4388,17 @@
         : '') },
         { key: 'emergency', group: 'Save', icon: 'big', label: 'Emergency plan', tone: 'mint', badge: state.adjustment ? { text: tr('On'), tone: 'bad' } : null, html: () => viewEmergency() },
         { key: 'invest', group: 'Grow & learn', icon: 'sprout', label: 'Grow', tone: 'teal', badge: sv.investSaved ? { text: shortInr(sv.investSaved) } : null, html: () =>
-      '<section class="card"><div class="card-head">' + titled('Grow', Core.personal(state) ? 'invest' : 'grow') + '<span class="hint">' + tr('Money set aside to invest') + '</span></div>' +
+      '<section class="card"><div class="card-head">' + titled('Grow', 'grow') + '<span class="hint">' + tr('Money set aside to invest') + '</span></div>' +
       '<div class="tiles" style="grid-template-columns:repeat(2,minmax(0,1fr))">' +
       tile('Set aside so far', inr(sv.investSaved), 'From your Grow budget') +
       tile('Each month', inr(p.invest), p.invest ? 'Grow budget' : 'Not started yet') + '</div>' +
-      (Core.personal(state)
-        ? investGuide()
-        : '<div class="callout"><b>' + tr('Ready to invest this money?') + '</b>' +
-          '<span>' + tr('Talk to a <b>SEBI-registered investment adviser</b> before investing. They can look at your goals and suggest options that suit you. All investments carry risk, and the decision is yours.') + '</span></div>') +
+      '<div class="callout"><b>' + tr('Ready to invest this money?') + '</b>' +
+        '<span>' + tr('Before investing, talk to a <b>SEBI-registered investment adviser</b>. All investments carry risk.') + '</span></div>' +
       '</section>' },
         { key: 'learn', group: 'Grow & learn', icon: 'book', label: 'Learn the basics', tone: 'teal', badge: null, html: () =>
       '<section class="card"><h2>' + tr('Learn the basics') + '</h2>' + LESSONS.map((l) =>
         '<details class="lesson"><summary>' + tr(l[0]) + '</summary><p>' + tr(l[1]) + '</p></details>').join('') + '</section>' },
       ]);
-  }
-
-  const STAGE_TITLES = {
-    shield: 'Not yet: build your 30-day shield first',
-    debt: 'Not yet: clear costly loans first',
-    fund: 'Start investing, alongside your fund',
-    invest: 'Ready to invest',
-  };
-
-  // Personal mode: where the Grow budget goes, freedom first.
-  function investGuide() {
-    const g = Core.investPlan(state, today());
-    const ready = g.stage === 'fund' || g.stage === 'invest';
-    return '<div class="callout ' + (ready ? 'good' : 'warn') + '"><b>' + tr(STAGE_TITLES[g.stage]) + '</b><span class="hint">' + esc(g.reason) + '</span></div>' +
-      '<div class="form-grid">' + numInput('age', 'settings.age', state.settings.age || '', 'Your age', ' max="100" placeholder="' + tr('Optional') + '"') +
-      '<div class="field wide"><span>' + tr('Risk comfort') + '</span><div class="seg" role="group" aria-label="' + tr('Risk comfort') + '">' +
-      [['low', 'Low'], ['medium', 'Medium'], ['high', 'High']].map((x) =>
-        '<button data-action="set-risk" data-risk="' + x[0] + '" aria-pressed="' + (g.risk === x[0]) + '">' + tr(x[1]) + '</button>').join('') + '</div></div></div>' +
-      '<span class="eyebrow">' + tr(ready ? 'Split for money you won’t need for 5+ years' : 'When you’re ready: split for money you won’t need for 5+ years') + '</span>' +
-      '<div class="bars">' + g.lines.map((l) =>
-        '<div class="bar-row invest-line"><div class="bar-top"><span><b>' + l.pct + '%</b> ' + l.title + '</span><span class="amt">' + (g.monthly ? tr('{amount}/mo', { amount: inr(l.amount) }) : '') + '</span></div>' +
-        '<div class="bar"><span class="k-' + l.key + '" style="width:' + l.pct + '%"></span></div>' +
-        '<p class="hint">' + l.detail + '</p></div>').join('') + '</div>' +
-      (g.projection.length
-        ? '<div class="summary"><span class="eyebrow">' + tr('{amount} a month at an assumed {rate}% a year', { amount: inr(g.monthly), rate: g.blended }) + '</span>' +
-          g.projection.map((x) => '<div class="line"><span>' + tr('In {years} years', { years: x.years }) + '<span class="hint line-sub">' + tr('{amount} put in', { amount: inr(x.invested) }) + '</span></span><span class="good">' + inr(x.value) + '</span></div>').join('') +
-          '<span class="hint">' + tr('Assumed, not guaranteed. Markets fall as well as rise.') + '</span></div>'
-        : '<p class="hint">' + tr('Set a Grow budget in the Plan tab to see monthly amounts.') + '</p>');
   }
 
   const LESSONS = [
@@ -4964,8 +4870,6 @@
         setTab('spend');
         { const amount = document.getElementById('tx-amount'); if (amount) { amount.scrollIntoView({ block: 'center' }); amount.focus(); } }
         return;
-      case 'ai-report-share': shareAiReport(); return;
-      case 'ai-report-copy': copyAiReport(); return;
       case 'backup-open': ui.backupForm = {}; ui.restore = null; break;
       case 'backup-cancel': ui.backupForm = null; break;
       case 'backup-make': makeBackup(); return;
@@ -5004,7 +4908,6 @@
       case 'tx-kind': ui.txKind = btn.dataset.kind; break;
       case 'help': ui.help = btn.dataset.help; break;
       case 'set-lang': setLang(btn.dataset.lang); widgetSent = ''; alertsSent = ''; break;
-      case 'set-risk': state.settings.risk = btn.dataset.risk; save(); break;
       case 'borrow-open': ui.borrow = { amount: Number(btn.dataset.amount) || 0, urgent: true, months: 12, focus: true }; break;
       case 'borrow-mode': ui.borrow.urgent = btn.dataset.urgent === '1'; break;
       case 'borrow-months': ui.borrow.months = Number(btn.dataset.months) || 12; break;
@@ -5412,10 +5315,6 @@
         toast(el.checked ? tr('What’s left in {category} moves to next month', { category: label(b.name) }) : tr('{category} starts fresh each month', { category: label(b.name) }));
       }
       return;
-    }
-    if (el.id === 'personal-mode') {
-      state.settings.personal = el.checked;
-      save(); toast(el.checked ? 'Personal mode on: the Grow tab shows where to invest' : 'Personal mode off'); rerenderKeepScroll(); return;
     }
     if (el.dataset.balance) {
       if (el.value === '') return;
@@ -5945,7 +5844,7 @@
       }
       const first = f.items.reduce((m, x) => (x.date < m ? x.date : m), f.items[0].date);
       return '<section class="card import-card"><h2>' + tr('{n} payments found', { n: f.items.length }) + '</h2>' +
-        '<p>' + tr('From {from} to yesterday. Each one needs a category before it counts. Sorting takes about {min} min; payments to the same place can be sorted together.', { from: fmtDate(first), min: sortMinutes(f.items) }) + '</p>' +
+        '<p>' + tr('From {from} to yesterday. Each needs a category to count; same places sort together (about {min} min).', { from: fmtDate(first), min: sortMinutes(f.items) }) + '</p>' +
         '<p class="hint">' + tr('Until sorted they stay out of your budgets, graphs and daily limit. You can stop and continue later.') + '</p>' + autoNote +
         '<div class="row"><button class="primary" data-action="import-start">' + tr('Start sorting') + '</button><button class="ghost" data-action="import-cancel">' + tr('Not now') + '</button></div></section>';
     }
