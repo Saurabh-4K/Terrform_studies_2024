@@ -303,6 +303,26 @@ For a refund, money from home, money returned, cashback, side income or extra pa
 
 ## 11. Debts tab: loans and payoff plans
 
+### Your way out of debt (shown when you have loans)
+Three stages, each with the wins on the way and **one next move** in your own numbers:
+- **Survive:** basics and every minimum paid, nothing new borrowed. Wins: 1, 7 and 30 days without borrowing (card spending and loans received count as borrowing). If you borrow, the count starts again, with your best kept: *"It happens: the count starts again, and your best is 12 days."*
+  - **Salary short of the basics and minimums?** The move is closing the gap in small steps, each in rupees: ask the lender with the biggest EMI for a longer tenure (*EMI ₹4,250 → ₹3,712*), halve little leaks or cut one non-essential budget by a fifth, and add a little income for the rest. A big gap also gets one honest line: it needs a bigger change too.
+- **Stabilize:** 1, then 7 Days of Freedom. The move: *"Put ₹470 in your emergency fund to reach 7 Days of Freedom."*
+- **Escape:** loans cleared one at a time. The move: this month's extra on the next target, or what even ₹1,000 extra a month would do.
+- Rent, food, medicine, school fees and every minimum always come first; the plan never suggests skipping them. **How is this worked out?** shows the rules with your numbers.
+
+### Loans to beat
+Each loan is a bar: what's left of its highest balance, with its rate and interest a month. Pick the order: **Highest interest first** (saves the most, with the total) or **Smallest first** (early wins, with the month the first loan goes and the extra it costs). The next target is marked. Loan EMIs now come off after each due date (the EMI less that month's interest, shown as *"−₹4,000 after the 5 Nov EMI"*); card EMIs and carried balances are paid through the card. The balance you type is the starting point, and you can correct it any time.
+
+### Calls to your lenders
+One task at a time:
+1. **List every loan** with its rate, EMI and due day.
+2. **One easy call:** move an EMI that leaves 10+ days after payday to just after it, or ask for a card late fee to be waived.
+3. **60 days of real numbers:** log spending, the bad days too.
+4. **Ask for a better deal**, costliest first: a loan at 12%+ asks for about 4 points less; a carried card balance asks to become an EMI at about 18%. While the salary is short, a loan also gets a longer-tenure ask, with the extra interest it costs.
+
+Each call shows **what to do, why it works and what it changes** in rupees, a ready **script** with your numbers, and a **5-minute prep** list. **I made the call** is a win whatever the answer (chime and confetti). The next day (or right away) it asks **How did it go?**: *They agreed* updates the loan (new due day, rate or EMI; a waived fee comes off), *They said no* moves on, *Call back or no answer* keeps the task open. A reminder shows on the Runway tab too. Hisab Se promises the plan and honest numbers, not the lender's answer.
+
 - **Interest leak banner** at the top: **You are losing ₹151/day to bank interest**, with the monthly total and the biggest leaks. It's red with any debt at 15%+, amber otherwise. Only money that actually costs interest counts: loans (including card EMIs and carried balances) and card bills past their due date. A card bill paid in full on time costs nothing, and 0% (no-cost) EMIs are left out.
 - **Credit cards** section (above).
 - **Loans:** name, balance, interest rate, monthly minimum and due day. Card EMIs and carried card balances land here too.

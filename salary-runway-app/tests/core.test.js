@@ -1064,3 +1064,108 @@ test('little leaks: tagged payees, a month of it in Days of Freedom, suggestions
   s.customLeaks = ['Gutkha'];
   assert.ok(Core.leakNames(s).indexOf('Gutkha') !== -1);
 });
+
+test('loan EMIs come off after each due date; card loans are left to the card', () => {
+  const s = baseState({ debts: [
+    { id: 'd1', name: 'Personal loan', balance: 100000, rate: 12, minPayment: 5000, dueDay: 5 },
+    { id: 'd2', name: 'Card carried balance', balance: 20000, rate: 49.6, minPayment: 1000, dueDay: 5, fromCard: 'c1' },
+    { id: 'd3', name: 'App loan', balance: 3000, rate: 0, minPayment: 5000, dueDay: 10 },
+  ] });
+  // First run: the typed balance already counts EMIs so far
+  assert.deepEqual(Core.tickDebts(s, '2026-10-20'), []);
+  assert.equal(s.debts[0].balance, 100000);
+  assert.equal(s.debts[0].emiThrough, '2026-10-05');
+  assert.equal(s.debts[0].startBalance, 100000);
+  Core.tickDebts(s, '2026-11-04');
+  assert.equal(s.debts[0].balance, 100000);
+  // 5 Nov: 1,000 interest, 5,000 EMI
+  Core.tickDebts(s, '2026-11-05');
+  assert.equal(s.debts[0].balance, 96000);
+  assert.deepEqual(s.debts[0].lastEmi, { date: '2026-11-05', off: 4000 });
+  // Opened again after a gap: December's EMI too (960 interest)
+  const cleared = Core.tickDebts(s, '2026-12-31');
+  assert.equal(s.debts[0].balance, 91960);
+  assert.equal(s.debts[0].startBalance, 100000);
+  assert.equal(s.debts[1].balance, 20000);
+  assert.deepEqual(cleared.map((d) => d.id), ['d3']);
+  assert.equal(s.debts[2].balance, 0);
+});
+
+test('debt journey: survive, stabilize, escape, with one next move', () => {
+  const s = baseState({ debts: [{ id: 'd1', name: 'Personal loan', balance: 100000, rate: 24, minPayment: 5000, dueDay: 5 }] });
+  // Basics: rent 15,000 + EMI 5,000 = 20,000 a month, covered by the salary; nothing borrowed
+  let j = Core.debtJourney(s, '2026-10-25');
+  assert.equal(j.gap, 0);
+  assert.equal(j.clean, null);
+  assert.equal(j.stage, 'stabilize');
+  assert.deepEqual(j.next, { kind: 'buffer', target: 1, amount: 667, days: 0 });
+  s.savings.emergencyBalance = 2000;
+  assert.deepEqual(Core.debtJourney(s, '2026-10-25').next, { kind: 'buffer', target: 7, amount: 2667, days: 3 });
+  // 7 Days of Freedom: escape, one loan at a time
+  s.savings.emergencyBalance = 5000;
+  j = Core.debtJourney(s, '2026-10-25');
+  assert.equal(j.stage, 'escape');
+  assert.equal(j.next.kind, 'start');
+  assert.equal(j.next.boss.name, 'Personal loan');
+  assert.ok(j.next.sooner > 0 && j.next.saves > 0);
+  s.savings.debtExtra = 2000;
+  assert.deepEqual(Core.debtJourney(s, '2026-10-25').next.amount, 2000);
+  // Card spending 5 days ago: back to surviving, 4 clean days so far
+  s.transactions.push({ id: 't1', date: '2026-10-20', amount: 800, category: 'Shopping', paidFrom: 'c1' });
+  j = Core.debtJourney(s, '2026-10-25');
+  assert.equal(j.stage, 'survive');
+  assert.deepEqual(j.next, { kind: 'clean', clean: 4, goal: 7 });
+  assert.equal(Core.debtJourney(s, '2026-11-20').stage, 'escape'); // 30 days clean
+  // Salary short of the basics: close the gap
+  s.transactions = [];
+  s.settings.salary = 18000;
+  j = Core.debtJourney(s, '2026-10-25');
+  assert.equal(j.stage, 'survive');
+  assert.equal(j.gap, 2000);
+  assert.equal(j.next.kind, 'gap');
+  assert.equal(j.next.call.name, 'Personal loan');
+  assert.ok(j.next.call.newEmi < 5000 && j.next.call.less === 5000 - j.next.call.newEmi);
+  assert.equal(j.next.earn, Math.max(0, 2000 - j.next.call.less - (j.next.cut ? j.next.cut.amount : 0)));
+  // Order: highest interest first, or smallest first
+  s.settings.salary = 50000;
+  s.debts.push({ id: 'd2', name: 'Small loan', balance: 8000, rate: 14, minPayment: 1000, dueDay: 10 });
+  assert.deepEqual(Core.debtJourney(s, '2026-10-25').bosses.map((b) => b.id), ['d1', 'd2']);
+  s.settings.payoffOrder = 'snowball';
+  assert.deepEqual(Core.debtJourney(s, '2026-10-25').bosses.map((b) => b.id), ['d2', 'd1']);
+  // A boss's bar: what's left of its highest balance
+  s.debts[0].startBalance = 125000;
+  assert.equal(Core.debtJourney(s, '2026-10-25').bosses[1].left, 0.8);
+  // No loans: nothing to show, or debt-free once the journey started
+  assert.equal(Core.debtJourney(baseState(), '2026-10-25'), null);
+  assert.deepEqual(Core.debtJourney(baseState({ journey: { start: '2026-09-01' } }), '2026-10-25'), { stage: 'free' });
+});
+
+test('lender calls: list, one easy call, 60 days of numbers, then a better rate', () => {
+  const s = baseState({ debts: [{ id: 'd1', name: 'Bajaj loan', balance: 100000, rate: 0, minPayment: 5000, dueDay: 20 }], journey: { start: '2026-08-01' } });
+  let L = Core.lenderTasks(s, '2026-10-25');
+  assert.equal(L.current.key, 'list');
+  assert.deepEqual(L.current.missing, ['Bajaj loan']);
+  s.debts[0].rate = 24;
+  // EMI on the 20th, 19 days after payday: ask to move it to the 3rd
+  L = Core.lenderTasks(s, '2026-10-25');
+  assert.deepEqual(L.current, { key: 'easy', kind: 'due', done: false, debtId: 'd1', name: 'Bajaj loan', emi: 5000, day: 20, want: 3, after: 19 });
+  // Call made: tomorrow asks how it went
+  s.journey.calls = [{ id: 'c1', task: 'easy', debtId: 'd1', date: '2026-10-25', follow: '2026-10-26' }];
+  assert.equal(Core.lenderTasks(s, '2026-10-25').follow, null);
+  assert.equal(Core.lenderTasks(s, '2026-10-26').follow.id, 'c1');
+  s.journey.calls[0].result = 'no';
+  L = Core.lenderTasks(s, '2026-10-26');
+  assert.equal(L.current.key, 'log');
+  assert.equal(L.current.logged, 0);
+  for (let i = 0; i < 60; i++) s.transactions.push({ id: 'x' + i, date: Core.addDays('2026-08-01', i), amount: 100, category: 'Food' });
+  L = Core.lenderTasks(s, '2026-10-26');
+  assert.equal(L.current.key, 'deal');
+  const o = L.current.offer;
+  assert.equal(o.target, 20);
+  assert.ok(o.saves > 0 && o.sooner >= 0);
+  assert.equal(o.tenure, undefined); // the salary covers the basics
+  assert.equal(L.current.share, 10); // 5,000 of 50,000
+  // Asked and answered: nothing left to ask
+  s.journey.calls.push({ id: 'c2', task: 'deal', debtId: 'd1', date: '2026-10-26', follow: '2026-10-27', result: 'yes' });
+  assert.equal(Core.lenderTasks(s, '2026-10-27').current, null);
+});

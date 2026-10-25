@@ -278,6 +278,13 @@
     return new Date(2026, i, 1).toLocaleDateString(I18N.locale(), { month: 'short' });
   }
 
+  // A day of the month as people say it: "the 3rd" in English, just the number elsewhere.
+  function nth(n) {
+    if (I18N.getLang() !== 'en') return String(n);
+    const t = n % 100;
+    return n + (t >= 11 && t <= 13 ? 'th' : ['th', 'st', 'nd', 'rd'][n % 10] || 'th');
+  }
+
   // "1 day", "3 days": the dictionaries hold "{n} day" and "{n} days".
   function plural(n, word, many) { return tr('{n} ' + (n === 1 ? word : many || word + 's'), { n }); }
 
@@ -415,6 +422,20 @@
       'Each card shows the bill, the due date and how much of the limit you’re using.',
       '<b>Pay in full</b> whenever you can: no interest. The minimum keeps most of the interest running. EMI is suggested only when you can’t pay in full and it’s clearly cheaper.',
     ]],
+    journey: ['Your way out of debt', [
+      'Three stages. <b>Survive:</b> pay the basics and every minimum without borrowing more. <b>Stabilize:</b> build a cushion of 7 Days of Freedom. <b>Escape:</b> clear the loans, one at a time.',
+      'There’s always a next move, in your own numbers. When the salary is short, it’s closing the gap in small steps, never skipping rent, food, medicine, school fees or a minimum payment.',
+    ]],
+    bosses: ['Loans to beat', [
+      'Each loan has a bar: what’s left of its highest balance. It drops after every EMI and every extra payment.',
+      '<b>Highest interest first</b> pays the least interest. <b>Smallest first</b> clears a loan sooner, and that early win keeps many people going. Both are good; the best one is the one you stick to.',
+      'EMIs are taken off after each due date, worked out from the rate. Correct the balance from your loan app now and then.',
+    ]],
+    calls: ['Calls to your lenders', [
+      'One call at a time, with a script, a 5-minute prep list and what the call can change, in rupees.',
+      'First an easy call: moving a due date or asking for a late fee back. After 60 days of logged spending, Hisab Se writes a request for a lower rate, backed by your real numbers.',
+      'Making the call is the win, whatever the answer. The next day the app asks how it went and updates your loan if something changed.',
+    ]],
     loans: ['Loans', [
       'Add personal loans, EMIs or other debts to see what they cost. Update balances from each statement.',
       'Credit cards usually charge 36–45% a year on unpaid balances. Paying only the minimum keeps most of that cost running.',
@@ -485,6 +506,7 @@
     '<circle cx="740" cy="1037" r="66" fill="#F2553A"/><circle cx="1193" cy="602" r="66" fill="#79E3C3"/></svg>';
 
   function render() {
+    tickJourney();
     const app = document.getElementById('app');
     const banner = state.isDemo
       ? '<div class="banner"><span>' + tr('You are looking at <b>example numbers</b>. Explore freely, then add your own.') + '</span>' +
@@ -606,6 +628,7 @@
     return (
       paydayCard() +
       rolloverCard() +
+      followBanner() +
       loanDebtNote() +
       '<section class="hero">' +
       '<p class="coach-line">' + coachLine(z, r, streak, daysToPay) + '</p>' +
@@ -1159,6 +1182,17 @@
         tr('<b>Minimums only:</b> you keep paying {amount} a month in minimums and EMIs, interest added every month, nothing extra.', { amount: inr(d.minimums) }),
         tr('<b>With your plan:</b> the same, plus {amount} a month extra on the loan with the highest interest first. When a loan is cleared, its payment moves on to the next one.', { amount: inr(d.extra) }),
         tr('These use today’s balances and rates. Update the balances from your statements to keep the dates honest. Lenders’ actual charges can differ.'),
+      ] : [];
+    }
+    if (ui.explain === 'journey') {
+      const j = Core.debtJourney(state, t);
+      title = tr('Your way out of debt');
+      lines = j && j.stage !== 'free' ? [
+        tr('<b>Survive</b> until your salary covers the basics and every minimum ({needs} a month against a salary of {salary}), and nothing has been borrowed for 30 days. Card spending and loans received count as borrowing.',
+          { needs: inr(j.freedom ? j.freedom.needs : 0), salary: inr(Core.monthlyPlan(state, t).salary) }),
+        tr('<b>Stabilize</b> until your emergency fund covers 7 Days of Freedom. You have {days}.', { days: j.fdays }),
+        tr('<b>Escape:</b> loans are cleared one at a time, in the order you pick. Each bar is what’s left of the loan’s highest balance. After each due date the EMI comes off: the EMI less that month’s interest.'),
+        tr('If you borrow again, you go back a step. Nothing is lost: your plan and wins stay.'),
       ] : [];
     }
     return '<div class="reset-modal-overlay help-overlay" role="presentation"><div class="reset-modal-card help-card" role="dialog" aria-modal="true" aria-labelledby="explain-title" id="explain-card">' +
@@ -2604,6 +2638,244 @@
     return html;
   }
 
+  // ---------- the debt journey ----------
+
+  // Once per render: loan EMIs after their due dates, and when the journey began.
+  function tickJourney() {
+    if (state.isDemo) return;
+    const t = today();
+    const before = JSON.stringify([state.debts, state.journey]);
+    Core.tickDebts(state, t).forEach((d) => askRollover({ from: d.name || 'Your loan', amount: Number(d.minPayment) || 0, kind: 'loan' }));
+    if (state.debts.some((d) => Number(d.balance) > 0)) {
+      state.journey = state.journey || { start: t, calls: [] };
+      const j = Core.debtJourney(state, t);
+      if (j && j.best > (Number(state.journey.best) || 0)) state.journey.best = j.best;
+    }
+    if (JSON.stringify([state.debts, state.journey]) !== before) save();
+  }
+
+  const STAGES = [
+    ['survive', 'Survive', 'Basics and every minimum paid, nothing new borrowed.'],
+    ['stabilize', 'Stabilize', 'A cushion, so a bad week doesn’t mean a new loan.'],
+    ['escape', 'Escape', 'One loan at a time, until none are left.'],
+  ];
+
+  function journeyCard() {
+    const j = Core.debtJourney(state, today());
+    if (!j) return '';
+    if (j.stage === 'free') {
+      return '<section class="card journey-card free"><h2>' + tr('Debt-free 🎉') + '</h2>' +
+        '<p>' + tr('No loans left. Keep paying yourself what the EMIs used to take, and keep the card for what you can pay in full.') + '</p></section>';
+    }
+    const at = STAGES.findIndex((s) => s[0] === j.stage);
+    const steps = '<ol class="journey-steps">' + STAGES.map((s, i) =>
+      '<li class="' + (i < at ? 'done' : i === at ? 'now' : '') + '"' + (i === at ? ' aria-current="step"' : '') + '>' +
+      '<span class="js-dot" aria-hidden="true">' + (i < at ? '✓' : i + 1) + '</span>' + tr(s[1]) + '</li>').join('') + '</ol>';
+    // The wins on the way: each milestone ticks off once reached.
+    const ms = (title, list, have) => '<div class="milestones"><span class="ms-title">' + tr(title) + '</span>' + list.map((n) =>
+      '<span class="ms' + (have >= n ? ' won' : '') + '">' + (have >= n ? '✓ ' : '') + plural(n, 'day') + '</span>').join('') + '</div>';
+    let wins = '';
+    if (j.stage === 'survive' && j.clean !== null) wins = ms('Without borrowing', j.milestones.survive, j.clean);
+    if (j.stage === 'stabilize') wins = ms('Days of Freedom', j.milestones.stabilize, j.fdays);
+    return '<section class="card journey-card stage-' + j.stage + '"><div class="card-head">' + titled('Your way out of debt', 'journey') + '</div>' +
+      steps +
+      '<p class="journey-what"><b>' + tr(STAGES[at][1]) + ':</b> ' + tr(STAGES[at][2]) + '</p>' +
+      wins +
+      nextMove(j) +
+      '<p class="hint">' + tr('Rent, food, medicine and school fees come first, and every minimum gets paid. The plan never asks you to skip them.') + '</p>' +
+      '<button class="explain-link" data-action="explain" data-explain="journey">' + tr('How is this worked out?') + '</button></section>';
+  }
+
+  // The one next move for the stage, in the person's own numbers.
+  function nextMove(j) {
+    const n = j.next;
+    let body = '';
+    if (n.kind === 'gap') {
+      const items = [];
+      if (n.call) items.push(tr('<b>Call {name}</b> and ask for a longer tenure: EMI {emi} → {newEmi}, {less} less a month.', { name: esc(n.call.name), emi: inr(n.call.emi), newEmi: inr(n.call.newEmi), less: inr(n.call.less) }));
+      if (n.cut) items.push(n.cut.kind === 'leaks'
+        ? tr('<b>Halve your little leaks:</b> {amount} a month (they cost {total} now).', { amount: inr(n.cut.amount), total: inr(n.cut.total) })
+        : tr('<b>Cut {name} by a fifth:</b> {amount} a month.', { name: label(n.cut.name), amount: inr(n.cut.amount) }));
+      if (n.earn > 0) items.push(tr('<b>Add {amount} a month:</b> overtime, tuition, a weekend shift or selling something you don’t use.', { amount: inr(n.earn) }));
+      // Small steps can't close a big gap alone: say so, with what can.
+      if (n.earn > 0.2 * (Core.monthlyPlan(state, today()).salary || 0)) items.push(tr('<b>A gap this size needs one bigger change too:</b> ask every lender for a lower EMI, not just one, or move to a cheaper home when the lease ends.'));
+      body = '<b>' + tr('Your salary is {gap} a month short of the basics and minimums. Close it in small steps:', { gap: inr(n.gap) }) + '</b>' +
+        '<ol class="gap-steps">' + items.map((x) => '<li>' + x + '</li>').join('') + '</ol>' +
+        '<span class="hint">' + tr('Never stop a minimum payment to close the gap: missed EMIs add fees and hurt your credit score.') + '</span>';
+    } else if (n.kind === 'clean') {
+      const soft = j.last && j.clean !== null && j.clean < 7
+        ? ' ' + tr('Borrowed on {date}. It happens: the count starts again, and your best is {best} days.', { date: fmtDate(j.last), best: j.best }) : '';
+      body = '<b>' + tr('Get through today without borrowing: no card, no loan app.') + '</b>' +
+        '<span>' + tr(n.clean === 1 ? '{n} day so far; {goal} is the next win.' : '{n} days so far; {goal} is the next win.', { n: n.clean, goal: n.goal }) + soft + '</span>';
+    } else if (n.kind === 'buffer') {
+      body = '<b>' + tr(n.target === 1 ? 'Put {amount} in your emergency fund to reach {target} Day of Freedom.' : 'Put {amount} in your emergency fund to reach {target} Days of Freedom.', { amount: inr(n.amount), target: n.target }) + '</b>' +
+        '<span>' + tr('A daily leftover moved to the fund counts. With a cushion, a surprise bill doesn’t become a new loan.') + '</span>' +
+        '<div><button data-action="tab" data-tab="grow">' + tr('Open emergency fund') + '</button></div>';
+    } else if (n.kind === 'extra') {
+      body = '<b>' + tr('This month: {amount} extra on {name}, on top of every minimum.', { amount: inr(n.amount), name: esc(n.boss.name) }) + '</b>' +
+        '<span>' + tr('Pay it with the EMI, then record it in Spend as money moved to that loan.') + '</span>';
+    } else {
+      body = '<b>' + tr('Even {amount} extra a month on {name} finishes {months} sooner and saves {saves} in interest.', { amount: inr(n.amount), name: esc(n.boss.name), months: plural(n.sooner, 'month'), saves: inr(n.saves) }) + '</b>' +
+        '<span>' + tr('Set an extra amount for loans in the Plan tab.') + '</span>';
+    }
+    return '<div class="next-move"><span class="eyebrow">' + tr('Your next move') + '</span>' + body + '</div>';
+  }
+
+  // Each loan as a boss with a bar: what's left of its highest balance.
+  function bossCard() {
+    const j = Core.debtJourney(state, today());
+    if (!j || j.stage === 'free') return '';
+    const p = j.plans;
+    const firstWin = (sim) => (sim.order[0] ? sim.order[0].month : null);
+    const seg = '<div class="seg" role="group" aria-label="' + tr('Order to clear loans') + '">' +
+      [['avalanche', 'Highest interest first'], ['snowball', 'Smallest first']].map((x) =>
+        '<button data-action="payoff-order" data-order="' + x[0] + '" aria-pressed="' + (j.order === x[0]) + '">' + tr(x[1]) + '</button>').join('') + '</div>';
+    let why = '';
+    const sameFirst = j.bosses.length > 1 && p.avalanche.order[0] && p.snowball.order[0] && p.avalanche.totalInterest === p.snowball.totalInterest;
+    if (sameFirst) {
+      why = tr('Here both orders give the same plan: {name} is both the costliest and the smallest.', { name: esc(j.bosses[0].name) });
+    } else if (j.bosses.length > 1 && !p.avalanche.neverPaysOff && !p.snowball.neverPaysOff) {
+      why = j.order === 'avalanche'
+        ? tr('Saves the most: {amount} in interest in all, against {other} smallest first.', { amount: inr(p.avalanche.totalInterest), other: inr(p.snowball.totalInterest) })
+        : tr('Early wins: the first loan is gone in month {month}. Costs {amount} more interest than highest interest first.', { month: firstWin(p.snowball), amount: inr(Math.max(0, p.snowball.totalInterest - p.avalanche.totalInterest)) });
+    }
+    return '<section class="card boss-card"><div class="card-head">' + titled('Loans to beat', 'bosses') + '</div>' +
+      (j.bosses.length > 1 ? seg + (why ? '<p class="hint">' + why + '</p>' : '') : '') +
+      '<div class="bosses">' + j.bosses.map((b, i) => {
+        const pct = Math.max(0, Math.min(100, b.left * 100));
+        return '<div class="boss' + (i === 0 ? ' target' : '') + '"><div class="boss-top"><b>' + esc(b.name || tr('Loan')) + '</b>' +
+          (i === 0 ? '<span class="chip chip-target">' + tr('Next target') + '</span>' : '') + '</div>' +
+          '<div class="boss-bar" role="img" aria-label="' + esc(tr('{amount} left of {start}', { amount: inr(b.balance), start: inr(b.start) })) + '"><span style="width:' + pct.toFixed(1) + '%"></span></div>' +
+          '<div class="boss-meta"><span>' + tr('{amount} left of {start}', { amount: inr(b.balance), start: inr(b.start) }) + '</span><span>' + tr('{rate}% · {interest} interest a month', { rate: b.rate, interest: inr(b.interest) }) + '</span></div>' +
+          (b.lastEmi && b.lastEmi.off > 0 ? '<p class="hint">' + tr('−{amount} after the {date} EMI (worked out; check your loan app now and then).', { amount: inr(b.lastEmi.off), date: fmtDate(b.lastEmi.date) }) + '</p>' : '') +
+          '</div>';
+      }).join('') + '</div></section>';
+  }
+
+  const PREP = [
+    'Your loan or card account number (in the app or a statement)',
+    'This script, open on the screen',
+    'Paper to note the person’s name and a reference number',
+    'Call from the mobile number the lender has',
+  ];
+
+  function scriptBox(text) {
+    return '<div class="script"><span class="eyebrow">' + tr('What to say') + '</span><p>' + text + '</p></div>';
+  }
+
+  function callTask(c, L) {
+    const prep = '<details class="lesson prep"><summary>' + tr('5-minute prep') + '</summary><ul>' +
+      PREP.map((x) => '<li>' + tr(x) + '</li>').join('') + '</ul></details>';
+    const made = (task, id, kind, want) => '<div class="row"><button class="primary" data-action="call-made" data-task="' + task + '" data-debt="' + id + '" data-kind="' + kind + '"' + (want ? ' data-want="' + want + '"' : '') + '>' + tr('I made the call') + '</button></div>' +
+      '<p class="hint">' + tr('Making the call is the win, whatever they say. Tomorrow we’ll ask how it went.') + '</p>';
+    const block = (what, why, change, script) => '<p class="task-what"><b>' + what + '</b></p>' +
+      '<p><span class="eyebrow">' + tr('Why it works') + '</span> ' + why + '</p>' +
+      '<p><span class="eyebrow">' + tr('What it changes') + '</span> ' + change + '</p>' + scriptBox(script);
+    if (c.key === 'list') {
+      return '<p class="task-what"><b>' + tr('Add the interest rate, EMI and due day for: {names}.', { names: c.missing.map((x) => esc(x || tr('Loan'))).join(', ') }) + '</b></p>' +
+        '<p><span class="eyebrow">' + tr('Why it works') + '</span> ' + tr('You can’t plan what you can’t see. Every date and script here uses these numbers.') + '</p>' +
+        '<div><button data-action="goto-loans">' + tr('Fill them in') + '</button></div>';
+    }
+    if (c.key === 'easy' && c.kind === 'due') {
+      const want = c.want;
+      c = Object.assign({}, c, { day: nth(c.day), want: nth(c.want) });
+      const payday = nth(Number(state.settings.payday) || 1);
+      return block(
+        tr('Ask {name} to move your EMI from the {day} to the {want}.', { name: esc(c.name), day: c.day, want: c.want }),
+        tr('Your salary comes on the {payday}; by the {day} your account has had {after} days of spending. Lenders often agree to move a due date, sometimes for a small fee.', { payday, day: c.day, after: c.after }),
+        tr('{emi} leaves when the account is fullest, so it’s less likely to bounce (a bounce often costs ₹500 or more).', { emi: inr(c.emi) }),
+        tr('“Hello, I’m calling about my loan account. My salary comes on the {payday}, and my EMI of {emi} is due on the {day}. Can you move the due date to the {want}, so it’s always paid on time? Is there any charge for this?”', { payday, emi: inr(c.emi), day: c.day, want: c.want })) +
+        prep + made('easy', c.debtId, 'due', want);
+    }
+    if (c.key === 'easy' && c.kind === 'fee') {
+      return block(
+        tr('Ask {name} to waive the late fee of {fee}.', { name: esc(c.name), fee: inr(c.fee) }),
+        tr('Card companies often waive a first late fee when you ask, especially if you usually pay on time.'),
+        tr('{fee} off what you owe on the card.', { fee: inr(c.fee) }),
+        tr('“Hello, I missed my card payment this month and was charged a late fee of {fee}. I’ve set a reminder so it won’t happen again. Can you waive this fee as a one-time courtesy?”', { fee: inr(c.fee) })) +
+        prep + made('easy', c.debtId, 'fee');
+    }
+    if (c.key === 'log') {
+      const pct = Math.min(100, (c.logged / c.goal) * 100);
+      return '<p class="task-what"><b>' + tr('Log every spend for 60 days, the bad days too.') + '</b></p>' +
+        '<div class="bar-row"><div class="bar-top"><span>' + tr('{n} of {goal} days logged', { n: c.logged, goal: c.goal }) + '</span></div><div class="bar"><span style="width:' + pct.toFixed(1) + '%"></span></div></div>' +
+        '<p><span class="eyebrow">' + tr('Why it works') + '</span> ' + tr('After two months Hisab Se knows your real numbers, and an ask backed by numbers is harder to refuse. Then it writes your offer for each lender.') + '</p>';
+    }
+    if (c.key === 'deal' && c.offer) {
+      const o = c.offer;
+      const v = { name: esc(o.name), rate: o.rate, target: o.target, emi: inr(o.emi), share: c.share, salary: inr(c.salary), balance: inr(o.balance) };
+      const change = (o.saves === null
+        ? tr('At today’s payments this never gets paid off; a lower rate is how it starts to shrink.')
+        : tr('Saves about {saves} in interest', { saves: inr(o.saves) }) + (o.sooner > 0 ? ' ' + tr('and finishes {months} sooner.', { months: plural(o.sooner, 'month') }) : '.')) +
+        (o.tenure ? '<br>' + tr('Or, while the salary is short: a longer tenure. EMI {emi} → {newEmi}, {less} less a month, but about {extra} more interest in all. Use it only to close the gap.', { emi: inr(o.emi), newEmi: inr(o.tenure.emi), less: inr(o.tenure.less), extra: inr(o.tenure.extraInterest) }) : '');
+      const html = o.kind === 'emi'
+        ? block(tr('Ask {name} to turn the {balance} you owe into an EMI at about {target}%.', v),
+          tr('A carried card balance costs about {rate}% a year. Card companies offer EMIs on what you owe, at much lower rates, to customers who ask.', v),
+          change,
+          tr('“Hello, I have {balance} outstanding on my card. I want to pay it all, in fixed monthly amounts. Can you convert it to an EMI? What rate and processing fee can you offer?”', v))
+        : block(tr('Ask {name} for a lower rate: {rate}% → {target}%.', v),
+          tr('Keeping a customer who pays is cheaper for a lender than finding a new one. You’re asking with your real numbers, and you can mention a balance transfer.'),
+          change,
+          tr('“Hello, I’m calling about my loan account. I pay {emi} a month, and my loans take {share}% of my salary of {salary}. I want to keep paying you in full and on time. Can you lower my interest rate from {rate}% to {target}%? If not, what is the best rate you can offer an existing customer?”', v) +
+          (o.tenure ? '<br>' + tr('If the salary is short: “Can you extend the tenure so the EMI comes down to about {newEmi}?”', { newEmi: inr(o.tenure.emi) }) : ''));
+      return html + '<p class="hint">' + tr('If they say no: thank them, and ask what it would take. You can ask again in three months, or ask another bank about a balance transfer.') + '</p>' +
+        (c.more ? '<p class="hint">' + tr(c.more === 1 ? 'Then {n} more loan to ask about.' : 'Then {n} more loans to ask about.', { n: c.more }) + '</p>' : '') +
+        prep + made('deal', o.debtId, o.kind);
+    }
+    return '';
+  }
+
+  // "How did it go?": the day after a call.
+  function followUp(f) {
+    const d = state.debts.find((x) => x.id === f.debtId);
+    const name = esc((d && d.name) || tr('your lender'));
+    if (ui.callYes === f.id && f.kind !== 'fee') {
+      const field = f.kind === 'due'
+        ? '<label class="field" for="call-new"><span>' + tr('New due day') + '</span><input id="call-new" type="number" inputmode="numeric" min="1" max="31" value="' + esc(f.want || (d ? d.dueDay : '')) + '"></label>'
+        : f.kind === 'emi'
+          ? '<label class="field" for="call-new"><span>' + tr('EMI interest % a year') + '</span><input id="call-new" type="number" inputmode="decimal" min="0" step="0.1" value=""></label>' +
+            '<label class="field" for="call-emi"><span>' + tr('EMI a month (₹)') + '</span><input id="call-emi" type="number" inputmode="numeric" min="0" value=""></label>'
+          : '<label class="field" for="call-new"><span>' + tr('New interest % a year') + '</span><input id="call-new" type="number" inputmode="decimal" min="0" step="0.1" value=""></label>' +
+            '<label class="field" for="call-emi"><span>' + tr('New EMI a month (₹), if it changed') + '</span><input id="call-emi" type="number" inputmode="numeric" min="0" value="' + esc(d ? d.minPayment : '') + '"></label>';
+      return '<div class="callout good follow"><b>' + tr('Well done! What did {name} agree to?', { name }) + '</b><div class="form-grid">' + field + '</div>' +
+        '<div class="row"><button class="primary" data-action="call-save" data-id="' + f.id + '">' + tr('Update my loan') + '</button><button class="ghost" data-action="call-cancel">' + tr('Back') + '</button></div></div>';
+    }
+    return '<div class="callout warn follow"><b>' + tr('How did your call to {name} go?', { name }) + '</b>' +
+      '<div class="choices-row">' +
+      '<button class="primary" data-action="call-result" data-id="' + f.id + '" data-result="yes">' + tr('They agreed') + '</button>' +
+      '<button data-action="call-result" data-id="' + f.id + '" data-result="no">' + tr('They said no') + '</button>' +
+      '<button data-action="call-result" data-id="' + f.id + '" data-result="later">' + tr('Call back or no answer') + '</button></div></div>';
+  }
+
+  const TASK_TITLES = { list: 'List every loan', easy: 'One easy call', log: '60 days of real numbers', deal: 'Ask for a better deal' };
+
+  function lenderCard() {
+    const t = today();
+    const L = Core.lenderTasks(state, t);
+    if (!L) return '';
+    const steps = '<ol class="task-steps">' + L.tasks.map((x) =>
+      '<li class="' + (x.done ? 'done' : L.current && L.current.key === x.key ? 'now' : '') + '">' + (x.done ? '✓ ' : '') + tr(TASK_TITLES[x.key]) +
+      (x.key === 'easy' && x.done && x.skipped ? ' <span class="hint">' + tr('(not needed)') + '</span>' : '') + '</li>').join('') + '</ol>';
+    return '<section class="card lender-card" id="lender-card"><div class="card-head">' + titled('Calls to your lenders', 'calls') +
+      (L.made ? '<span class="chip chip-freedom">' + tr(L.made === 1 ? '{n} call made' : '{n} calls made', { n: L.made }) + '</span>' : '') + '</div>' +
+      (L.follow ? followUp(L.follow) : '') +
+      steps +
+      (L.pending && !L.follow ? '<div class="callout">' + tr('You called {name} on {date}. Tomorrow Hisab Se asks how it went.', { name: esc(((state.debts.find((x) => x.id === L.pending.debtId)) || {}).name || tr('your lender')), date: fmtDate(L.pending.date) }) +
+        '<div><button data-action="call-now" data-id="' + L.pending.id + '">' + tr('Tell how it went now') + '</button></div></div>' : '') +
+      (L.pending ? '' : L.current ? '<div class="task">' + callTask(L.current, L) + '</div>'
+        : '<p class="good">' + tr('Every call on the list is done. New loans or rates of 12% and above will show up here.') + '</p>') +
+      '<p class="hint">' + tr('Hisab Se gives you the plan and the honest numbers. What the lender says is up to them.') + '</p></section>';
+  }
+
+  // The day after a call, on the Runway tab too.
+  function followBanner() {
+    const L = state.isDemo ? null : Core.lenderTasks(state, today());
+    if (!L || !L.follow) return '';
+    const d = state.debts.find((x) => x.id === L.follow.debtId);
+    return '<div class="callout warn"><b>' + tr('How did your call to {name} go?', { name: esc((d && d.name) || tr('your lender')) }) + '</b>' +
+      '<div><button data-action="tab" data-tab="debts">' + tr('Tell Hisab Se') + '</button></div></div>';
+  }
+
   function viewDebts() {
     const t = today();
     const debts = state.debts.filter((d) => Number(d.balance) > 0);
@@ -2638,9 +2910,12 @@
 
     return (
       rolloverCard() +
+      journeyCard() +
       leakBanner() +
+      bossCard() +
+      lenderCard() +
       cardsSection() +
-      '<section class="card"><div class="card-head">' + titled('Loans', 'loans') + '</div>' +
+      '<section class="card" id="loans-card"><div class="card-head">' + titled('Loans', 'loans') + '</div>' +
       (state.debts.length ? '' : '<p class="hint">' + tr('No loans added.') + '</p>') +
       '<div class="edit-rows">' + state.debts.map((d) =>
         '<div class="edit-row cols-debt">' + listField('debts', d, 'name', 'Name', 'text') + listField('debts', d, 'balance', 'Balance (₹)', 'number') +
@@ -2952,6 +3227,77 @@
       }
       case 'explain': ui.explain = btn.dataset.explain; break;
       case 'explain-close': ui.explain = null; break;
+      case 'payoff-order':
+        state.settings.payoffOrder = btn.dataset.order === 'snowball' ? 'snowball' : 'avalanche';
+        save(); break;
+      case 'goto-loans': {
+        const card = document.getElementById('loans-card');
+        if (!card) return;
+        card.scrollIntoView({ block: 'start' });
+        const first = Array.from(card.querySelectorAll('input')).find((i) => !i.value || i.value === '0');
+        if (first) first.focus({ preventScroll: true });
+        return;
+      }
+      case 'call-made': {
+        state.journey = state.journey || { start: t, calls: [] };
+        state.journey.calls = (state.journey.calls || []).concat(Object.assign({ id: uid(), task: btn.dataset.task, debtId: btn.dataset.debt, kind: btn.dataset.kind, date: t, follow: Core.addDays(t, 1) },
+          btn.dataset.want ? { want: Number(btn.dataset.want) } : {}));
+        save();
+        celebrate(tr('You made the call. That’s the hard part, whatever they said. Tomorrow: how did it go?'));
+        break;
+      }
+      case 'call-result': {
+        const c = ((state.journey || {}).calls || []).find((x) => x.id === btn.dataset.id);
+        if (!c) return;
+        const r = btn.dataset.result;
+        if (r === 'yes' && c.kind === 'fee') {
+          const d = state.debts.find((x) => x.id === c.debtId);
+          if (d && Number(d.lateFee) > 0) {
+            d.balance = Math.max(0, (Number(d.balance) || 0) - Number(d.lateFee));
+            delete d.lateFee;
+          }
+          c.result = 'yes';
+          save(); celebrate(tr('Late fee waived. That money stays with you.'));
+          break;
+        }
+        if (r === 'yes') { ui.callYes = c.id; break; }
+        c.result = r;
+        save();
+        toast(r === 'no'
+          ? tr('Now you know, and asking was the hard part. Hisab Se moves on to the next step.')
+          : tr('Try again when you can. The task stays open.'));
+        break;
+      }
+      case 'call-cancel': ui.callYes = null; break;
+      case 'call-now': {
+        const c = ((state.journey || {}).calls || []).find((x) => x.id === btn.dataset.id);
+        if (c) { c.follow = t; save(); }
+        break;
+      }
+      case 'call-save': {
+        const c = ((state.journey || {}).calls || []).find((x) => x.id === btn.dataset.id);
+        const d = c && state.debts.find((x) => x.id === c.debtId);
+        if (!c) return;
+        const val = (id) => { const el = document.getElementById(id); return el && el.value !== '' ? Number(el.value) : null; };
+        const v = val('call-new');
+        const emi = val('call-emi');
+        if (d && c.kind === 'due' && v >= 1 && v <= 31) {
+          d.dueDay = Math.round(v);
+        } else if (d && c.kind === 'emi') {
+          // The card balance became an EMI: a loan at the new rate, paid through the card.
+          if (v !== null && v >= 0) d.rate = v;
+          if (emi > 0) d.minPayment = Math.round(emi);
+          d.name = d.name.replace(/ carried balance$/, ' EMI');
+        } else if (d) {
+          if (v !== null && v >= 0) d.rate = v;
+          if (emi > 0) d.minPayment = Math.round(emi);
+        }
+        c.result = 'yes';
+        ui.callYes = null;
+        save();
+        celebrate(tr('Updated. Your dates and plan now use the new numbers.'));
+        break;
+      }
       case 'chart-toggle':
         ui.chartOpen = !ui.chartOpen;
         try { localStorage.setItem(CHART_KEY, ui.chartOpen ? '1' : ''); } catch (e) { /* private mode */ }

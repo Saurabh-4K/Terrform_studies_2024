@@ -758,6 +758,7 @@
       // Interest with GST, and a late fee (with GST) when one was charged.
       const owed = amount + Math.round(Number(opts && opts.lateFee) || 0);
       debt = { id: newId('d'), name: card.name + ' carried balance', balance: owed, rate: cardRate(card), minPayment: Math.max(200, Math.round(owed * 0.05)), dueDay: card.dueDay, fromCard: card.id, starts };
+      if (Number(opts && opts.lateFee) > 0) debt.lateFee = Math.round(opts.lateFee);
     }
     state.debts.push(debt);
     const tx = { id: newId('cc'), kind: 'cardconvert', cardId, date: dateIso, amount, note: debt.name, debtId: debt.id, source: 'manual' };
@@ -1126,7 +1127,7 @@
     const extra = monthlyPlan(Object.assign({}, state, { adjustment: null }), todayIso).debtExtra;
     const when = (sim) => ({ months: sim.months, interest: sim.totalInterest, never: sim.neverPaysOff, date: sim.neverPaysOff ? null : addMonths(todayIso, sim.months) });
     const now = when(simulateDebts(debts, 0, 'avalanche', false));
-    const plan = when(simulateDebts(debts, extra, 'avalanche', true));
+    const plan = when(simulateDebts(debts, extra, payoffOrder(state), true));
     return {
       now, plan, extra,
       minimums: sum(debts, (d) => Number(d.minPayment) || 0),
@@ -1141,6 +1142,221 @@
       avalanche: simulateDebts(debts, extra, 'avalanche', true),
       snowball: simulateDebts(debts, extra, 'snowball', true),
     };
+  }
+
+  // ---------- the debt journey: survive, stabilize, escape ----------
+
+  // The order chosen for clearing loans: highest interest first (saves most) or smallest first (early wins).
+  function payoffOrder(state) {
+    return state.settings && state.settings.payoffOrder === 'snowball' ? 'snowball' : 'avalanche';
+  }
+
+  // The latest due date of a loan on or before todayIso.
+  function lastDueOn(todayIso, day) {
+    const t = parseISO(todayIso);
+    let d = toISO(clampedDate(t.getFullYear(), t.getMonth(), day));
+    if (d > todayIso) d = toISO(clampedDate(t.getFullYear(), t.getMonth() - 1, day));
+    return d;
+  }
+
+  /*
+   * Once a day: each loan's EMI comes off after its due date (the EMI less
+   * that month's interest), and each loan remembers its highest balance for
+   * its progress bar. The balance typed in already counts EMIs paid up to
+   * then, so the first run only notes the date. Card EMIs and carried
+   * balances are paid through the card bill and left alone.
+   * Returns the loans that reached ₹0.
+   */
+  function tickDebts(state, todayIso) {
+    const cleared = [];
+    state.debts.forEach((d) => {
+      const bal = Number(d.balance) || 0;
+      if (bal > (Number(d.startBalance) || 0)) d.startBalance = bal;
+      const day = Number(d.dueDay);
+      const emi = Number(d.minPayment) || 0;
+      if (d.fromCard || !day || !(emi > 0) || !(bal > 0)) return;
+      if (!d.emiThrough) { d.emiThrough = lastDueOn(todayIso, day); return; }
+      // One EMI a month, each in the month after the last one counted.
+      const from = parseISO(d.emiThrough);
+      for (let k = 1; d.balance > 0; k++) {
+        const due = toISO(clampedDate(from.getFullYear(), from.getMonth() + k, day));
+        if (due > todayIso) break;
+        const interest = (d.balance * (Number(d.rate) || 0)) / 1200;
+        const after = Math.max(0, Math.round(d.balance + interest - emi));
+        d.lastEmi = { date: due, off: Math.round(d.balance - after) };
+        d.balance = after;
+        d.emiThrough = due;
+        if (after === 0) cleared.push(d);
+      }
+    });
+    return cleared;
+  }
+
+  // The last day money was borrowed: card spending, or money received that is a loan.
+  function lastBorrowed(state, todayIso) {
+    let last = null;
+    state.transactions.forEach((t) => {
+      if (t.date > todayIso) return;
+      const borrowed = (isFlexible(t) && t.paidFrom && t.paidFrom !== 'account') || (isIncome(t) && t.borrowed);
+      if (borrowed && (!last || t.date > last)) last = t.date;
+    });
+    return last;
+  }
+
+  function emiFor(P, rate, months) { return emiQuote(P, rate, months, 0).emi; }
+
+  /*
+   * Where someone with loans stands, and the one next move.
+   * - Survive: basics and every minimum covered, no new borrowing. Done when
+   *   the salary covers them and nothing was borrowed in the last 30 days.
+   *   Wins: 1, 7 and 30 days without borrowing. Short each month: the move
+   *   is closing the gap (a call, one cut, a little income), never "no".
+   * - Stabilize: 1, then 7 Days of Freedom.
+   * - Escape: one loan at a time, in the chosen order, each with a bar of
+   *   what's left of its highest balance.
+   * Minimums and basics (rent, food, medicine, school fees) always come first.
+   */
+  function debtJourney(state, todayIso) {
+    const j = state.journey || {};
+    const debts = state.debts.filter((d) => Number(d.balance) > 0);
+    if (!debts.length) return j.start ? { stage: 'free' } : null;
+    const f = freedomDays(state, todayIso);
+    const plan = monthlyPlan(Object.assign({}, state, { adjustment: null }), todayIso);
+    const salary = Number(plan.salary) || 0;
+    const needs = f ? f.needs : plan.fixedTotal + plan.debtMin + plan.variableBills;
+    const gap = Math.max(0, Math.round(needs - salary));
+    const last = lastBorrowed(state, todayIso);
+    const clean = last ? Math.max(0, daysBetween(last, todayIso) - 1) : null;
+    const surviveDone = gap === 0 && (clean === null || clean >= 30);
+    const fdays = f ? f.days : 0;
+    const stage = !surviveDone ? 'survive' : fdays < 7 ? 'stabilize' : 'escape';
+
+    const order = payoffOrder(state);
+    const sorted = debts.slice().sort((a, b) =>
+      order === 'snowball' ? a.balance - b.balance || b.rate - a.rate : b.rate - a.rate || a.balance - b.balance);
+    const bosses = sorted.map((d) => {
+      const start = Math.max(Number(d.startBalance) || 0, Number(d.balance) || 0);
+      return {
+        id: d.id, name: d.name, balance: Math.round(d.balance), start, rate: Number(d.rate) || 0,
+        emi: Number(d.minPayment) || 0, left: start > 0 ? d.balance / start : 1,
+        interest: Math.round((d.balance * (Number(d.rate) || 0)) / 1200), lastEmi: d.lastEmi || null, fromCard: !!d.fromCard,
+      };
+    });
+    const extra = plan.debtExtra;
+    const plans = { avalanche: simulateDebts(debts, extra, 'avalanche', true), snowball: simulateDebts(debts, extra, 'snowball', true) };
+
+    let next;
+    if (stage === 'survive' && gap > 0) {
+      // Close the gap: a longer tenure on the biggest EMI, one cut, then a little income for the rest.
+      const loans = debts.filter((d) => !d.fromCard && Number(d.minPayment) > 0).sort((a, b) => b.minPayment - a.minPayment);
+      let call = null;
+      if (loans.length) {
+        const d = loans[0];
+        const left = simulateDebts([d], 0, 'avalanche', false);
+        if (!left.neverPaysOff) {
+          const emi = emiFor(d.balance, d.rate, left.months + 12);
+          if (emi < d.minPayment) call = { id: d.id, name: d.name, emi: d.minPayment, newEmi: emi, less: d.minPayment - emi, months: left.months + 12 };
+        }
+      }
+      const leaks = leakSummary(state, todayIso);
+      const flex = plan.budgets.filter((b) => ESSENTIAL_CATEGORIES.indexOf(b.name) === -1 && b.base > 0).sort((a, b) => b.base - a.base)[0];
+      let cut = null;
+      if (leaks.perMonth >= 300) cut = { kind: 'leaks', amount: Math.round(leaks.perMonth / 2), total: leaks.perMonth };
+      else if (flex) cut = { kind: 'budget', name: flex.name, amount: Math.round(flex.base * 0.2), total: flex.base };
+      const covered = (call ? call.less : 0) + (cut ? cut.amount : 0);
+      next = { kind: 'gap', gap, call, cut, earn: Math.max(0, gap - covered) };
+    } else if (stage === 'survive') {
+      next = { kind: 'clean', clean: clean || 0, goal: !clean ? 1 : clean < 7 ? 7 : 30 };
+    } else if (stage === 'stabilize') {
+      const target = fdays < 1 ? 1 : 7;
+      next = { kind: 'buffer', target, amount: Math.max(0, Math.ceil(target * f.daily - f.fund)), days: fdays };
+    } else {
+      const boss = bosses[0];
+      if (extra > 0) {
+        next = { kind: 'extra', boss, amount: extra };
+      } else {
+        const base = simulateDebts(debts, 0, order, true);
+        const more = simulateDebts(debts, 1000, order, true);
+        next = { kind: 'start', boss, amount: 1000, sooner: base.neverPaysOff || more.neverPaysOff ? 0 : base.months - more.months, saves: Math.max(0, base.totalInterest - more.totalInterest) };
+      }
+    }
+    return {
+      stage, gap, clean, last, best: Math.max(Number(j.best) || 0, clean || 0), freedom: f, fdays,
+      order, bosses, plans, extra, next,
+      milestones: { survive: [1, 7, 30], stabilize: [1, 7] },
+    };
+  }
+
+  /*
+   * Calls to lenders, one at a time:
+   * 1. List every loan with its rate and due day.
+   * 2. One easy call: move an EMI that leaves late in the month to just after
+   *    payday, or ask for a card late fee to be waived.
+   * 3. Log spending for 60 days, so the numbers behind the next ask are real.
+   * 4. Ask each costly loan (12%+, highest first) for a lower rate; while the
+   *    salary is short of the basics, also a longer tenure.
+   * A call made counts as a win whatever the answer; the next day asks how it went.
+   */
+  function lenderTasks(state, todayIso) {
+    const j = state.journey || {};
+    const calls = j.calls || [];
+    const debts = state.debts.filter((d) => Number(d.balance) > 0);
+    if (!debts.length) return null;
+    const payday = Number(state.settings.payday) || 1;
+    const answered = (key, id) => calls.some((c) => c.task === key && c.debtId === id && c.result && c.result !== 'later');
+    const tasks = [];
+
+    const missing = debts.filter((d) => !d.fromCard && (!(Number(d.rate) > 0) || !Number(d.dueDay) || !(Number(d.minPayment) > 0)));
+    tasks.push({ key: 'list', done: !missing.length, missing: missing.map((d) => d.name || '') });
+
+    // EMI leaving 10+ days after payday: by then the account is lower.
+    const late = debts.filter((d) => !d.fromCard && Number(d.dueDay) && Number(d.minPayment) > 0)
+      .map((d) => ({ d, after: (Number(d.dueDay) - payday + 31) % 31 }))
+      .filter((x) => x.after > 10 && !answered('easy', x.d.id))
+      .sort((a, b) => b.d.minPayment - a.d.minPayment)[0];
+    const fee = debts.filter((d) => d.fromCard && Number(d.lateFee) > 0 && !answered('easy', d.id))[0];
+    const easyDone = calls.some((c) => c.task === 'easy' && c.result && c.result !== 'later');
+    if (late && !easyDone) {
+      const want = Math.min(28, payday + 2);
+      tasks.push({ key: 'easy', kind: 'due', done: false, debtId: late.d.id, name: late.d.name, emi: Number(late.d.minPayment), day: Number(late.d.dueDay), want, after: late.after });
+    } else if (fee && !easyDone) {
+      tasks.push({ key: 'easy', kind: 'fee', done: false, debtId: fee.id, name: fee.name, fee: Number(fee.lateFee) });
+    } else {
+      tasks.push({ key: 'easy', done: true, skipped: !easyDone });
+    }
+
+    const start = j.start || todayIso;
+    const logged = new Set(state.transactions.filter((t) => t.date >= start && t.date <= todayIso).map((t) => t.date)).size;
+    tasks.push({ key: 'log', done: logged >= 60, logged, goal: 60 });
+
+    const plan = monthlyPlan(Object.assign({}, state, { adjustment: null }), todayIso);
+    const f = freedomDays(state, todayIso);
+    const short = f ? f.needs > plan.salary : false;
+    const costly = debts.filter((d) => Number(d.rate) >= 12 && !answered('deal', d.id)).sort((a, b) => b.rate - a.rate);
+    const offers = costly.map((d) => {
+      // A loan: ask for about 4 points less. A carried card balance: ask to turn it into an EMI at about 18%.
+      const target = d.fromCard ? Math.min(Number(d.rate), 18) : Math.max(10.5, Math.round((Number(d.rate) - 4) * 2) / 2);
+      const now = simulateDebts([d], 0, 'avalanche', false);
+      const lower = simulateDebts([Object.assign({}, d, { rate: target })], 0, 'avalanche', false);
+      const o = {
+        debtId: d.id, name: d.name, kind: d.fromCard ? 'emi' : 'rate', rate: Number(d.rate), target, emi: Number(d.minPayment) || 0, balance: Math.round(d.balance),
+        saves: now.neverPaysOff ? null : Math.max(0, now.totalInterest - lower.totalInterest),
+        sooner: now.neverPaysOff || lower.neverPaysOff ? 0 : now.months - lower.months,
+      };
+      if (short && !d.fromCard && !now.neverPaysOff && o.emi > 0) {
+        const emi = emiFor(d.balance, d.rate, now.months + 12);
+        const longer = emiQuote(d.balance, d.rate, now.months + 12, 0);
+        if (emi < o.emi) o.tenure = { emi, less: o.emi - emi, months: now.months + 12, extraInterest: Math.max(0, longer.interest - now.totalInterest) };
+      }
+      return o;
+    });
+    const share = plan.salary > 0 ? Math.round((plan.debtMin / plan.salary) * 100) : 0;
+    tasks.push({ key: 'deal', done: !offers.length, unlocked: tasks[2].done, offer: offers[0] || null, more: Math.max(0, offers.length - 1), share, salary: plan.salary, debtMin: plan.debtMin });
+
+    const current = tasks.find((t) => !t.done && (t.key !== 'deal' || t.unlocked)) || null;
+    const follow = calls.find((c) => !c.result && c.follow <= todayIso) || null;
+    const pending = calls.find((c) => !c.result) || null;
+    return { tasks, current, follow, pending, made: calls.length };
   }
 
   // ---------- emergencies ----------
@@ -2184,6 +2400,7 @@
     isCardTransfer, statementOn, dueAfter, cardOwedAt, cardReserve, cardStatus, emiQuote, revolveQuote, cardBillPlan,
     recordCardPayment, convertCardBalance, answerCardDue, cardLateFee, cardRate, CARD_RATE, undoCardConvert, cardFreeDays, byCategory, DEFAULT_SPLIT,
     isLoanCredit, borrowedThisCycle, borrowCheck, rolloverOptions, personal, investPlan, sipValue, ASSUMED_RETURN, setTranslator,
+    payoffOrder, tickDebts, debtJourney, lenderTasks, lastBorrowed,
     monthReport, aiReport, LEAKS, leakNames, leakOf, leakSummary, leakSuggestions, spendWhere, spendWhen, spendTrend, BASICS,
   };
 
