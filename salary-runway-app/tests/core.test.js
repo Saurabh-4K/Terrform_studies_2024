@@ -958,3 +958,17 @@ test('spending three ways: where, when and the monthly trend', () => {
     ['2026-11-01', 2000, 300, 1500, true],
   ]);
 });
+
+test('a bill added just before it’s due is paid in full from this month: the pot fills from when it was added', () => {
+  const s = baseState({ bills: [{ id: 'v1', name: 'Recharge', estimate: 900, everyMonths: 3, nextDue: '2026-11-12', added: '2026-11-01' }] });
+  const due = () => Core.cycleEvents(s, Core.cycleFor('2026-11-01', 1), '2026-11-01').find((e) => e.kind === 'bill').amount;
+  assert.equal(due(), 900); // nothing saved yet
+  s.bills[0].added = '2026-10-03';
+  assert.equal(due(), 600); // one month's share saved
+  s.bills[0].added = '2026-08-20';
+  assert.equal(due(), 300); // the pot is full
+  delete s.bills[0].added;
+  assert.equal(due(), 300); // bills from before `added` count as full
+  s.bills[0].added = '2026-11-01';
+  assert.equal(Core.payBill(s, 'v1', 900, 3, '2026-11-12').fromPot, 0);
+});

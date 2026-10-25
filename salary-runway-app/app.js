@@ -2643,7 +2643,7 @@
       case 'fixed': return { id: uid(), name: '', amount: 0, dueDay: 1 };
       case 'debts': return { id: uid(), name: '', balance: 0, rate: 0, minPayment: 0, dueDay: 1 };
       case 'sinking': return { id: uid(), name: '', amount: 0, month: 1, saved: 0 };
-      case 'bills': return { id: uid(), name: '', estimate: 0, everyMonths: 1, nextDue: today() };
+      case 'bills': return { id: uid(), name: '', estimate: 0, everyMonths: 1, nextDue: today(), added: today() };
       default: return { id: uid(), name: '', amount: 0, auto: true };
     }
   }

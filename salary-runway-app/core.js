@@ -110,8 +110,20 @@
     return Math.round((Number(b.estimate) || 0) / Math.max(1, Number(b.everyMonths) || 1));
   }
 
-  function billPot(b) {
-    return billShare(b) * (Math.max(1, Number(b.everyMonths) || 1) - 1);
+  /*
+   * What the pot holds when the bill is due: a share for each month since
+   * the bill was added, up to what one payment needs. A bill added just
+   * before it's due has nothing saved yet, so it's paid in full from this
+   * month's money. Bills from before `added` was kept count as full.
+   */
+  function billPot(b, state, iso) {
+    const full = billShare(b) * (Math.max(1, Number(b.everyMonths) || 1) - 1);
+    if (!b.added || !state || !iso) return full;
+    const payday = Number(state.settings.payday) || 1;
+    const now = cycleFor(iso, payday).start;
+    let months = 0;
+    for (let c = cycleFor(b.added, payday); c.start < now && months < 24; c = cycleFor(c.next, payday)) months++;
+    return Math.min(full, billShare(b) * months);
   }
 
   function billsMonthly(state) {
@@ -142,7 +154,7 @@
     const tx = {
       id: 'b' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
       date: dateIso, amount, category: 'Bills', note: b.name, billId: b.id, source: 'manual',
-      fromPot: Math.min(amount, billPot(b)),
+      fromPot: Math.min(amount, billPot(b, state, dateIso)),
       undo: { estimate: b.estimate, everyMonths: b.everyMonths, nextDue: b.nextDue, history: (b.history || []).slice() },
     };
     const perMonth = amount / months;
@@ -246,7 +258,7 @@
       if (billDue(b, cycle)) {
         let date = b.nextDue < cycle.start ? cycle.start : b.nextDue;
         if (todayIso && date < todayIso) date = todayIso;
-        events.push({ date, name: b.name, amount: Math.max(0, (Number(b.estimate) || 0) - billPot(b)), kind: 'bill', billId: b.id });
+        events.push({ date, name: b.name, amount: Math.max(0, (Number(b.estimate) || 0) - billPot(b, state, cycle.start)), kind: 'bill', billId: b.id });
       } else if (billShare(b) > 0) {
         events.push({ date: cycle.start, name: tr('Set aside for {name}', { name: b.name }), amount: billShare(b), kind: 'billpot', billId: b.id });
       }
