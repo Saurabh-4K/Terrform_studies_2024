@@ -178,6 +178,11 @@
     counted: false,
     chartOpen: false,
     viz: 'where',
+    importAsk: false,
+    importMonths: 3,
+    importBusy: false,
+    importFound: null,
+    sortAsk: null,
   };
 
   // ---------- storage ----------
@@ -280,11 +285,11 @@
   }
 
   // Category names the app ships with: stored in English, shown translated.
-  const BUILT_IN_CATEGORIES = Core.DEFAULT_SPLIT.map(([name]) => name).concat(['Bills', 'Savings', 'Misc', 'Emergency']);
+  const BUILT_IN_CATEGORIES = Core.DEFAULT_SPLIT.map(([name]) => name).concat(['Bills', 'Savings', 'Misc', 'Emergency', 'Cash']);
 
   function categories() {
     const names = state.budgets.map((b) => b.name).filter(Boolean);
-    ['Bills', 'Savings', 'Misc', 'Emergency'].forEach((n) => { if (names.indexOf(n) === -1) names.push(n); });
+    ['Bills', 'Savings', 'Misc', 'Emergency', 'Cash'].forEach((n) => { if (names.indexOf(n) === -1) names.push(n); });
     return names;
   }
 
@@ -593,6 +598,10 @@
           '<div><button class="primary" data-action="tab" data-tab="spend">' + tr('Check now') + '</button></div></div>'
         : '') +
       incomeCard() +
+      ((state.sortQueue || []).length
+        ? '<div class="callout"><b>' + tr((state.sortQueue || []).length === 1 ? '1 imported payment waits to be sorted' : '{n} imported payments wait to be sorted', { n: (state.sortQueue || []).length }) + '</b>' +
+          '<span class="hint">' + tr('They count once they have a category.') + '</span><div><button class="primary" data-action="tab" data-tab="spend">' + tr('Continue sorting') + '</button></div></div>'
+        : '') +
       (adj ? '<div class="callout warn"><b>' + tr('Recovery plan active until {date}.', { date: fmtDate(adj.until, true) }) + '</b><span class="hint">' +
         [adj.flexCutPct ? tr('Flexible budgets are {pct}% lower.', { pct: adj.flexCutPct }) : '', adj.pauseInvest ? tr('The Grow budget is paused.') : '', adj.pauseDebtExtra ? tr('Extra debt payments are paused.') : '']
           .filter(Boolean).join(' ') + '</span></div>' : '') +
@@ -1819,6 +1828,8 @@
     const saving = ui.txKind === 'save';
 
     return (
+      sortCard() +
+      importCard() +
       needsCheckCard() +
       billsCard() +
       incomeCard() +
@@ -1845,7 +1856,8 @@
         ? '<section class="card"><div class="card-head">' + titled('Bank SMS', 'sms') + (state.smsAuto ? modeChip(true) : '') + '</div>' +
           (state.smsAuto ? '' : '<p class="hint">' + tr('Record payments from your bank and UPI messages. Read on this phone only.') + '</p>') +
           '<div class="row"><button class="primary" data-action="sms-native"' + (ui.smsBusy ? ' disabled' : '') + '>' +
-          tr(ui.smsBusy ? 'Reading…' : state.smsAuto ? 'Check for new messages' : 'Read bank SMS') + '</button></div>' +
+          tr(ui.smsBusy ? 'Reading…' : state.smsAuto ? 'Check for new messages' : 'Read bank SMS') + '</button>' +
+          ((state.sortQueue || []).length || ui.importAsk || ui.importFound ? '' : '<button class="ghost" data-action="import-open">' + tr('Import past payments') + '</button>') + '</div>' +
           (state.smsAuto
             ? '<div class="callout"><b>' + tr(state.smsAlerts ? 'Notifications for new bank SMS are on' : 'Get a notification when a bank SMS arrives') + '</b>' +
               '<div>' + (state.smsAlerts
@@ -2003,10 +2015,11 @@
       }
     } else if (o.review || paidFrom.indexOf('card:') === 0) {
       tx.needsReview = true;
-    } else {
+    } else if (!o.noLearn) {
       const shop = Core.normalizeMerchant(tx.note);
       if (shop && tx.note !== 'Bank payment') state.merchantRules[shop] = tx.category;
     }
+    if (o.source) tx.source = o.source;
     state.transactions.push(tx);
     return true;
   }
@@ -3100,6 +3113,48 @@
       case 'sms-read': ui.smsText = document.getElementById('sms-text').value; readSms(); break;
       case 'sms-clear': ui.smsText = ''; ui.smsRows = null; markSmsSeen(); save(); break;
       case 'sms-native': readNativeSms(false); break;
+      case 'import-open': ui.importAsk = true; ui.importFound = null; break;
+      case 'import-months': ui.importMonths = Number(btn.dataset.months) || 3; break;
+      case 'import-find': findPastPayments(ui.importMonths); return;
+      case 'import-cancel': ui.importAsk = false; ui.importFound = null; break;
+      case 'import-start': {
+        const items = ui.importFound ? ui.importFound.items : [];
+        state.sortQueue = (state.sortQueue || []).concat(items);
+        state.sortTotal = (state.sortTotal || 0) + items.length;
+        ui.importAsk = false; ui.importFound = null;
+        save(); break;
+      }
+      case 'sort-pick': sortPick(btn.dataset.category); break;
+      case 'sort-more': { const v = document.getElementById('sort-more').value; if (v) sortPick(v); break; }
+      case 'sort-all': {
+        const a = ui.sortAsk;
+        ui.sortAsk = null;
+        if (a) {
+          (state.sortQueue || []).filter((x) => payeeOf(x) === a.key).forEach((x) => sortRecord(x, a.category, false));
+          state.merchantRules[a.key] = a.category;
+          toast(tr('{payee} remembered as {category}', { payee: a.payee, category: label(a.category) }));
+        }
+        sortSave(); break;
+      }
+      case 'sort-one': ui.sortAsk = null; break;
+      case 'sort-unsure': {
+        const q = state.sortQueue || [];
+        const item = q.find((x) => !x.unsure) || q[0];
+        if (item) { item.unsure = true; state.sortQueue = q.filter((x) => x !== item).concat(item); save(); }
+        break;
+      }
+      case 'sort-drop': {
+        const q = state.sortQueue || [];
+        const item = q.find((x) => !x.unsure) || q[0];
+        if (item) {
+          state.smsIgnored = (state.smsIgnored || []).concat(item.key).slice(-500);
+          state.sortQueue = q.filter((x) => x !== item);
+          state.sortTotal = Math.max(0, (state.sortTotal || 1) - 1);
+          sortSave();
+        }
+        break;
+      }
+      case 'sort-stop': toast('Your sorting is saved. Continue any time from the Spend tab.'); window.scrollTo(0, 0); break;
       case 'sms-import': {
         let added = 0;
         const recorded = knownSmsKeys();
@@ -3423,6 +3478,127 @@
       if (!quiet) toast(err && err.code === 'PERMISSION_DENIED' ? 'SMS permission is off. You can turn it on in Android settings.' : 'Couldn’t read messages');
       rerenderKeepScroll();
     });
+  }
+
+  // ---------- importing past bank SMS (optional) ----------
+
+  /*
+   * Past payments come in only if the person has time to sort them: each
+   * waits in state.sortQueue, outside budgets and graphs, until it has a
+   * category. Sorting one asks before marking the same payee's other
+   * payments, and only then remembers the payee for the future.
+   */
+  const SORT_QUICK = ['Groceries', 'Food & dining', 'Travel', 'Shopping', 'Bills'];
+
+  function payeeOf(item) { return Core.normalizeMerchant(item.merchant) || item.merchant || ''; }
+
+  function findPastPayments(months) {
+    if (!SmsInbox || ui.importBusy) return;
+    ui.importBusy = true;
+    rerenderKeepScroll();
+    const start = Core.parseISO(today()).getTime();
+    const since = Core.parseISO(Core.addMonths(today(), -months)).getTime();
+    Promise.resolve().then(() => SmsInbox.read({ since, limit: 5000 })).then((res) => {
+      const msgs = (res.messages || []).filter((m) => /[A-Za-z]/.test(m.address || '') && m.date < start);
+      const queued = new Set((state.sortQueue || []).map((x) => x.key));
+      const items = smsRows(msgs.map((m) => ({ text: m.body || '', day: Core.toISO(new Date(m.date)) })))
+        .filter((r) => r.parsed && !r.duplicate && !queued.has(r.key) && r.parsed.type !== 'credit' && r.parsed.type !== 'statement' && r.parsed.type !== 'cardpayment')
+        .map((r) => ({ key: r.key, date: r.parsed.date, amount: r.parsed.amount, merchant: r.parsed.merchant, parsed: r.parsed }));
+      ui.importBusy = false;
+      ui.importFound = { months, items };
+      rerenderKeepScroll();
+    }, (err) => {
+      ui.importBusy = false;
+      toast(err && err.code === 'PERMISSION_DENIED' ? 'SMS permission is off. You can turn it on in Android settings.' : 'Couldn’t read messages');
+      rerenderKeepScroll();
+    });
+  }
+
+  // About 6 seconds a payee: repeat payees are sorted together.
+  function sortMinutes(items) {
+    return Math.max(1, Math.ceil((new Set(items.map(payeeOf)).size * 6) / 60));
+  }
+
+  function importCard() {
+    if (!SmsInbox || state.isDemo) return '';
+    if (ui.importFound) {
+      const f = ui.importFound;
+      if (!f.items.length) {
+        return '<section class="card"><h2>' + tr('Import past payments') + '</h2><p class="hint">' + tr('No new payments found in those messages.') + '</p>' +
+          '<div><button data-action="import-cancel">' + tr('Close') + '</button></div></section>';
+      }
+      const first = f.items.reduce((m, x) => (x.date < m ? x.date : m), f.items[0].date);
+      return '<section class="card import-card"><h2>' + tr('{n} payments found', { n: f.items.length }) + '</h2>' +
+        '<p>' + tr('From {from} to yesterday. Each one needs a category before it counts. Sorting takes about {min} min; payments to the same place can be sorted together.', { from: fmtDate(first), min: sortMinutes(f.items) }) + '</p>' +
+        '<p class="hint">' + tr('Until sorted they stay out of your budgets, graphs and daily limit. You can stop and continue later.') + '</p>' +
+        '<div class="row"><button class="primary" data-action="import-start">' + tr('Start sorting') + '</button><button class="ghost" data-action="import-cancel">' + tr('Not now') + '</button></div></section>';
+    }
+    if (!ui.importAsk) return '';
+    return '<section class="card import-card"><h2>' + tr('Import past payments') + '</h2>' +
+      '<p>' + tr('Reads your past bank and UPI messages on this phone, finds the payments, and asks you to sort each one into a category.') + '</p>' +
+      '<p class="hint"><b>' + tr('Only if you have time to sort them.') + '</b> ' + tr('A payment without a category would land in Misc and make your budgets and limits wrong, so imported payments count only once sorted.') + '</p>' +
+      '<div class="seg" role="group" aria-label="' + tr('How far back') + '">' + [1, 3, 6].map((m) =>
+        '<button data-action="import-months" data-months="' + m + '" aria-pressed="' + (ui.importMonths === m) + '">' + plural(m, 'month') + '</button>').join('') + '</div>' +
+      '<div class="row"><button class="primary" data-action="import-find"' + (ui.importBusy ? ' disabled' : '') + '>' + tr(ui.importBusy ? 'Reading…' : 'Find payments') + '</button>' +
+      '<button class="ghost" data-action="import-cancel">' + tr('Not now') + '</button></div></section>';
+  }
+
+  // One payment at a time: "Where did it go?"
+  function sortCard() {
+    const q = state.sortQueue || [];
+    if (!q.length) return '';
+    const total = state.sortTotal || q.length;
+    const done = total - q.length;
+    const item = q.find((x) => !x.unsure) || q[0];
+    if (ui.sortAsk) {
+      const a = ui.sortAsk;
+      return '<section class="card sort-card"><div class="sort-progress"><span style="width:' + ((done / total) * 100).toFixed(1) + '%"></span></div>' +
+        '<h2>' + tr(a.count === 1 ? '1 more payment to {payee}' : '{n} more payments to {payee}', { n: a.count, payee: esc(a.payee) }) + '</h2>' +
+        '<p>' + tr('Mark them all as {category}? Future payments there will be marked {category} too. You can change any of them later.', { category: esc(label(a.category)) }) + '</p>' +
+        '<div class="row"><button class="primary" data-action="sort-all">' + tr(a.count === 1 ? 'Yes, both' : 'Yes, all {n}', { n: a.count + 1 }) + '</button>' +
+        '<button data-action="sort-one">' + tr('Only this one') + '</button></div></section>';
+    }
+    const card = item.parsed && item.parsed.paidFrom === 'card' ? findCard(item.parsed.last4) : null;
+    const guess = state.merchantRules[payeeOf(item)];
+    const btn = (c) => '<button class="sort-btn' + (c === guess ? ' guess' : '') + '" data-action="sort-pick" data-category="' + esc(c) + '">' + esc(label(c)) + '</button>';
+    return '<section class="card sort-card"><div class="card-head"><h2>' + tr('Sort imported payments') + '</h2><span class="hint">' +
+      tr('{done} of {total} · about {min} min left', { done, total, min: sortMinutes(q) }) + '</span></div>' +
+      '<div class="sort-progress"><span style="width:' + ((done / total) * 100).toFixed(1) + '%"></span></div>' +
+      '<div class="sort-item"><b>' + inr(item.amount) + '</b><span>' + tr('to {payee}', { payee: esc(item.merchant || tr('Bank payment')) }) + '</span>' +
+      '<small>' + fmtDate(item.date) + (card ? ' · ' + esc(card.name) + ' ' + tr('card') : '') + (item.unsure ? ' · ' + tr('marked Not sure') : '') + '</small></div>' +
+      '<p class="sort-q">' + tr('Where did it go?') + '</p>' +
+      '<div class="sort-grid">' + SORT_QUICK.map(btn).join('') + btn('Cash') + '</div>' +
+      '<div class="row"><select id="sort-more" aria-label="' + tr('Other category') + '"><option value="">' + tr('Other category…') + '</option>' + categoryOptions('').replace(' selected', '') + '</select>' +
+      '<button data-action="sort-more">' + tr('Use') + '</button></div>' +
+      '<div class="row sort-skip"><button class="ghost" data-action="sort-unsure">' + tr('Not sure') + '</button><button class="ghost" data-action="sort-drop">' + tr('Not a payment') + '</button>' +
+      '<button class="ghost" data-action="sort-stop">' + tr('Stop for now') + '</button></div></section>';
+  }
+
+  // Records one sorted payment; it counts from now on.
+  function sortRecord(item, category, learn) {
+    const p = Object.assign({}, item.parsed || { type: 'debit', amount: item.amount, merchant: item.merchant, date: item.date });
+    recordSms(p, { key: item.key, category, note: item.merchant, noLearn: !learn, source: 'import' });
+    state.sortQueue = (state.sortQueue || []).filter((x) => x !== item);
+  }
+
+  function sortPick(category) {
+    const q = state.sortQueue || [];
+    const item = q.find((x) => !x.unsure) || q[0];
+    if (!item || !category) return;
+    const payee = payeeOf(item);
+    const same = q.filter((x) => x !== item && payeeOf(x) === payee);
+    sortRecord(item, category, false);
+    if (same.length && payee) ui.sortAsk = { payee: item.merchant || payee, key: payee, category, count: same.length };
+    sortSave();
+  }
+
+  function sortSave() {
+    if (!(state.sortQueue || []).length) {
+      toast(tr('All {n} payments sorted. Your budgets and graphs now include them.', { n: state.sortTotal || 0 }), 'good');
+      delete state.sortTotal;
+      state.sortQueue = [];
+    }
+    save();
   }
 
   // ---------- home-screen widget (Android app only) ----------

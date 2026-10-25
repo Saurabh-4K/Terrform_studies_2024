@@ -227,6 +227,15 @@ Under **More details** on the Runway tab.
 - **Salary SMS** are recognised and used for the payday check-in, not counted as extra money.
 - **No duplicates:** each SMS is identified by its text, so it's never recorded twice, whether it arrives by notification, inbox reading or paste.
 
+### Import past payments (optional)
+Spend tab → Bank SMS → **Import past payments**. Only for someone with time to sort them: a payment without a category would land in Misc and make budgets and limits wrong.
+- Choose **1, 3 or 6 months**. The app reads those bank and UPI messages on the phone (up to yesterday; today's are read as usual) and finds the payments it hasn't recorded yet. Credits, salary, card statements and card bill payments are left out.
+- *"124 payments found. From 1 Jul to yesterday. Each one needs a category before it counts. Sorting takes about 6 min."* **Start sorting** or **Not now**.
+- **Nothing counts until sorted:** imported payments wait in a *To sort* pile, outside budgets, graphs, the daily limit and reports. Stop any time (*Stop for now*); the Runway tab reminds you how many are waiting.
+- **One payment at a time:** *₹450 to Ramesh Kirana · 12 Oct. Where did it go?* Big buttons for Groceries, Food & dining, Travel, Shopping, Bills and **Cash**, any other category from a list, **Not sure** (moves it to the end; it still doesn't count), and **Not a payment** (left out for good).
+- **Same payee, with consent:** after a choice, *"3 more payments to Ramesh Kirana. Mark them all as Groceries? Future payments there will be marked Groceries too."* **Yes, all 4** marks them and remembers the payee; **Only this one** remembers nothing. A payee the app already knows is highlighted as a suggestion, never applied silently.
+- Progress: *34 of 120 · about 6 min left*. When done: *All 120 payments sorted. Your budgets and graphs now include them.*
+
 ## 7. Money received
 
 For a refund, money from home, money returned, cashback, side income or extra pay.
