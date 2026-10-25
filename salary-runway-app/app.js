@@ -1006,13 +1006,29 @@
    * Hero 1, today's limit: the amount, a spent/left bar, the zone and what
    * to do. Win the day by staying inside it.
    */
+  // Zone signs, impossible to miss: a celebration, a warning, a stop sign.
+  const SIGNS = {
+    green: '<svg class="sign" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2l2.3 6.6L21 11l-6.7 2.3L12 20l-2.3-6.7L3 11l6.7-2.4z" fill="currentColor"/><circle cx="19.5" cy="4.5" r="1.6" fill="currentColor"/><circle cx="4.5" cy="19.5" r="1.3" fill="currentColor"/><circle cx="20" cy="19" r="1" fill="currentColor"/></svg>',
+    amber: '<svg class="sign" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5L23 21.5H1z" fill="currentColor"/><path class="mark" d="M11 9h2v6.5h-2z"/><circle class="mark" cx="12" cy="18.2" r="1.25"/></svg>',
+    red: '<svg class="sign" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 1.5h8l6.5 6.5v8L16 22.5H8L1.5 16V8z" fill="currentColor"/><path class="mark" d="M6.5 10.8h11v2.4h-11z"/></svg>',
+  };
+
+  // The zone as a banner across the card: the first thing seen.
+  function zoneBanner(zone, label, sub) {
+    return '<div class="zone-banner">' + SIGNS[zone] + '<span><b>' + label + '</b><small>' + sub + '</small></span></div>';
+  }
+
   function limitCard(r, z, headline, sub) {
     const over = r.overToday > 0 && r.savedToday < r.overToday;
     const used = r.dailyAllowance > 0 ? Math.min(100, ((r.spentToday + r.savedToday) / r.dailyAllowance) * 100) : (r.spentToday ? 100 : 0);
-    const zoneName = { green: 'Green', amber: 'Careful', red: 'Red' }[z.zone];
     const from = ui.limitPct == null ? 0 : ui.limitPct;
-    return '<div class="runway-card zone-' + z.zone + '">' +
-      '<div class="runway-head"><span class="hero-label">' + tr('Today’s limit') + '</span><span class="zone-pill">' + tr(zoneName) + '</span></div>' +
+    const banner = {
+      green: zoneBanner('green', tr('Green: on track'), tr('You’re winning this round. Keep going.')),
+      amber: zoneBanner('amber', tr('Careful'), tr('At this pace the money runs out before payday.')),
+      red: zoneBanner('red', tr('Red zone: stop'), tr('Bills and basics aren’t covered. Basics only now.')),
+    }[z.zone];
+    return '<div class="runway-card zone-' + z.zone + '">' + banner +
+      '<div class="runway-head"><span class="hero-label">' + tr('Today’s limit') + '</span></div>' +
       '<div class="limit-big"><b data-count="' + Math.round(r.dailyAllowance) + '">' + inr(r.dailyAllowance) + '</b></div>' +
       '<div class="limit-bar' + (over ? ' over' : '') + '" role="img" aria-label="' + esc(todayTileNote(r)) + '"><span id="limit-fill" style="width:' + from.toFixed(1) + '%" data-to="' + used.toFixed(1) + '"></span></div>' +
       '<div class="limit-line"><span>' + (over ? tr('{amount} over', { amount: inr(r.overToday) }) : tr('{amount} spent', { amount: inr(r.spentToday + r.savedToday) })) + '</span>' +
@@ -1033,8 +1049,9 @@
     const next = !f.next ? tr('Three months of basics covered. Keep it there.')
       : f.next.target === 90 ? tr('{n} more days ({amount}) to three months safe.', { n: f.next.days, amount: inr(f.next.amount) })
         : tr(f.next.days === 1 ? '1 more day ({amount}) turns it {level}.' : '{n} more days ({amount}) turns it {level}.', { n: f.next.days, amount: inr(f.next.amount), level: tr(f.next.level) });
+    const sign = { red: SIGNS.red, amber: SIGNS.amber, green: SIGNS.green }[f.level];
     return '<div class="freedom-card lvl-' + f.level + '">' +
-      '<div class="runway-head"><span class="hero-label">' + tr('Days of Freedom') + '</span><span class="level-pill">' + SHIELD + tr(f.badge) + '</span></div>' +
+      '<div class="zone-banner">' + sign + '<span><b>' + tr(f.badge) + '</b><small>' + tr('Days of Freedom') + '</small></span></div>' +
       '<div class="freedom-big"><b>' + f.days + '</b><span>' + tr(f.days === 1 ? 'day your savings cover the basics' : 'days your savings cover the basics') + '</span></div>' +
       '<p class="freedom-next">' + next + '</p>' +
       '<button class="explain-link" data-action="explain" data-explain="freedom">' + tr('How is this calculated?') + '</button></div>';

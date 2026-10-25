@@ -693,3 +693,40 @@ label.check input { width: 18px; height: 18px; accent-color: var(--accent); }
 .sort-skip { justify-content: space-between; }
 .card-due-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .card-due-grid button { min-height: 46px; }
+
+/* ---------- Zones you can't miss: the whole card changes ---------- */
+.runway-card { background: var(--rc-bg); color: var(--rc-ink); }
+.runway-card.zone-green { --rc-bg: #0b5e48; --rc-ink: #f5f1e3; --rc-muted: #cdeee2; --rc-track: rgba(245, 241, 227, 0.22); --rc-fill: #79e3c3; --rc-over: #ff8a75; --zb-bg: #79e3c3; --zb-ink: #06372a; }
+.runway-card.zone-amber { --rc-bg: #f5b83d; --rc-ink: #2b1d00; --rc-muted: #4a3500; --rc-track: rgba(43, 29, 0, 0.16); --rc-fill: #2b1d00; --rc-over: #b3261e; --zb-bg: #2b1d00; --zb-ink: #f5b83d; }
+.runway-card.zone-red { --rc-bg: #b3261e; --rc-ink: #ffffff; --rc-muted: #ffe0da; --rc-track: rgba(255, 255, 255, 0.25); --rc-fill: #ffffff; --rc-over: #ffffff; --zb-bg: #ffffff; --zb-ink: #b3261e; }
+.runway-card::before { background: #ffffff; opacity: 0.08; }
+.runway-card .hero-label, .runway-card .limit-line, .runway-card .runway-sub { color: var(--rc-muted); }
+.runway-card h1, .runway-card .runway-sub b, .runway-card .explain-link { color: var(--rc-ink); }
+.runway-card .date.warn, .runway-card .date.bad { color: inherit; text-decoration: underline; text-decoration-thickness: 3px; text-underline-offset: 4px; }
+.limit-bar { background: var(--rc-track); }
+.limit-bar span { background: var(--rc-fill); }
+.limit-bar.over span { background: var(--rc-over); }
+
+.zone-banner { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 16px; background: var(--zb-bg); color: var(--zb-ink); position: relative; }
+.zone-banner .sign { width: 34px; height: 34px; flex: none; }
+.zone-banner .sign .mark { fill: var(--zb-bg); }
+.zone-banner span { display: grid; gap: 1px; min-width: 0; }
+.zone-banner b { font-family: var(--font-display); font-size: 1.3rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; line-height: 1.1; }
+.zone-banner small { font-size: 0.85rem; font-weight: 600; line-height: 1.3; }
+.runway-card.zone-amber .zone-banner .sign, .runway-card.zone-red .zone-banner .sign { animation: sign-pulse 1.2s ease-in-out 2; }
+@keyframes sign-pulse { 50% { transform: scale(1.18); } }
+@media (prefers-reduced-motion: reduce) { .zone-banner .sign { animation: none !important; } }
+
+.freedom-card { border-width: 2px; }
+.freedom-card.lvl-red { background: #fde3dd; border-color: #c2361d; --zb-bg: #c2361d; --zb-ink: #ffffff; }
+.freedom-card.lvl-amber { background: #fdf0cc; border-color: #d99a14; --zb-bg: #2b1d00; --zb-ink: #f5b83d; }
+.freedom-card.lvl-green { background: #d8f5ea; border-color: #0b6e55; --zb-bg: #0b6e55; --zb-ink: #ffffff; }
+.freedom-card .hero-label, .freedom-card .freedom-big span { color: var(--ink); }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .freedom-card.lvl-red { background: #3a1a15; border-color: #ff8a75; --zb-bg: #ff8a75; --zb-ink: #3a1a15; }
+  :root:not([data-theme="light"]) .freedom-card.lvl-amber { background: #3a2c0c; border-color: #f5b83d; --zb-bg: #f5b83d; --zb-ink: #2b1d00; }
+  :root:not([data-theme="light"]) .freedom-card.lvl-green { background: #0f3a2f; border-color: #79e3c3; --zb-bg: #79e3c3; --zb-ink: #06372a; }
+}
+:root[data-theme="dark"] .freedom-card.lvl-red { background: #3a1a15; border-color: #ff8a75; --zb-bg: #ff8a75; --zb-ink: #3a1a15; }
+:root[data-theme="dark"] .freedom-card.lvl-amber { background: #3a2c0c; border-color: #f5b83d; --zb-bg: #f5b83d; --zb-ink: #2b1d00; }
+:root[data-theme="dark"] .freedom-card.lvl-green { background: #0f3a2f; border-color: #79e3c3; --zb-bg: #79e3c3; --zb-ink: #06372a; }

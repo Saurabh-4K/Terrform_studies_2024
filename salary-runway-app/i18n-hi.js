@@ -1091,4 +1091,9 @@
   "{card} bill of {amount} is due today. Did you pay it?": "{card} का {amount} बिल आज देय है. क्या आपने भरा?",
   "{card} bill of {amount} was due {date}. Did you pay it?": "{card} का {amount} बिल {date} को देय था. क्या आपने भरा?",
   "Enter how much you paid": "आपने कितना भरा वह लिखें",
+  "At this pace the money runs out before payday.": "इस रफ़्तार से सैलरी से पहले पैसे खत्म हो जाएँगे.",
+  "Bills and basics aren’t covered. Basics only now.": "बिल और ज़रूरतें पूरी नहीं हो रहीं. अब सिर्फ़ ज़रूरी खर्च.",
+  "Green: on track": "हरा: सही राह पर",
+  "Red zone: stop": "लाल ज़ोन: रुकें",
+  "You’re winning this round. Keep going.": "यह राउंड आप जीत रहे हैं. ऐसे ही चलते रहें.",
 };
