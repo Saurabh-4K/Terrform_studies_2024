@@ -948,8 +948,18 @@ test('spending three ways: where, when and the monthly trend', () => {
     ],
   });
   const w = Core.spendWhere(s, '2026-11-03');
-  assert.deepEqual(w.categories, [{ name: 'Food', spent: 1500, budget: 1000 }, { name: 'Groceries', spent: 500, budget: 3000 }]);
+  assert.deepEqual(w.categories.map((c) => ({ name: c.name, spent: c.spent, budget: c.budget })), [{ name: 'Food', spent: 1500, budget: 1000 }, { name: 'Groceries', spent: 500, budget: 3000 }]);
   assert.deepEqual([w.total, w.basics, w.other], [2000, 500, 1500]);
+  assert.deepEqual(w.categories[0].payments.map((t) => t.id), ['a']);
+  // This round so far would be compared with 1–3 Oct, but records start on 12 Oct: no comparison
+  assert.equal(w.comparable, false);
+  assert.equal(w.before, null);
+  // Last round, and three rounds with three rounds' budget
+  const last = Core.spendWhere(s, '2026-11-03', 'last');
+  assert.deepEqual(last.categories.map((c) => [c.name, c.spent, c.budget]), [['Food', 700, 1000]]);
+  const three = Core.spendWhere(s, '2026-11-03', 3);
+  assert.deepEqual(three.categories.map((c) => [c.name, c.spent, c.budget]), [['Food', 2200, 3000], ['Groceries', 500, 9000]]);
+  assert.equal(three.range.from, '2026-09-01');
 
   const h = Core.spendWhen(s, '2026-11-03');
   assert.deepEqual(h.days, [
@@ -1361,4 +1371,21 @@ test('net worth: what you own minus what you owe', () => {
   // A loan from family with no EMI lowers it by exactly its balance
   s.debts.push({ id: 'fam', name: 'Family', balance: 5000, rate: 0, minPayment: 0 });
   assert.equal(Core.netWorth(s, '2026-10-23').value, n.value - 5000);
+});
+
+test('quick budgets: last round and the three-round average', () => {
+  const s = baseState({
+    settings: { salary: 50000, payday: 1 },
+    budgets: [{ id: 'g', name: 'Groceries', auto: true }, { id: 'c', name: 'Clothes', auto: true }],
+    transactions: [
+      { id: '1', date: '2026-10-05', amount: 6240, category: 'Groceries' },
+      { id: '2', date: '2026-09-05', amount: 5000, category: 'Groceries' },
+      { id: '3', date: '2026-09-09', amount: 3000, category: 'Clothes' },
+      { id: '4', date: '2026-11-02', amount: 999, category: 'Groceries' }, // this round: not counted
+    ],
+  });
+  const h = Core.budgetHistory(s, '2026-11-03');
+  // Two rounds with entries (Oct, Sep); August had none, so it doesn't pull the average down
+  assert.deepEqual(h.Groceries, { last: 6200, avg: 5600, rounds: 2 });
+  assert.deepEqual(h.Clothes, { last: 0, avg: 1500, rounds: 2 });
 });

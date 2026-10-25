@@ -1075,3 +1075,24 @@ button.tx-title { display: flex; align-items: center; gap: 6px; background: none
 .nw-bar { position: absolute; left: 18%; right: 18%; background: var(--accent); border-radius: 4px; }
 .nw-bar.neg { background: var(--bad); }
 .nw-col.today .nw-bar { box-shadow: 0 0 0 2px var(--surface, #fff), 0 0 0 3px var(--ink); }
+
+/* Reports, quick budgets, what-if, reconcile */
+.where-seg { margin: 6px 0 4px; flex-wrap: wrap; }
+.viz-change { display: block; font-size: 0.78rem; color: var(--muted); margin-top: 3px; text-align: left; }
+.viz-row.open { background: var(--surface-2); }
+.where-list { display: grid; gap: 4px; padding: 6px 10px 10px; margin: -2px 0 6px; border-radius: 12px; background: var(--surface-2); }
+.where-pay { display: flex; justify-content: space-between; gap: 10px; font-size: 0.86rem; }
+.where-pay .amt { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.quick-budget { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px; }
+.chip-btn { font-size: 0.78rem; font-weight: 650; padding: 4px 10px; min-height: 0; height: auto; width: auto; border-radius: 99px; background: var(--surface-2); color: var(--ink); border: 1px solid transparent; box-shadow: none; }
+.chip-btn.on { border-color: var(--accent); color: var(--accent); }
+.quick-all { flex-wrap: wrap; }
+.whatif { margin-top: 12px; }
+.whatif input[type=range] { width: 100%; accent-color: var(--accent); padding: 0; min-height: 32px; border: 0; background: none; box-shadow: none; }
+.whatif-line { margin: 4px 0; }
+.loan-lines { display: grid; gap: 8px; margin: 4px 0 6px; }
+.loan-line { display: grid; grid-template-columns: minmax(0, 7.5em) 1fr auto; gap: 8px; align-items: center; font-size: 0.85rem; }
+.loan-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.loan-track { height: 8px; border-radius: 99px; background: var(--surface-2); overflow: hidden; }
+.loan-fill { display: block; height: 100%; border-radius: 99px; background: var(--accent); }
+.loan-when { font-variant-numeric: tabular-nums; color: var(--muted); white-space: nowrap; }

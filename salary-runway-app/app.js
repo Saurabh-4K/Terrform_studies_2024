@@ -466,6 +466,7 @@
       'Type your own amount and that category is marked <b>Set by you</b>. The automatic ones adjust to fit. <b>Share everything out automatically</b> undoes your edits.',
       '<b>Keep what’s left for next month:</b> for costs that come and go, like clothes or gifts. What a budget doesn’t use this month is added to it next month. An overspend doesn’t carry: it already came out of your money.',
       'Over in one budget? On Runway → Budgets, <b>Cover it from another budget</b> that has money left. The month’s total stays the same, so today’s limit doesn’t change.',
+      'Under each budget, <b>Last round</b> and the <b>average</b> show what you really spent there. Tap one to use it.',
     ]],
     goals: ['Savings goals', [
       'Something to save for by a date: a bike’s down payment, a trip, a rent deposit. The app works out what to put aside each payday to get there in time.',
@@ -906,7 +907,7 @@
         html: () => '<section class="card"><h2>' + tr('What your spending says') + '</h2><div>' +
           ins.map((i) => '<div class="insight lvl-' + i.level + '"><div><h3>' + esc(i.title) + '</h3><p>' + esc(i.body) + '</p></div></div>').join('') + '</div></section>' },
       { key: 'balance', group: 'Money', icon: 'wallet', label: 'Balance', tone: 'teal', badge: { text: shortInr(r.balanceToday) },
-        html: () => (ui.balanceOpen ? balanceForm(false) : '') + '<section class="tiles">' +
+        html: () => reconcileCard() + (ui.balanceOpen ? balanceForm(false) : '') + '<section class="tiles">' +
           tile('Balance now', inr(r.balanceToday),
             (r.anchor ? tr('From your balance on {date}', { date: fmtDate(r.anchor.date) }) : tr('Worked out from your plan')) +
             ' · <button class="link" data-action="balance-open">' + tr('Update') + '</button>') +
@@ -1912,6 +1913,44 @@
       '</div><p class="hint"><b>' + tr('Why the suggestion:') + '</b> ' + esc(sug.reason) + '</p></section>';
   }
 
+  /*
+   * Reconcile, like comparing with a bank statement: before a new balance
+   * replaces the count, see how far the app's count was from it. A gap means
+   * something wasn't noted; it can be noted now so budgets and charts see it.
+   */
+  function expectedMorning() {
+    const prev = state.balanceCheck;
+    if (!prev || prev.date >= today()) return null;
+    return { amount: Math.round(Core.projectRunway(state, today()).limit.money), since: prev.date };
+  }
+
+  function reconcileAfter(exp, actual) {
+    if (!exp) return;
+    state.reconciledTo = Core.addDays(today(), -1);
+    const gap = Math.round(exp.amount - actual);
+    // Small differences are rounding, interest or charges: not worth a question.
+    if (Math.abs(gap) < Math.max(100, actual * 0.01)) { ui.reconcile = { ok: true, since: exp.since }; return; }
+    ui.reconcile = { gap, since: exp.since, expected: exp.amount, actual };
+  }
+
+  function reconcileCard() {
+    const r = ui.reconcile;
+    if (!r) return '';
+    if (r.ok) {
+      return '<div class="callout good" role="status"><b>' + tr('Your count matches your bank ✓') + '</b><span class="hint">' + tr('Everything since {date} is accounted for.', { date: fmtDate(r.since) }) + '</span>' +
+        '<div><button class="ghost" data-action="reconcile-close">' + tr('OK') + '</button></div></div>';
+    }
+    const less = r.gap > 0;
+    return '<div class="callout warn reconcile" role="status"><b>' + tr(less ? 'Your bank has {amount} less than the app counted' : 'Your bank has {amount} more than the app counted', { amount: inr(Math.abs(r.gap)) }) + '</b>' +
+      '<span class="hint">' + tr('The app counted {expected} since your last check on {date}; your bank says {actual}.', { expected: inr(r.expected), date: fmtDate(r.since), actual: inr(r.actual) }) + ' ' +
+      tr(less ? 'Something was paid that wasn’t noted: cash, a charge or a missed SMS.' : 'Money came in that wasn’t noted: a refund, cashback or money from someone.') + '</span>' +
+      '<div class="form-grid"><label class="field" for="rec-cat"><span>' + tr('Note it as') + '</span><select id="rec-cat">' +
+      (less ? categoryOptions('Misc') : incomeCategoryOptions('Refund')) + '</select></label></div>' +
+      '<div class="row"><button class="primary" data-action="reconcile-note">' + tr(less ? 'Note it as spending' : 'Note it as money received') + '</button>' +
+      '<button class="ghost" data-action="reconcile-close">' + tr('Leave it') + '</button></div>' +
+      '<span class="hint">' + tr('Either way, today’s limit already uses your bank’s number.') + '</span></div>';
+  }
+
   function balanceForm(firstTime) {
     const t = today();
     const current = state.balanceCheck && state.balanceCheck.date === t ? state.balanceCheck.amount : '';
@@ -2213,23 +2252,45 @@
   }
 
   // Where: categories against budget, and basics against everything else.
+  const WHERE_PERIODS = [['this', 'This round'], ['last', 'Last round'], ['3', '3 rounds'], ['6', '6 rounds']];
+
   function vizWhere() {
-    const w = Core.spendWhere(state, today());
-    if (!w.total) return '<p class="hint">' + tr('Nothing spent yet this month.') + '</p>';
+    const period = ui.wherePeriod || 'this';
+    const w = Core.spendWhere(state, today(), period);
+    const seg = '<div class="seg where-seg" role="group" aria-label="' + tr('Period') + '">' + WHERE_PERIODS.map(([k, n]) =>
+      '<button data-action="where-period" data-period="' + k + '" aria-pressed="' + (period === k) + '">' + tr(n) + '</button>').join('') + '</div>';
+    const span = fmtDate(w.range.from) + ' – ' + fmtDate(Core.addDays(w.range.to, -1));
+    if (!w.total) return seg + '<p class="hint">' + tr(period === 'this' ? 'Nothing spent yet this month.' : 'Nothing spent in this period.') + '</p>';
     const scale = Math.max.apply(null, w.categories.map((c) => Math.max(c.spent, c.budget)));
+    const change = (now, then) => {
+      if (!w.comparable || !then) return '';
+      const d = now - then;
+      if (Math.abs(d) < 50) return tr('about the same as before');
+      return tr(d > 0 ? '{amount} more than before' : '{amount} less than before', { amount: inr(Math.abs(d)) });
+    };
     const rows = w.categories.map((c) => {
       const within = c.budget ? Math.min(c.spent, c.budget) : c.spent;
       const over = c.budget ? Math.max(0, c.spent - c.budget) : 0;
       const tip = label(c.name) + ': ' + (c.budget ? tr('{spent} of {budget}', { spent: inr(c.spent), budget: inr(c.budget) }) : inr(c.spent)) +
         (over ? ' · ' + tr('{amount} over', { amount: inr(over) }) : '');
-      return '<button class="viz-row"' + tipAttrs(tip) + '><span class="viz-row-top"><span>' + esc(label(c.name)) + '</span><span class="amt">' + inr(c.spent) +
+      const open = ui.whereOpen === c.name;
+      const ch = change(c.spent, c.before);
+      return '<button class="viz-row' + (open ? ' open' : '') + '" data-action="where-open" data-cat="' + esc(c.name) + '" data-tip="' + esc(tip) + '" aria-expanded="' + open + '"><span class="viz-row-top"><span>' + esc(label(c.name)) + '</span><span class="amt">' + inr(c.spent) +
         (over ? ' <b class="bad">' + tr('+{amount} over', { amount: inr(over) }) + '</b>' : c.budget ? ' <small>' + tr('of {amount}', { amount: inr(c.budget) }) + '</small>' : '') + '</span></span>' +
         '<span class="viz-track"><span class="viz-fill s1" style="width:' + ((within / scale) * 100).toFixed(1) + '%"></span>' +
         (over ? '<span class="viz-fill over" style="width:' + ((over / scale) * 100).toFixed(1) + '%"></span>' : '') +
-        (c.budget ? '<i class="viz-budget" style="left:' + ((c.budget / scale) * 100).toFixed(1) + '%"></i>' : '') + '</span></button>';
+        (c.budget ? '<i class="viz-budget" style="left:' + ((c.budget / scale) * 100).toFixed(1) + '%"></i>' : '') + '</span>' +
+        (ch ? '<span class="viz-change">' + ch + '</span>' : '') + '</button>' +
+        (open
+          ? '<div class="where-list">' + c.payments.slice(0, 12).map((x) => '<div class="where-pay"><span>' + esc(x.note || label(c.name)) + ' · ' + fmtDate(x.date) + '</span><span class="amt">' + inr(x.amount) + '</span></div>').join('') +
+            (c.payments.length > 12 ? '<p class="hint">' + tr('Showing the latest 12 of {n}. All of them are in Payments.', { n: c.payments.length }) + '</p>' : '') + '</div>'
+          : '');
     });
     const b = pct(w.basics, w.total);
-    return '<p class="viz-q">' + tr('Where does my money go?') + '</p>' +
+    const totalCh = change(w.total, w.before);
+    return '<p class="viz-q">' + tr('Where does my money go?') + '</p>' + seg +
+      '<p class="hint">' + span + ' · ' + tr('{amount} spent', { amount: inr(w.total) }) + (totalCh ? ' · ' + totalCh : '') + '</p>' +
+      (period === 'this' ? '' : '<p class="hint">' + tr('Budgets here are for {n}.', { n: plural(w.range.rounds, 'round') }) + '</p>') +
       '<div class="viz-split" role="img" aria-label="' + esc(tr('Basics {a}, everything else {b}', { a: inr(w.basics), b: inr(w.other) })) + '">' +
       (w.basics ? '<span class="viz-fill s1" style="flex-grow:' + w.basics + '"' + tipAttrs(tr('Basics: {amount} ({pct}%)', { amount: inr(w.basics), pct: b })) + '></span>' : '') +
       (w.other ? '<span class="viz-fill s4" style="flex-grow:' + w.other + '"' + tipAttrs(tr('Everything else: {amount} ({pct}%)', { amount: inr(w.other), pct: 100 - b })) + '></span>' : '') + '</div>' +
@@ -2237,6 +2298,7 @@
       '<span><i class="s4"></i>' + tr('Everything else {amount} ({pct}%)', { amount: inr(w.other), pct: 100 - b }) + '</span></div>' +
       '<div class="viz-rows">' + rows.join('') + '</div>' +
       '<div class="viz-legend"><span><i class="s1"></i>' + tr('Spent') + '</span><span><i class="over"></i>' + tr('Over budget') + '</span><span><i class="tick"></i>' + tr('Budget') + '</span></div>' +
+      '<p class="hint">' + tr(w.comparable ? 'Tap a category to see its payments. “Before” is the same stretch of time just before.' : 'Tap a category to see its payments.') + '</p>' +
       numbersTable([tr('Category'), tr('Spent'), tr('Budget')], w.categories.map((c) => [esc(label(c.name)), inr(c.spent), c.budget ? inr(c.budget) : '–']));
   }
 
@@ -2497,7 +2559,7 @@
         const p = r.parsed;
         const isIn = p.type === 'credit';
         const cardRow = p.type === 'statement' || p.type === 'cardpayment';
-        const note = r.duplicate ? tr('Already added') : isIn && p.salary ? tr('Looks like your salary, which is already counted') : smsNote(p) || (isIn ? tr('Money in') : '');
+        const note = r.duplicate ? tr('Already added') : r.match ? tr('Matches your entry: {note}, {date}', { note: esc(r.match.note || label(r.match.category || '')), date: fmtDate(r.match.date) }) : isIn && p.salary ? tr('Looks like your salary, which is already counted') : smsNote(p) || (isIn ? tr('Money in') : '');
         const check = '<td><input type="checkbox" data-sms-check="' + i + '" aria-label="' + tr('Add this') + '"' + (r.checked ? ' checked' : '') + '></td>';
         if (cardRow) {
           return '<tr' + (r.duplicate ? ' class="muted"' : '') + '>' + check +
@@ -2531,8 +2593,28 @@
         x.date === parsed.date && x.amount === parsed.amount &&
         Core.normalizeMerchant(x.note) === Core.normalizeMerchant(parsed.merchant))));
       const unknownCard = !!parsed && (parsed.type === 'statement' || parsed.type === 'cardpayment') && !findCard(parsed.last4);
-      return { text, key, parsed, duplicate, checked: !!parsed && !duplicate && !parsed.salary && !unknownCard };
+      const match = parsed && !duplicate ? manualTwin(parsed) : null;
+      return { text, key, parsed, duplicate, match, checked: !!parsed && !duplicate && !parsed.salary && !unknownCard };
     });
+  }
+
+  /*
+   * An entry typed by hand (or from the widget) that this bank SMS is about:
+   * the same amount, within 3 days, money in for money in and spending for
+   * spending, not already tied to an SMS. Like matching an import to a
+   * typed entry: the SMS is linked to it instead of counted again.
+   */
+  function manualTwin(p) {
+    if (!p || (p.type !== 'debit' && p.type !== 'credit')) return null;
+    const shop = Core.normalizeMerchant(p.merchant);
+    const hits = state.transactions.filter((x) => !x.smsKey && x.source !== 'sms' && x.source !== 'import' && x.source !== 'reconcile' &&
+      Number(x.amount) === p.amount && Math.abs(Core.daysBetween(x.date, p.date)) <= 3 &&
+      (p.type === 'credit' ? Core.isIncome(x) : Core.isFlexible(x)));
+    if (!hits.length) return null;
+    // Same place: the closest one. Otherwise only one clear candidate, and not a small everyday amount (two ₹100 teas are two payments).
+    const named = hits.filter((x) => shop && Core.normalizeMerchant(x.note) === shop);
+    const pool = named.length ? named : hits.length === 1 && p.amount >= 200 ? hits : [];
+    return pool.sort((a, b) => Math.abs(Core.daysBetween(a.date, p.date)) - Math.abs(Core.daysBetween(b.date, p.date)))[0] || null;
   }
 
   // SMS keys already recorded: transactions and card statements.
@@ -2576,6 +2658,16 @@
     if (p.type === 'debit' && p.atm && paidFrom === 'account' && cashWallet() && (o.category || p.category) === 'Cash') {
       state.transactions.push({ id: uid(), kind: 'transfer', date: p.date, amount: p.amount, from: fromWallet ? fromWallet.id : 'main', to: cashWallet().id,
         note: tr('ATM withdrawal'), source: o.source || 'sms', smsKey: o.key });
+      return true;
+    }
+    // Already typed in by hand? Link the SMS to that entry; the person's category and note stay.
+    const mine = manualTwin(p);
+    if (mine) {
+      mine.smsKey = o.key;
+      // Kept so "Not the same payment" can add the SMS as its own entry.
+      mine.matched = { date: p.date, merchant: p.merchant, category: o.category || p.category, type: p.type, paidFrom: paidFrom === 'account' ? null : paidFrom, wallet: fromWallet ? fromWallet.id : null };
+      if (paidFrom !== 'account' && paidFrom.indexOf('card:') !== 0 && !mine.paidFrom && !mine.wallet) mine.paidFrom = paidFrom;
+      else if (fromWallet && !mine.paidFrom && !mine.wallet) mine.wallet = fromWallet.id;
       return true;
     }
     const tx = { id: uid(), date: p.date, amount: p.amount, category: o.category || p.category, note: o.note || p.merchant, source: 'sms', smsKey: o.key };
@@ -2719,8 +2811,16 @@
     return '<button class="icon" data-action="list-remove" data-list="' + list + '" data-id="' + esc(item.id) + '" aria-label="' + esc(tr('Remove {name}', { name: item.name ? label(item.name) : tr('row') })) + '">✕</button>';
   }
 
+  // "Last round ₹6,200 · Average ₹5,600": tap one to use it as this budget.
+  function quickBudget(b, h) {
+    const chip = (text, v) => '<button class="chip-btn' + (v === b.amount ? ' on' : '') + '" data-action="budget-use" data-id="' + esc(b.id) + '" data-amount="' + v + '">' + text + '</button>';
+    return '<div class="quick-budget">' + chip(tr('Last round {amount}', { amount: inr(h.last) }), h.last) +
+      (h.rounds > 1 ? chip(tr('Average of {n} rounds {amount}', { n: h.rounds, amount: inr(h.avg) }), h.avg) : '') + '</div>';
+  }
+
   function viewPlan() {
     const s = state.settings;
+    const budgetHist = Core.budgetHistory(state, today());
     const plan = Core.monthlyPlan(state, today());
     const alloc = Core.allocate(state, today());
     const sv = alloc.savings;
@@ -2792,11 +2892,17 @@
       '<section class="card"><div class="card-head">' + titled('Flexible budgets', 'flex') + '<span class="hint">' + tr('{amount} to spend this month', { amount: inr(Math.max(0, alloc.pool)) }) + '</span></div>' +
       '<div class="edit-rows">' + alloc.budgets.map((b) => {
         const item = state.budgets.find((x) => x.id === b.id);
+        const hist = budgetHist;
         return '<div class="edit-row cols-2">' + listField('budgets', item, 'name', 'Category', 'text') +
           listField('budgets', Object.assign({}, item, { amount: b.amount }), 'amount', b.auto ? tr('Auto · {pct}%', { pct: b.share }) : 'Set by you', 'number', b.auto ? ' class="auto"' : '') +
           removeButton('budgets', item) +
+          (hist[b.name] ? quickBudget(b, hist[b.name]) : '') +
           '<label class="check carry-check"><input type="checkbox" data-carry="' + esc(b.id) + '"' + (item.carry ? ' checked' : '') + '> ' + tr('Keep what’s left for next month') + '</label></div>';
       }).join('') + '</div>' +
+      (Object.keys(budgetHist).length
+        ? '<div class="row quick-all"><button class="ghost small" data-action="budget-all" data-use="last">' + tr('Set all to last round’s spending') + '</button>' +
+          '<button class="ghost small" data-action="budget-all" data-use="avg">' + tr('Set all to the average') + '</button></div>'
+        : '') +
       (alloc.budgets.length && alloc.autoPool === 0 && alloc.budgets.some((b) => b.auto) && alloc.pool > 0
         ? '<p class="hint warn">' + tr('Your own amounts use all of the money left, so the automatic budgets are at ₹0.') + '</p>' : '') +
       '<div class="row"><button data-action="list-add" data-list="budgets">' + tr('Add category') + '</button>' +
@@ -2870,6 +2976,7 @@
     return '<section class="card wallets-card"><div class="card-head">' + titled('Wallets', 'wallets') + '<span class="hint">' + tr('Total {amount}', { amount: inr(r.balanceToday) }) + '</span></div>' +
       '<div class="tx-list">' + row('main', mainWalletName(), 'bank', state.settings.mainLast4 || '', wb.main) +
       wb.wallets.map((w) => row(w.id, w.name, w.kind, w.last4, w.balance)).join('') + '</div>' +
+      reconcileCard() +
       (cashWallet() ? '<p class="hint">' + tr('Cash is tracked: an ATM withdrawal moves money into Cash, and what you note as spent in cash comes out of it.') + '</p>'
         : '<p class="hint">' + tr('No Cash wallet, so an ATM withdrawal counts as spent. Add a Cash wallet if you note what you spend in cash.') + '</p>') +
       // Balances this morning, one per wallet: they add up to the total the runway starts from.
@@ -2945,6 +3052,7 @@
   function saveWalletBalances(ev) {
     ev.preventDefault();
     const t = today();
+    const exp = expectedMorning();
     const main = Math.max(0, Math.round(Number(document.getElementById('wb-main').value) || 0));
     let total = main;
     (state.wallets || []).forEach((w) => {
@@ -2954,9 +3062,10 @@
       total += v;
     });
     state.balanceCheck = { date: t, amount: total };
+    reconcileAfter(exp, total);
     ui.walletBalances = false;
     save();
-    toast(tr('Balances saved'));
+    if (!ui.reconcile || ui.reconcile.ok) toast(tr('Balances saved'));
     rerenderKeepScroll();
   }
 
@@ -3019,6 +3128,9 @@
     return '<div class="reset-modal-overlay edit-overlay" role="presentation"><div class="reset-modal-card edit-card" role="dialog" aria-modal="true" aria-labelledby="edit-title" id="edit-card" tabindex="-1">' +
       '<div class="edit-head">' + catIcon(x) + '<h2 id="edit-title">' + tr(isIn ? 'Edit money received' : saved ? 'Edit money saved' : Core.isTransfer(x) ? 'Edit money moved' : 'Edit payment') + '</h2></div>' +
       (Core.isTransfer(x) ? '<p class="hint">' + esc(walletName(x.from)) + ' → ' + esc(walletName(x.to)) + '</p>' : '') +
+      (x.matched ? '<div class="callout"><span class="hint">' + tr('Linked to a bank SMS: {merchant}, {date}.', { merchant: esc(x.matched.merchant || ''), date: fmtDate(x.matched.date) }) + '</span>' +
+        '<div><button class="ghost small" data-action="tx-unlink">' + tr('Not the same payment') + '</button></div></div>' : '') +
+      (state.reconciledTo && x.date <= state.reconciledTo ? '<p class="hint">' + tr('Checked against your bank on {date}. Changing it makes the app’s count differ from your bank’s.', { date: fmtDate(Core.addDays(state.reconciledTo, 1)) }) + '</p>' : '') +
       (locked ? '<p class="hint">' + tr('This is a bill or card payment, so its amount and date are tied to the bill. To change them, delete it and record it again.') + '</p>' : '') +
       '<div class="form-grid">' +
       (locked ? '' : field('edit-amount', 'Amount (₹)', '<input id="edit-amount" type="number" inputmode="decimal" min="1" step="1" value="' + esc(x.amount) + '">') +
@@ -3164,7 +3276,8 @@
       (x.source === 'sms' ? ' · ' + tr('from SMS') : x.source === 'widget' ? ' · ' + tr('from widget') : '') +
       (onCard ? ' · <span class="warn">' + tr('on {card}', { card: cardLabel(onCard) }) + '</span>' : '') +
       (x.wallet && !Core.isTransfer(x) ? ' · ' + esc(walletName(x.wallet)) : '') +
-      (x.splitOf ? ' · <span class="chip">' + tr('Split') + '</span>' : '');
+      (x.splitOf ? ' · <span class="chip">' + tr('Split') + '</span>' : '') +
+      (x.matched ? ' · <span class="chip">' + tr('Bank SMS ✓') + '</span>' : '');
     const extra = edit && isIn
       ? ' <button class="link" data-action="income-change" data-id="' + esc(x.id) + '">' + tr(x.useFor ? INCOME_USE_LABELS[x.useFor] : 'Choose what it does') + '</button>'
       : edit && saved && x.useFor ? ' <button class="link" data-action="saved-change" data-id="' + esc(x.id) + '">' + tr('Change') + '</button>' : '';
@@ -4169,6 +4282,42 @@
       '<div><button data-action="tab" data-tab="debts">' + tr('Tell Hisab Se') + '</button></div></div>';
   }
 
+  // What if I paid more? A slider that tries amounts without changing the plan, and each loan's finish on one line.
+  function whatIfMax(extra) {
+    const salary = Core.salaryFor(state, today()) || 0;
+    return Math.max(5000, Math.ceil(Math.max(salary * 0.3, extra * 2) / 500) * 500);
+  }
+
+  function whatIfResult(debts, extra, tryAmount) {
+    const t = today();
+    const how = Core.payoffOrder(state);
+    const now = Core.simulateDebts(debts, extra, how, true);
+    const res = Core.simulateDebts(debts, tryAmount, how, true);
+    if (res.neverPaysOff) return '<p class="bad">' + tr('Never paid off: a minimum payment is smaller than the monthly interest.') + '</p>';
+    const sooner = now.neverPaysOff ? null : now.months - res.months;
+    const saved = now.neverPaysOff ? 0 : now.totalInterest - res.totalInterest;
+    const max = Math.max(1, res.months);
+    const line = tryAmount === extra ? tr('Your plan now: debt-free in {date}.', { date: monthYear(Core.addMonths(t, res.months)) })
+      : sooner === null ? tr('Debt-free in {date}.', { date: monthYear(Core.addMonths(t, res.months)) })
+        : sooner >= 0 ? tr('Debt-free in {date}: {n} sooner, {amount} less interest.', { date: monthYear(Core.addMonths(t, res.months)), n: plural(sooner, 'month'), amount: inr(Math.max(0, saved)) })
+          : tr('Debt-free in {date}: {n} later, {amount} more interest.', { date: monthYear(Core.addMonths(t, res.months)), n: plural(-sooner, 'month'), amount: inr(Math.max(0, -saved)) });
+    return '<p class="whatif-line"><b>' + line + '</b></p>' +
+      '<div class="loan-lines">' + res.order.map((o) => '<div class="loan-line"><span class="loan-name">' + esc(o.name) + '</span>' +
+        '<span class="loan-track"><span class="loan-fill" style="width:' + Math.max(3, (o.month / max) * 100).toFixed(1) + '%"></span></span>' +
+        '<span class="loan-when">' + monthYear(Core.addMonths(t, o.month)) + '</span></div>').join('') + '</div>' +
+      (tryAmount > extra ? '<p class="hint">' + tr('Your flexible budgets would get {amount} less each month.', { amount: inr(tryAmount - extra) }) + '</p>' : '') +
+      (tryAmount !== extra ? '<div class="row"><button class="primary" data-action="whatif-use" data-amount="' + tryAmount + '">' + tr('Make {amount} a month my plan', { amount: inr(tryAmount) }) + '</button></div>' : '');
+  }
+
+  function whatIfBlock(debts, extra) {
+    const v = ui.whatIf != null ? ui.whatIf : extra;
+    return '<div class="whatif callout"><b>' + tr('What if I paid more each month?') + '</b>' +
+      '<label class="field" for="debt-whatif"><span>' + tr('Extra on top of minimums') + ': <b id="whatif-amount">' + inr(v) + '</b></span>' +
+      '<input id="debt-whatif" type="range" min="0" max="' + whatIfMax(extra) + '" step="500" value="' + v + '"></label>' +
+      '<div id="whatif-out">' + whatIfResult(debts, extra, v) + '</div>' +
+      '<span class="hint">' + tr('Trying amounts here changes nothing until you tap the button.') + '</span></div>';
+  }
+
   function viewDebts() {
     const t = today();
     const debts = state.debts.filter((d) => Number(d.balance) > 0);
@@ -4198,7 +4347,7 @@
         (extra > 0
           ? card('Highest interest first', c.avalanche, c.minimum, bestKey === 'avalanche') + card('Smallest balance first', c.snowball, c.minimum, bestKey === 'snowball' && c.snowball.totalInterest < c.avalanche.totalInterest)
           : '<div class="plan-card"><span class="eyebrow">' + tr('With an extra payment') + '</span><span class="hint">' + tr('Add an extra amount above to see how much sooner you could finish and how much interest you would save.') + '</span></div>') +
-        '</div></section>';
+        '</div>' + whatIfBlock(debts, extra) + '</section>';
     }
 
     const L = Core.lenderTasks(state, t);
@@ -4475,6 +4624,15 @@
 
   let searchTimer;
   document.addEventListener('input', (ev) => {
+    if (ev.target.id !== 'debt-whatif') return;
+    ui.whatIf = Number(ev.target.value) || 0;
+    const debts = state.debts.filter((d) => Number(d.balance) > 0);
+    const extra = Core.allocate(state, today()).savings.debtExtra;
+    document.getElementById('whatif-amount').textContent = inr(ui.whatIf);
+    document.getElementById('whatif-out').innerHTML = whatIfResult(debts, extra, ui.whatIf);
+  });
+
+  document.addEventListener('input', (ev) => {
     if (ev.target.id !== 'tx-search') return;
     ui.txSearch = ev.target.value;
     clearTimeout(searchTimer);
@@ -4541,6 +4699,71 @@
         offerUndo(tr('{name} removed', { name: g ? g.name : '' }), before);
         return;
       }
+      case 'budget-use': {
+        const b = state.budgets.find((x) => x.id === btn.dataset.id);
+        if (!b) return;
+        const before = JSON.stringify(state);
+        b.amount = Number(btn.dataset.amount) || 0;
+        b.auto = false;
+        save(); rerenderKeepScroll();
+        offerUndo(tr('{category}: {amount}', { category: label(b.name), amount: inr(b.amount) }), before);
+        return;
+      }
+      case 'budget-all': {
+        const h = Core.budgetHistory(state, today());
+        const before = JSON.stringify(state);
+        state.budgets.forEach((b) => { if (h[b.name]) { b.amount = btn.dataset.use === 'avg' ? h[b.name].avg : h[b.name].last; b.auto = false; } });
+        save(); rerenderKeepScroll();
+        const a = Core.allocate(state, today());
+        offerUndo(a.pool - a.customTotal < 0 ? tr('Budgets set. They add up to {amount} more than you have.', { amount: inr(a.customTotal - a.pool) }) : tr('Budgets set from what you really spent'), before);
+        return;
+      }
+      case 'whatif-use': {
+        // The total extra includes what cleared loans pass on, so only the rest is typed in.
+        const before = JSON.stringify(state);
+        const a = Core.allocate(state, today());
+        state.savings.emergencyMonthly = a.savings.emergencyMonthly - a.rollover.emergency;
+        state.savings.investMonthly = a.savings.investMonthly - a.rollover.grow;
+        state.savings.debtExtra = Math.max(0, Number(btn.dataset.amount) - a.rollover.debt);
+        state.savings.auto = false;
+        ui.whatIf = null;
+        save(); rerenderKeepScroll();
+        offerUndo(tr('{amount} a month extra to loans', { amount: inr(Number(btn.dataset.amount)) }), before);
+        return;
+      }
+      case 'tx-unlink': {
+        const x = state.transactions.find((t) => t.id === ui.editTx);
+        if (!x || !x.matched) return;
+        const before = JSON.stringify(state);
+        const m = x.matched;
+        const tx = { id: uid(), date: m.date, amount: x.amount, note: m.merchant, source: 'sms', smsKey: x.smsKey };
+        if (m.type === 'credit') Object.assign(tx, { kind: 'in', category: 'Money received', useFor: null });
+        else { tx.category = m.category || 'Misc'; tx.needsReview = true; if (m.paidFrom) tx.paidFrom = m.paidFrom; else if (m.wallet) tx.wallet = m.wallet; }
+        delete x.smsKey; delete x.matched;
+        state.transactions.push(tx);
+        ui.editTx = null;
+        save(); rerenderKeepScroll();
+        offerUndo(tr('Added the SMS as its own payment'), before);
+        return;
+      }
+      case 'reconcile-close': ui.reconcile = null; break;
+      case 'reconcile-note': {
+        const r = ui.reconcile;
+        if (!r || r.ok) return;
+        const before = JSON.stringify(state);
+        const cat = (document.getElementById('rec-cat') || {}).value;
+        // Dated yesterday, before this morning's balance, so it never changes today's limit.
+        const tx = { id: uid(), date: Core.addDays(today(), -1), amount: Math.abs(r.gap), note: tr('Found at balance check'), source: 'reconcile', gap: true };
+        if (r.gap > 0) tx.category = cat || 'Misc';
+        else Object.assign(tx, { kind: 'in', category: cat || 'Refund', useFor: 'spend' });
+        state.transactions.push(tx);
+        ui.reconcile = null;
+        save(); rerenderKeepScroll();
+        offerUndo(tr('{amount} noted', { amount: inr(tx.amount) }), before);
+        return;
+      }
+      case 'where-period': ui.wherePeriod = btn.dataset.period; ui.whereOpen = null; break;
+      case 'where-open': ui.whereOpen = ui.whereOpen === btn.dataset.cat ? null : btn.dataset.cat; showVizTip(btn); break;
       case 'cover-open': ui.cover = { to: btn.dataset.cat }; break;
       case 'cover-cancel': ui.cover = null; break;
       case 'split-add': if (ui.split) ui.split.parts.push({ category: 'Misc', amount: 0 }); break;
@@ -5075,7 +5298,11 @@
       case 'import-find': findPastPayments(ui.importMonths); return;
       case 'import-cancel': ui.importAsk = false; ui.importFound = null; break;
       case 'import-start': {
-        const items = ui.importFound ? ui.importFound.items : [];
+        const f = ui.importFound || {};
+        (f.matched || []).forEach((x) => recordSms(x.parsed, { key: x.key, source: 'import' }));
+        (f.known || []).forEach((x) => recordSms(x.parsed, { key: x.key, category: state.merchantRules[Core.normalizeMerchant(x.merchant)], note: x.merchant, noLearn: true, source: 'import' }));
+        if ((f.matched || []).length || (f.known || []).length) toast(tr('{a} linked to your entries, {b} sorted by themselves', { a: (f.matched || []).length, b: (f.known || []).length }));
+        const items = f.items || [];
         state.sortQueue = (state.sortQueue || []).concat(items);
         state.sortTotal = (state.sortTotal || 0) + items.length;
         ui.importAsk = false; ui.importFound = null;
@@ -5192,7 +5419,12 @@
     }
     if (el.dataset.balance) {
       if (el.value === '') return;
-      setBalance(el.value); toast('Balance saved'); return;
+      const exp = expectedMorning();
+      setBalance(el.value);
+      reconcileAfter(exp, state.balanceCheck.amount);
+      save(true);
+      if (ui.reconcile && !ui.reconcile.ok) { openPage('home', 'balance'); return; }
+      toast('Balance saved'); return;
     }
     if (el.dataset.bind) {
       const v = Number(el.value);
@@ -5379,9 +5611,12 @@
     if (ev.target.id === 'wallet-balance-form') { saveWalletBalances(ev); return; }
     if (ev.target.id === 'balance-form') {
       ev.preventDefault();
+      const exp = expectedMorning();
       setBalance(document.getElementById('balance-amount').value);
+      reconcileAfter(exp, state.balanceCheck.amount);
+      save(true);
       ui.balanceOpen = false;
-      toast('Balance saved');
+      if (!ui.reconcile || ui.reconcile.ok) toast('Balance saved');
       rerenderKeepScroll();
       return;
     }
@@ -5670,11 +5905,15 @@
     Promise.resolve().then(() => SmsInbox.read({ since, limit: 5000 })).then((res) => {
       const msgs = (res.messages || []).filter((m) => /[A-Za-z]/.test(m.address || '') && m.date < start);
       const queued = new Set((state.sortQueue || []).map((x) => x.key));
-      const items = smsRows(msgs.map((m) => ({ text: m.body || '', day: Core.toISO(new Date(m.date)) })))
-        .filter((r) => r.parsed && !r.duplicate && !queued.has(r.key) && r.parsed.type !== 'credit' && r.parsed.type !== 'statement' && r.parsed.type !== 'cardpayment')
-        .map((r) => ({ key: r.key, date: r.parsed.date, amount: r.parsed.amount, merchant: r.parsed.merchant, parsed: r.parsed }));
+      const rows = smsRows(msgs.map((m) => ({ text: m.body || '', day: Core.toISO(new Date(m.date)) })))
+        .filter((r) => r.parsed && !r.duplicate && !queued.has(r.key) && r.parsed.type !== 'credit' && r.parsed.type !== 'statement' && r.parsed.type !== 'cardpayment');
+      const toItem = (r) => ({ key: r.key, date: r.parsed.date, amount: r.parsed.amount, merchant: r.parsed.merchant, parsed: r.parsed });
+      // Entries you typed yourself are linked, and places you've sorted before sort themselves: only the rest need you.
+      const matched = rows.filter((r) => r.match).map(toItem);
+      const known = rows.filter((r) => !r.match && state.merchantRules[Core.normalizeMerchant(r.parsed.merchant)]).map(toItem);
+      const items = rows.filter((r) => !r.match && !state.merchantRules[Core.normalizeMerchant(r.parsed.merchant)]).map(toItem);
       ui.importBusy = false;
-      ui.importFound = { months, items };
+      ui.importFound = { months, items, matched, known };
       rerenderKeepScroll();
     }, (err) => {
       ui.importBusy = false;
@@ -5692,6 +5931,14 @@
     if (!SmsInbox || state.isDemo) return '';
     if (ui.importFound) {
       const f = ui.importFound;
+      const auto = (f.matched || []).length + (f.known || []).length;
+      const autoNote = auto ? '<p class="hint">' + [
+        (f.matched || []).length ? tr('{n} match entries you typed yourself: they’ll be linked, not added twice.', { n: f.matched.length }) : '',
+        (f.known || []).length ? tr('{n} are from places you’ve sorted before: they sort themselves.', { n: f.known.length }) : ''].filter(Boolean).join(' ') + '</p>' : '';
+      if (!f.items.length && auto) {
+        return '<section class="card import-card"><h2>' + tr('{n} payments found', { n: auto }) + '</h2>' + autoNote +
+          '<div class="row"><button class="primary" data-action="import-start">' + tr('Add them') + '</button><button class="ghost" data-action="import-cancel">' + tr('Not now') + '</button></div></section>';
+      }
       if (!f.items.length) {
         return '<section class="card"><h2>' + tr('Import past payments') + '</h2><p class="hint">' + tr('No new payments found in those messages.') + '</p>' +
           '<div><button data-action="import-cancel">' + tr('Close') + '</button></div></section>';
@@ -5699,7 +5946,7 @@
       const first = f.items.reduce((m, x) => (x.date < m ? x.date : m), f.items[0].date);
       return '<section class="card import-card"><h2>' + tr('{n} payments found', { n: f.items.length }) + '</h2>' +
         '<p>' + tr('From {from} to yesterday. Each one needs a category before it counts. Sorting takes about {min} min; payments to the same place can be sorted together.', { from: fmtDate(first), min: sortMinutes(f.items) }) + '</p>' +
-        '<p class="hint">' + tr('Until sorted they stay out of your budgets, graphs and daily limit. You can stop and continue later.') + '</p>' +
+        '<p class="hint">' + tr('Until sorted they stay out of your budgets, graphs and daily limit. You can stop and continue later.') + '</p>' + autoNote +
         '<div class="row"><button class="primary" data-action="import-start">' + tr('Start sorting') + '</button><button class="ghost" data-action="import-cancel">' + tr('Not now') + '</button></div></section>';
     }
     if (!ui.importAsk) return '';

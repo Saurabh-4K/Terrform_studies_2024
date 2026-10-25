@@ -70,6 +70,21 @@ Everything the app can do today, screen by screen, with the rules it follows. Fo
   - Goals show in the plan summary, the payday screen and Grow's set-asides.
 - **Net worth (Runway → Net worth):** what you own minus what you owe: money in the account and wallets, the emergency fund and Grow savings, less loans and card dues from before the card was added. Below zero it shows in coral with *You owe more than you own*. Kept once per round (about two years), with a chart of the last 12 rounds, the change since last round, and a table of the numbers.
 
+## Checking with the bank, smarter SMS, reports, quick budgets, what-if
+- **Balance check that reconciles:** when a new balance is entered (Runway → Balance, Plan, or Wallets → Update balances), the app first compares it with its own count since the last check.
+  - Within ₹100 (or 1%): *Your count matches your bank ✓*.
+  - Less in the bank: *Your bank has ₹1,500 less than the app counted*. Something wasn't noted (cash, a charge, a missed SMS). **Note it as spending** in a category, or **Leave it**.
+  - More in the bank: note it as money received (a refund, cashback), or leave it.
+  - A noted gap is dated the day before, so it never changes today's limit, and it doesn't count against any single day on the round board. Budgets, charts and reports see it.
+  - Payments up to the check are marked as checked; editing one says that it will make the count differ from the bank.
+- **Bank SMS matched to what you typed:** a bank SMS for a payment you already noted by hand (same amount, within 3 days) is linked to your entry instead of being added again. Your category and note stay, and the row shows *Bank SMS ✓*.
+  - To avoid wrong matches: a different shop name only matches when it's the one candidate and ₹200 or more. Two ₹100 teas stay two payments.
+  - Wrong match? In the edit screen, **Not the same payment** adds the SMS as its own payment (with undo).
+  - Importing past messages: matches are linked, and payments to places you've sorted before sort themselves. Only the rest wait for you.
+- **Reports (Spend → Where):** pick **This round, Last round, 3 rounds or 6 rounds**. Each category shows the change from the same stretch of time just before, but only when the app has records for all of it. Budgets scale to the period. Tap a category to see its latest payments.
+- **Quick budgets (Plan → Flexible budgets):** under each budget, *Last round ₹5,900* and *Average of 3 rounds ₹5,400* show what was really spent. Tap one to use it, or set all at once. Rounds with nothing recorded don't pull the average down.
+- **What if I paid more? (Debts → Debt-free plans):** a slider tries extra amounts without changing anything. It shows the debt-free date, months sooner and interest saved, each loan's finish on one line, and how much less the flexible budgets would get. **Make ₹5,000 a month my plan** saves it, with undo.
+
 ## Profile, tour and app lock
 
 ### Profile (the round button at the top right)

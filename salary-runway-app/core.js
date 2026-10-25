@@ -1929,12 +1929,13 @@
   // Spent and saved on a day: saved money can't be spent either. Emergencies don't count against the day.
   function daySpent(state, date) {
     return sum(state.transactions.filter((x) =>
-      (isFlexible(x) && x.date === date && x.category !== 'Emergency') || (isMove(x) && !x.setAside && (x.forDate || x.date) === date)), (x) => x.amount);
+      (isFlexible(x) && x.date === date && x.category !== 'Emergency' && !x.gap) || (isMove(x) && !x.setAside && (x.forDate || x.date) === date)), (x) => x.amount);
   }
 
   // Spending alone on a day: whether the day was won. Moving money to savings or a loan never makes a day "over".
   function daySpending(state, date) {
-    return sum(state.transactions.filter((x) => isFlexible(x) && x.date === date && x.category !== 'Emergency'), (x) => x.amount);
+    // A gap found at a balance check isn't one day's spending.
+    return sum(state.transactions.filter((x) => isFlexible(x) && x.date === date && x.category !== 'Emergency' && !x.gap), (x) => x.amount);
   }
 
   // Days in [from, to]: won (within that day's limit), over, or not tracked (the app wasn't opened).
@@ -2097,17 +2098,76 @@
   const BASICS = ['Groceries', 'Health', 'Bills', 'Emergency'];
 
   // Where: spending by category this cycle (to today), against budget, and basics vs the rest.
-  function spendWhere(state, todayIso) {
+  /*
+   * The rounds a report period covers, newest last: 'this' (this round so
+   * far), 'last' (the round before), or a number of rounds back including
+   * this one. `before` is the same length of time just before it, to compare.
+   */
+  function reportRange(state, todayIso, period) {
+    const payday = Number(state.settings.payday) || 1;
+    const cur = cycleFor(todayIso, payday);
+    const n = period === 'this' || period === 'last' || !period ? 1 : Math.max(1, Number(period) || 1);
+    let last = period === 'last' ? previousCycle(cur, payday) : cur;
+    let first = last;
+    for (let i = 1; i < n; i++) first = previousCycle(first, payday);
+    const end = last === cur ? addDays(todayIso, 1) : last.next;
+    let bFirst = previousCycle(first, payday);
+    for (let i = 1; i < n; i++) bFirst = previousCycle(bFirst, payday);
+    // This round so far is compared with the same number of days of the round before.
+    const sameDays = last === cur && n === 1 ? addDays(bFirst.start, daysBetween(cur.start, todayIso) + 1) : first.start;
+    return { from: first.start, to: end, rounds: n, current: last === cur, before: { from: bFirst.start, to: sameDays } };
+  }
+
+  /*
+   * Where: flexible spending by category for a period (see reportRange),
+   * against the budget for that many rounds, with the period before to
+   * compare and the payments behind each category.
+   */
+  function spendWhere(state, todayIso, period) {
+    const range = reportRange(state, todayIso, period || 'this');
     const cycle = cycleFor(todayIso, Number(state.settings.payday) || 1);
-    const txs = state.transactions.filter((t) => isFlexible(t) && inCycle(t.date, cycle) && t.date <= todayIso);
+    const flex = state.transactions.filter(isFlexible);
+    const txs = flex.filter((t) => t.date >= range.from && t.date < range.to && t.date <= todayIso);
     const spent = byCategory(txs);
+    // Compare only with a stretch the records fully cover.
+    const first = flex.reduce((m, t) => (t.date < m ? t.date : m), todayIso);
+    const comparable = first <= range.before.from;
+    const prev = comparable ? byCategory(flex.filter((t) => t.date >= range.before.from && t.date < range.before.to)) : {};
     const budgets = {};
-    monthlyPlan(state, todayIso).budgets.forEach((b) => { budgets[b.name] = b.amount; });
-    const categories = Object.keys(spent).map((name) => ({ name, spent: spent[name], budget: budgets[name] || 0 }))
-      .sort((a, b) => b.spent - a.spent);
+    monthlyPlan(state, todayIso).budgets.forEach((b) => { budgets[b.name] = b.amount * range.rounds; });
+    const categories = Object.keys(spent).map((name) => ({
+      name, spent: spent[name], budget: budgets[name] || 0, before: prev[name] || 0,
+      payments: txs.filter((t) => t.category === name).sort((a, b) => (a.date < b.date ? 1 : -1)),
+    })).sort((a, b) => b.spent - a.spent);
     const basics = sum(categories.filter((c) => BASICS.indexOf(c.name) !== -1), (c) => c.spent);
     const total = sum(categories, (c) => c.spent);
-    return { cycle, categories, total, basics, other: total - basics };
+    return { cycle, range, categories, total, basics, other: total - basics, comparable, before: comparable ? sum(Object.keys(prev), (k) => prev[k]) : null };
+  }
+
+  /*
+   * What each flexible budget really needed: spending in the last full round
+   * and the average of the last three full rounds (rounds with nothing
+   * recorded don't count), rounded to ₹100. For quick budget setting.
+   */
+  function budgetHistory(state, todayIso) {
+    const payday = Number(state.settings.payday) || 1;
+    const flex = state.transactions.filter(isFlexible);
+    const rounds = [];
+    let c = previousCycle(cycleFor(todayIso, payday), payday);
+    for (let i = 0; i < 3; i++) {
+      const cyc = c;
+      const txs = flex.filter((t) => inCycle(t.date, cyc));
+      if (txs.length) rounds.push(byCategory(txs));
+      c = previousCycle(c, payday);
+    }
+    const out = {};
+    (state.budgets || []).forEach((b) => {
+      if (!rounds.length) return;
+      const last = rounds[0][b.name] || 0;
+      const avg = sum(rounds, (r) => r[b.name] || 0) / rounds.length;
+      out[b.name] = { last: round100(last), avg: round100(avg), rounds: rounds.length };
+    });
+    return out;
   }
 
   /*
@@ -2694,7 +2754,7 @@
     recordCardPayment, convertCardBalance, answerCardDue, cardLateFee, cardRate, CARD_RATE, undoCardConvert, cardFreeDays, byCategory, DEFAULT_SPLIT,
     isLoanCredit, borrowedThisCycle, borrowCheck, rolloverOptions, personal, investPlan, sipValue, ASSUMED_RETURN, setTranslator,
     payoffOrder, tickDebts, debtJourney, lenderTasks, lastBorrowed,
-    encryptBackup, openBackup, backupInfo, toB64, fromB64, isTransfer, walletBalances, goalStatus, goalsMonthly, budgetEnvelopes, netWorth,
+    encryptBackup, openBackup, backupInfo, toB64, fromB64, isTransfer, walletBalances, goalStatus, goalsMonthly, budgetEnvelopes, netWorth, reportRange, budgetHistory,
     daySpent, daySpending, dayTally, roundSnapshot, roundResult, weekRecap,
     monthReport, aiReport, LEAKS, leakNames, leakOf, leakSummary, leakSuggestions, spendWhere, spendWhen, spendTrend, BASICS,
   };
