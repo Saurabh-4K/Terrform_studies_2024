@@ -44,4 +44,10 @@
     <string name="sms_text_salary">तुमची मासिक योजना पाहण्यासाठी टॅप करा</string>
     <string name="widget_payday_in">%1$d दिवसांत पगार</string>
     <string name="widget_payday_tomorrow">उद्या पगार</string>
+    <string name="widget_zone_green">✨ योग्य मार्गावर</string>
+    <string name="widget_zone_amber">⚠️ सावध</string>
+    <string name="widget_zone_red">🛑 थांबा: फक्त गरजा</string>
+    <string name="widget_locked">लॉक आहे</string>
+    <string name="widget_locked_hint">आजची रक्कम पाहण्यासाठी Hisab Se उघडा</string>
+    <string name="notify_locked">नवीन बँक पेमेंट. तपासण्यासाठी Hisab Se उघडा.</string>
 </resources>

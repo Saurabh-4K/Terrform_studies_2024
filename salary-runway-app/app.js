@@ -53,6 +53,14 @@
   const SpendWidget = NATIVE ? window.Capacitor.registerPlugin('SpendWidget') : null;
   const Haptics = NATIVE ? window.Capacitor.registerPlugin('Haptics') : null;
   const ShareFile = NATIVE ? window.Capacitor.registerPlugin('ShareFile') : null;
+  // App lock (fingerprint, face or the phone's screen lock). A browser test can stand in a fake one.
+  const AppLock = NATIVE ? window.Capacitor.registerPlugin('AppLock') : (window.HisabTestLock || null);
+  // App lock settings, light or dark, and whether the tour was seen: kept outside the (maybe encrypted) data.
+  const LOCK_KEY = 'salary-runway-lock';
+  const THEME_KEY = 'salary-runway-theme';
+  const TOUR_KEY = 'salary-runway-tour';
+  // The build number, written by the Android build; absent in the browser preview.
+  const BUILD = window.HISAB_BUILD || '';
 
   // A light tap on the phone. Never allowed to break anything.
   function haptic() {
@@ -218,15 +226,50 @@
     };
   }
 
+  // null when the data is encrypted: it opens after the app lock is unlocked.
   function load() {
     try {
       const raw = localStorage.getItem(KEY);
       if (raw) {
         const parsed = JSON.parse(raw);
+        if (parsed && parsed.sealed) { sealedBlob = raw; return null; }
         if (parsed && parsed.settings) return migrate(Object.assign(emptyState(), parsed));
       }
     } catch (e) { /* storage unavailable: fall through to example data */ }
     return Demo.demoState(today());
+  }
+
+  // ---------- app lock: the data on this phone, encrypted ----------
+
+  let dataKey = null; // AES key for the data, in memory only while unlocked
+  let sealedBlob = null; // the encrypted data, before it's opened
+  let locked = false; // the lock screen is showing
+  let booted = false;
+  let saving = Promise.resolve();
+
+  function lockCfg() {
+    try { return JSON.parse(localStorage.getItem(LOCK_KEY)) || {}; } catch (e) { return {}; }
+  }
+
+  function setLockCfg(c) {
+    try { if (c) localStorage.setItem(LOCK_KEY, JSON.stringify(c)); else localStorage.removeItem(LOCK_KEY); } catch (e) { /* private mode */ }
+  }
+
+  function importKey(b64) {
+    return crypto.subtle.importKey('raw', Core.fromB64(b64), 'AES-GCM', false, ['encrypt', 'decrypt']);
+  }
+
+  // The data, encrypted with AES-256-GCM and a fresh IV every time it's saved.
+  function sealData(text, key) {
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    return crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, new TextEncoder().encode(text))
+      .then((data) => JSON.stringify({ sealed: 1, v: 1, iv: Core.toB64(iv), data: Core.toB64(new Uint8Array(data)) }));
+  }
+
+  function openData(blob, key) {
+    const o = JSON.parse(blob);
+    return crypto.subtle.decrypt({ name: 'AES-GCM', iv: Core.fromB64(o.iv) }, key, Core.fromB64(o.data))
+      .then((plain) => JSON.parse(new TextDecoder().decode(plain)));
   }
 
   // Older saves had no automatic budgets: budgets left at ₹0 become automatic.
@@ -239,6 +282,15 @@
   }
 
   function save() {
+    if (!state) return;
+    if (lockCfg().on) {
+      // Locked: nothing to save. Unlocked: encrypt, one save after another so the newest wins.
+      if (!dataKey) return;
+      const text = JSON.stringify(state);
+      const key = dataKey;
+      saving = saving.then(() => sealData(text, key)).then((blob) => { localStorage.setItem(KEY, blob); }).catch(() => {});
+      return;
+    }
     try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) { /* private mode */ }
   }
 
@@ -512,20 +564,23 @@
     '<circle cx="740" cy="1037" r="66" fill="#F2553A"/><circle cx="1193" cy="602" r="66" fill="#79E3C3"/></svg>';
 
   function render() {
+    if (locked) { renderLock(); return; }
     tickJourney();
     const app = document.getElementById('app');
     const banner = state.isDemo
       ? '<div class="banner"><span>' + tr('You are looking at <b>example numbers</b>. Explore freely, then add your own.') + '</span>' +
         '<button class="primary" data-action="start-own">' + tr('Start with my numbers') + '</button></div>'
       : '';
-    const views = { home: viewHome, spend: viewSpend, plan: viewPlan, debts: viewDebts, grow: viewGrow };
+    const views = { home: viewHome, spend: viewSpend, plan: viewPlan, debts: viewDebts, grow: viewGrow, profile: viewProfile };
     // The field being typed in, so a redraw can give it back its focus.
     const active = document.activeElement;
     const keep = active && active.id && /^(INPUT|SELECT|TEXTAREA)$/.test(active.tagName) ? active.id : null;
     app.innerHTML =
       '<div class="shell">' +
       '<header class="topbar"><div class="brand">' +
-      LOGO + 'Hisab Se</div><span class="privacy-chip">' + tr('Data stays on this device') + '</span></header>' +
+      LOGO + 'Hisab Se</div><span class="privacy-chip">' + tr('Data stays on this device') + '</span>' +
+      '<button class="profile-btn" data-action="profile-open" aria-label="' + tr('Profile') + '"' + (tab === 'profile' ? ' aria-current="page"' : '') + '>' +
+      '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8.5" r="3.8"/><path d="M4.5 20c1.2-3.8 4-5.6 7.5-5.6s6.3 1.8 7.5 5.6"/></svg></button></header>' +
       banner +
       '<main id="view" class="stack" style="gap:16px">' + views[tab]() + '</main>' +
       '<p class="disclaimer">' + tr(Core.personal(state)
@@ -539,7 +594,7 @@
       ).join('') +
       '</div></nav>' +
       (tab !== 'spend' && state.settings.salary ? '<button class="fab" data-action="fab-add" aria-label="' + tr('Add an expense') + '"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></svg></button>' : '') +
-      resetModal() + helpModal() + explainModal() + borrowModal() + reportModal() + onboardModal();
+      resetModal() + helpModal() + explainModal() + borrowModal() + reportModal() + onboardModal() + tourModal();
     if (tab === 'home') { drawRunway(); animateRunway(); }
     if (document.getElementById('onboard-card') && ui.onboardFocus) {
       ui.onboardFocus = false;
@@ -620,6 +675,8 @@
     book: '<path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2z"/><path d="M4 19V5"/>',
     pot: '<path d="M5 9h14l-1 10H6z"/><path d="M9 9V6a3 3 0 0 1 6 0v3"/>',
     add: '<circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/>',
+    theme: '<path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/>',
+    info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.01"/>',
   };
   const BACK_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 
@@ -644,8 +701,21 @@
       if (!g) groups.push((g = { name: x.group, items: [] }));
       g.items.push(x);
     });
+    // Profile: a settings list, like most apps.
+    if (tabKey === 'profile') {
+      return top + groups.map((g) => '<section class="card settings-group"><h2>' + tr(g.name) + '</h2><div class="settings-list">' +
+        g.items.map(settingsRow).join('') + '</div></section>').join('');
+    }
     return top + groups.map((g) => '<section class="card hub-group"><h2>' + tr(g.name) + '</h2><div class="hub-grid">' +
       g.items.map(hubTile).join('') + '</div></section>').join('');
+  }
+
+  function settingsRow(x) {
+    return '<button class="settings-row" data-action="' + (x.action || 'page-open') + '" data-tab="profile" data-key="' + x.key + '">' +
+      '<span class="settings-icon"><svg viewBox="0 0 24 24" aria-hidden="true">' + (HUB_ICONS[x.icon] || '') + '</svg></span>' +
+      '<span class="settings-label">' + tr(x.label) + '</span>' +
+      (x.value ? '<span class="settings-value' + (x.tone ? ' ' + x.tone : '') + '">' + x.value + '</span>' : '') +
+      '<svg class="settings-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></button>';
   }
 
   function hubTile(x) {
@@ -673,11 +743,35 @@
     window.scrollTo(0, 0);
   }
 
-  window.addEventListener('popstate', () => { if (ui.page) closePage(); });
+  window.addEventListener('popstate', () => {
+    if (ui.page) closePage();
+    else if (tab === 'profile') closeProfile();
+  });
+
+  // ---------- profile ----------
+
+  function openProfile() {
+    if (tab !== 'profile') ui.prevTab = tab;
+    tab = 'profile';
+    ui.page = null;
+    try { history.pushState({ profile: 1 }, '', '#profile'); } catch (e) { /* sandboxed */ }
+    render();
+    window.scrollTo(0, 0);
+  }
+
+  function closeProfile() {
+    tab = ui.prevTab || 'home';
+    ui.prevTab = null;
+    ui.page = null;
+    try { history.replaceState(null, '', '#' + tab); } catch (e) { /* sandboxed */ }
+    render();
+    window.scrollTo(0, 0);
+  }
 
   function setTab(t) {
     tab = TABS.indexOf(t) === -1 ? 'home' : t;
     ui.page = null;
+    ui.prevTab = null;
     try { history.replaceState(null, '', '#' + tab); } catch (e) { /* sandboxed */ }
     render();
     window.scrollTo(0, 0);
@@ -2526,17 +2620,282 @@
       '<div class="row"><button data-action="list-add" data-list="budgets">' + tr('Add category') + '</button>' +
       (edited ? '<button class="ghost" data-action="budgets-auto">' + tr('Share everything out automatically') + '</button>' : '') + '</div></section>' },
         { key: 'aiplan', group: 'Your plan', icon: 'sparkle', label: 'Plan with AI', tone: 'amber', hide: !aiPlanCard(), badge: null, html: () => aiPlanCard() },
-        { key: 'lang', group: 'Settings', icon: 'lang', label: 'Language & sounds', tone: 'teal', badge: { text: (I18N.LANGS.find((x) => x[0] === I18N.getLang()) || ['', ''])[1] }, html: () =>
-      '<section class="card lang-card"><div class="card-head"><h2>' + tr('Language') + '</h2>' +
-      '<div class="seg" role="group" aria-label="' + tr('Language') + '">' + I18N.LANGS.map(([code, name]) =>
-        '<button data-action="set-lang" data-lang="' + code + '" lang="' + code + '" aria-pressed="' + (I18N.getLang() === code) + '">' + name + '</button>').join('') + '</div></div>' +
-      '<label class="check"><input id="sounds-on" type="checkbox"' + (s.sounds === false ? '' : ' checked') + '> ' + tr('Sounds (quiet when the phone is on silent)') + '</label></section>' },
-        { key: 'privacy', group: 'Settings', icon: 'lock', label: 'Privacy', tone: 'teal', badge: null, html: () => privacyCard() },
-        { key: 'data', group: 'Settings', icon: 'data', label: 'Backup & data', tone: 'teal',
-          badge: lastBackup ? { text: '✓', tone: 'good' } : { text: '!', tone: 'bad' }, html: () => dataCard() },
-        { key: 'smsclean', group: 'Settings', icon: 'broom', label: 'Clean up SMS', tone: 'teal', hide: !smsCleanup(), badge: null, html: () => smsCleanup() },
       ]);
   }
+
+  // ---------- profile: appearance, language, lock, privacy, data, tour, about ----------
+
+  const THEMES = [['', 'Same as phone'], ['light', 'Light'], ['dark', 'Dark']];
+
+  function themeChoice() {
+    try { return localStorage.getItem(THEME_KEY) || ''; } catch (e) { return ''; }
+  }
+
+  function applyTheme(t) {
+    if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;
+    else delete document.documentElement.dataset.theme;
+  }
+
+  function viewProfile() {
+    const cfg = lockCfg();
+    const theme = THEMES.find((x) => x[0] === themeChoice()) || THEMES[0];
+    const langName = (I18N.LANGS.find((x) => x[0] === I18N.getLang()) || ['', ''])[1];
+    const top = '<div class="page-head"><button class="page-back" data-action="profile-close">' + BACK_ICON + '<span>' + tr('Back') + '</span></button></div>' +
+      '<section class="card profile-card"><span class="profile-logo">' + LOGO + '</span><div><h2>' + tr('Profile') + '</h2>' +
+      '<p class="hint">' + tr('Make your salary last') + '</p></div></section>';
+    return hub('profile', top, [
+      { key: 'appearance', group: 'App', icon: 'theme', label: 'Appearance', value: tr(theme[1]), html: appearanceCard },
+      { key: 'lang', group: 'App', icon: 'lang', label: 'Language & sounds', value: langName, html: langCard },
+      { key: 'lock', group: 'Security', icon: 'lock', label: 'App lock', value: tr(cfg.on ? 'On' : 'Off'), tone: cfg.on ? 'good' : '', html: lockCard },
+      { key: 'privacy', group: 'Security', icon: 'shield', label: 'Privacy & data protection', value: '', html: () => privacyCard() },
+      { key: 'data', group: 'Your data', icon: 'data', label: 'Backup & data', value: state.lastBackup ? fmtDate(state.lastBackup) : tr('No backup yet'), tone: state.lastBackup ? '' : 'bad', html: () => dataCard() },
+      { key: 'smsclean', group: 'Your data', icon: 'broom', label: 'Clean up SMS imports', value: '', hide: !smsCleanup(), html: () => smsCleanup() },
+      { key: 'tour', group: 'Help', icon: 'sparkle', label: 'See the app tour', value: '', action: 'tour-open', html: () => '' },
+      { key: 'about', group: 'Help', icon: 'info', label: 'About Hisab Se', value: BUILD ? tr('Build {n}', { n: BUILD }) : '', html: aboutCard },
+    ]);
+  }
+
+  function appearanceCard() {
+    const cur = themeChoice();
+    return '<section class="card"><h2>' + tr('Appearance') + '</h2>' +
+      '<div class="choices">' + THEMES.map((x) =>
+        '<button class="choice' + (cur === x[0] ? ' suggested' : '') + '" data-action="set-theme" data-theme="' + x[0] + '" aria-pressed="' + (cur === x[0]) + '">' +
+        '<span class="choice-title">' + tr(x[1]) + (cur === x[0] ? ' ✓' : '') + '</span>' +
+        '<span class="choice-detail">' + tr(x[0] === '' ? 'Light in the day, dark at night, as your phone is set.' : x[0] === 'light' ? 'Cream and teal, always.' : 'Easy on the eyes at night, always.') + '</span></button>').join('') +
+      '</div></section>';
+  }
+
+  function langCard() {
+    return '<section class="card lang-card"><div class="card-head"><h2>' + tr('Language') + '</h2>' +
+      '<div class="seg" role="group" aria-label="' + tr('Language') + '">' + I18N.LANGS.map(([code, name]) =>
+        '<button data-action="set-lang" data-lang="' + code + '" lang="' + code + '" aria-pressed="' + (I18N.getLang() === code) + '">' + name + '</button>').join('') + '</div></div>' +
+      '<label class="check"><input id="sounds-on" type="checkbox"' + (state.settings.sounds === false ? '' : ' checked') + '> ' + tr('Sounds (quiet when the phone is on silent)') + '</label></section>';
+  }
+
+  function aboutCard() {
+    return '<section class="card about-card"><span class="profile-logo big">' + LOGO + '</span><h2>Hisab Se</h2>' +
+      '<p><b>' + tr('Make your salary last') + '</b></p>' +
+      '<p class="hint">' + tr('Know each day how much you can spend and still reach payday without borrowing. Everything stays on your phone.') + '</p>' +
+      '<p class="hint">' + (BUILD ? tr('Build {n}', { n: BUILD }) : tr('Browser preview')) + '</p></section>';
+  }
+
+  // App lock: what it does, the honest risk, and its options.
+  function lockCard() {
+    const cfg = lockCfg();
+    const st = ui.lockStatus;
+    if (!AppLock) {
+      return '<section class="card"><h2>' + tr('App lock') + '</h2><p class="hint">' + tr('App lock works in the Android app.') + '</p></section>';
+    }
+    if (!st) {
+      Promise.resolve().then(() => AppLock.status()).then((r) => { ui.lockStatus = r; rerenderKeepScroll(); }).catch(() => { ui.lockStatus = { available: false }; rerenderKeepScroll(); });
+      return '<section class="card"><h2>' + tr('App lock') + '</h2><p class="hint">' + tr('Checking your phone…') + '</p></section>';
+    }
+    const msg = ui.lockMsg ? '<p class="bad" role="alert">' + ui.lockMsg + '</p>' : '';
+    if (!cfg.on) {
+      return '<section class="card lock-card"><h2>' + tr('App lock') + '</h2>' +
+        '<p>' + tr('Open Hisab Se with your fingerprint, face or your phone’s screen lock. No new password to remember.') + '</p>' +
+        '<ul class="privacy-list"><li class="pv-good"><span>' + tr('<b>Your data on this phone gets encrypted</b> (AES-256). The key stays in the phone’s secure hardware and opens only after you unlock.') + '</span></li>' +
+        '<li class="pv-good"><span>' + tr('<b>Amounts hidden</b> on the home-screen widget and in SMS notifications, and the app is hidden in recent apps.') + '</span></li>' +
+        '<li class="pv-warn"><span>' + tr('<b>If you ever remove your phone’s screen lock,</b> Android deletes the key and this data can’t be opened again. Keep a backup file: it restores everything.') + '</span></li></ul>' +
+        (st.available
+          ? '<div class="row"><button class="primary" data-action="lock-on"' + (ui.lockBusy ? ' disabled' : '') + '>' + tr(ui.lockBusy ? 'Checking…' : 'Turn on app lock') + '</button>' +
+            (state.lastBackup ? '' : '<button data-action="page-open" data-tab="profile" data-key="data">' + tr('Make a backup first') + '</button>') + '</div>'
+          : '<div class="callout warn"><b>' + tr('Your phone has no screen lock yet') + '</b><span class="hint">' + tr('Set a PIN, pattern or password in your phone’s settings first. Fingerprint and face unlock need one too.') + '</span>' +
+            '<div><button data-action="lock-settings">' + tr('Open phone settings') + '</button></div></div>') +
+        msg + '</section>';
+    }
+    const after = Number(cfg.after);
+    return '<section class="card lock-card"><div class="card-head"><h2>' + tr('App lock') + '</h2><span class="chip chip-freedom">' + tr('On') + '</span></div>' +
+      '<p class="good">' + tr('Your data on this phone is encrypted. It opens with your fingerprint, face or phone’s screen lock.') + '</p>' +
+      '<label class="field" for="lock-after"><span>' + tr('Lock again') + '</span><select id="lock-after">' +
+      [[0, 'Every time I leave the app'], [1, 'After 1 minute away'], [5, 'After 5 minutes away'], [15, 'After 15 minutes away']].map((x) =>
+        '<option value="' + x[0] + '"' + (after === x[0] ? ' selected' : '') + '>' + tr(x[1]) + '</option>').join('') + '</select></label>' +
+      '<label class="check"><input id="lock-hide" type="checkbox"' + (cfg.hide !== false ? ' checked' : '') + '> ' + tr('Hide amounts on the widget and in SMS notifications') + '</label>' +
+      '<label class="check"><input id="lock-secure" type="checkbox"' + (cfg.secure !== false ? ' checked' : '') + '> ' + tr('Hide Hisab Se in recent apps and screenshots') + '</label>' +
+      '<div><button class="ghost" data-action="lock-off"' + (ui.lockBusy ? ' disabled' : '') + '>' + tr('Turn off app lock') + '</button></div>' + msg + '</section>';
+  }
+
+  // Turning the lock on: the native side checks the full round trip first, then the data is encrypted and checked again.
+  function lockOn() {
+    const raw = crypto.getRandomValues(new Uint8Array(32));
+    const b64 = Core.toB64(raw);
+    let nativeOn = false;
+    ui.lockBusy = true; ui.lockMsg = ''; ui.unlocking = true;
+    rerenderKeepScroll();
+    Promise.resolve()
+      .then(() => AppLock.enable({ key: b64, title: tr('Turn on app lock'), subtitle: tr('Fingerprint, face or your phone’s screen lock') }))
+      .then(() => { nativeOn = true; return importKey(b64); })
+      .then((key) => sealData(JSON.stringify(state), key).then((blob) => openData(blob, key).then((back) => {
+        if (JSON.stringify(back) !== JSON.stringify(state)) throw new Error('check');
+        localStorage.setItem(KEY, blob);
+        dataKey = key;
+        setLockCfg({ on: true, after: 1, hide: true, secure: true });
+        // From here the data is encrypted: hiding from recent apps is a nicety and must not undo the lock.
+        return Promise.resolve().then(() => AppLock.setSecure({ on: true })).catch(() => {});
+      })))
+      .then(() => {
+        ui.lockBusy = false; ui.unlocking = false; ui.unlockedAt = Date.now();
+        widgetSent = '';
+        rerenderKeepScroll();
+        celebrate(tr('App lock is on. Your data on this phone is encrypted.'));
+      })
+      .catch((e) => {
+        ui.lockBusy = false; ui.unlocking = false;
+        // Nothing was changed: the data stays as it was. (Once the data is encrypted, the key is never dropped here.)
+        if (nativeOn && !dataKey) Promise.resolve().then(() => AppLock.disable()).catch(() => {});
+        ui.lockMsg = e && e.code === 'cancel' ? '' : tr('Couldn’t turn on the lock, so nothing was changed. Your data is as it was.');
+        rerenderKeepScroll();
+      });
+  }
+
+  // Turning it off: unlock to prove it's you, write the data back unencrypted, then forget the key.
+  function lockOff() {
+    ui.lockBusy = true; ui.lockMsg = ''; ui.unlocking = true;
+    rerenderKeepScroll();
+    Promise.resolve()
+      .then(() => AppLock.unlock({ title: tr('Turn off app lock'), subtitle: tr('Fingerprint, face or your phone’s screen lock') }))
+      .then(() => {
+        localStorage.setItem(KEY, JSON.stringify(state));
+        setLockCfg(null);
+        dataKey = null;
+        return AppLock.disable();
+      })
+      .then(() => {
+        ui.lockBusy = false; ui.unlocking = false; ui.unlockedAt = Date.now();
+        widgetSent = '';
+        rerenderKeepScroll();
+        toast(tr('App lock is off. Your data on this phone is no longer encrypted.'));
+      })
+      .catch((e) => {
+        ui.lockBusy = false; ui.unlocking = false;
+        ui.lockMsg = e && e.code === 'cancel' ? '' : tr('Couldn’t turn off the lock. Try again.');
+        rerenderKeepScroll();
+      });
+  }
+
+  function renderLock() {
+    const app = document.getElementById('app');
+    const err = ui.lockError;
+    let msg = '';
+    if (err === 'lost') {
+      msg = '<div class="callout bad"><b>' + tr('This phone’s screen lock was removed, so the key to your data is gone.') + '</b>' +
+        '<span class="hint">' + tr('Android deletes the key when the screen lock is removed. The data on this phone can’t be opened any more. Start again and restore your backup file.') + '</span>' +
+        (ui.lockReset
+          ? '<div class="row"><button class="danger" data-action="lock-reset-yes">' + tr('Yes, start again') + '</button><button data-action="lock-reset-no">' + tr('Cancel') + '</button></div>'
+          : '<div><button data-action="lock-reset">' + tr('Start again and restore a backup') + '</button></div>') + '</div>';
+    } else if (err && err !== 'cancel') {
+      msg = '<p class="bad" role="alert">' + tr('That didn’t unlock. Try again.') + '</p>';
+    }
+    app.innerHTML = '<div class="lock-screen"><span class="profile-logo big">' + LOGO + '</span>' +
+      '<h1>' + tr('Hisab Se is locked') + '</h1>' +
+      '<p class="hint">' + tr('Unlock with your fingerprint, face or your phone’s screen lock.') + '</p>' +
+      (err === 'lost' ? '' : '<button class="primary" data-action="unlock"' + (ui.unlocking ? ' disabled' : '') + '>' + tr('Unlock') + '</button>') + msg + '</div>';
+  }
+
+  function unlockApp() {
+    if (!AppLock || ui.unlocking) return;
+    ui.unlocking = true; ui.lockError = '';
+    renderLock();
+    Promise.resolve()
+      .then(() => AppLock.unlock({ title: tr('Unlock Hisab Se'), subtitle: tr('Fingerprint, face or your phone’s screen lock') }))
+      .then((r) => importKey(r.key))
+      .then((key) => {
+        dataKey = key;
+        return sealedBlob ? openData(sealedBlob, key) : null;
+      })
+      .then((data) => {
+        if (data) state = migrate(Object.assign(emptyState(), data));
+        sealedBlob = null;
+        locked = false; ui.unlocking = false; ui.unlockedAt = Date.now();
+        if (!booted) boot();
+        else { render(); if (NATIVE) collectNative(); }
+      })
+      .catch((e) => {
+        ui.unlocking = false;
+        ui.lockError = (e && e.code) || 'error';
+        renderLock();
+      });
+  }
+
+  // Back from somewhere else: lock again after the chosen time away.
+  function lockAgain() {
+    const cfg = lockCfg();
+    if (!cfg.on || locked || !AppLock) return false;
+    if (ui.unlocking || (ui.unlockedAt && Date.now() - ui.unlockedAt < 3000)) return false;
+    if (!ui.hiddenAt || Date.now() - ui.hiddenAt < (Number(cfg.after) || 0) * 60000) return false;
+    locked = true;
+    ui.lockError = '';
+    unlockApp();
+    return true;
+  }
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') { if (!ui.unlocking) ui.hiddenAt = Date.now(); }
+    else if (lockAgain()) ui.hiddenAt = 0;
+  });
+
+  // ---------- first-time tour ----------
+
+  const TOUR = [
+    { art: 'logo', title: 'Hisab Se: make your salary last', body: 'Know every day how much you can spend and still reach payday without borrowing.' },
+    { art: 'limit', title: 'Today’s limit', body: 'Spend within it and you never touch ₹0 before payday. Went over today? Tomorrow’s limit adjusts, so you can recover.' },
+    { art: 'zones', title: 'Green, careful, red', body: 'The card changes colour early, with a clear sign, so you can fix things before the money runs out.' },
+    { art: 'freedom', title: 'Days of Freedom', body: 'How many days your savings would pay for the basics if pay stopped. Grow it from red to green.' },
+    { art: 'round', title: 'Each month is a round', body: 'Win days by staying within the limit. Reach payday without borrowing to win the round.' },
+    { art: 'debt', title: 'A way out of debt', body: 'Survive, stabilize, escape: one next move at a time, with ready scripts for calling your lenders.' },
+    { art: 'private', title: 'Private by design', body: 'No internet permission, no account. Bank SMS are read on this phone only. Lock it with your fingerprint.' },
+  ];
+
+  function tourArt(kind) {
+    if (kind === 'logo') return '<span class="profile-logo big">' + LOGO + '</span>';
+    if (kind === 'limit') return '<div class="tour-limit"><span class="hero-label">' + tr('Today’s limit') + '</span><b>₹364</b><span class="tour-bar"><span></span></span><small>' + tr('{amount} left', { amount: '₹268' }) + '</small></div>';
+    if (kind === 'zones') return '<div class="tour-zones">' + ['green', 'amber', 'red'].map((z) =>
+      '<span class="tour-zone z-' + z + '">' + SIGNS[z] + '<b>' + tr(z === 'green' ? 'On track' : z === 'amber' ? 'Careful' : 'Red zone: stop') + '</b></span>').join('') + '</div>';
+    if (kind === 'freedom') return '<div class="tour-freedom"><b>6</b><span>' + tr('Days of Freedom') + '</span><small>' + tr('1 more day turns it amber') + '</small></div>';
+    if (kind === 'round') {
+      const cells = 'wwowwnwwwowwwt'.split('');
+      return '<div class="round-grid tour-round">' + cells.map((c) => '<span class="round-tile ' + ({ w: 'won', o: 'over', n: 'none', t: 'today' })[c] + '">' +
+        (c === 'w' ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12l4 4 10-10" stroke="currentColor" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>' : '') + '</span>').join('') + '</div>';
+    }
+    if (kind === 'debt') return '<ol class="journey-steps tour-steps"><li class="done"><span class="js-dot">✓</span>' + tr('Survive') + '</li><li class="now"><span class="js-dot">2</span>' + tr('Stabilize') + '</li><li><span class="js-dot">3</span>' + tr('Escape') + '</li></ol>';
+    return '<span class="hub-icon tour-lock"><svg viewBox="0 0 24 24" aria-hidden="true">' + HUB_ICONS.lock + '</svg></span>';
+  }
+
+  function tourModal() {
+    if (!ui.tour) return '';
+    const i = Math.min(TOUR.length - 1, Math.max(0, ui.tourStep || 0));
+    const s = TOUR[i];
+    const last = i === TOUR.length - 1;
+    return '<div class="reset-modal-overlay tour-overlay" role="presentation"><div class="reset-modal-card tour-card" role="dialog" aria-modal="true" aria-labelledby="tour-title" id="tour-card" tabindex="-1">' +
+      '<div class="tour-top"><span class="eyebrow">' + tr('{n} of {total}', { n: i + 1, total: TOUR.length }) + '</span>' +
+      (last ? '' : '<button class="link" data-action="tour-skip">' + tr('Skip') + '</button>') + '</div>' +
+      '<div class="tour-art">' + tourArt(s.art) + '</div>' +
+      '<h2 id="tour-title">' + tr(s.title) + '</h2><p>' + tr(s.body) + '</p>' +
+      '<div class="tour-dots" aria-hidden="true">' + TOUR.map((x, j) => '<span' + (j === i ? ' class="on"' : '') + '></span>').join('') + '</div>' +
+      '<div class="row tour-nav">' + (i > 0 ? '<button class="ghost" data-action="tour-back">' + tr('Back') + '</button>' : '<span></span>') +
+      '<button class="primary" data-action="' + (last ? 'tour-done' : 'tour-next') + '">' + tr(last ? 'Start' : 'Next') + '</button></div>' +
+      '</div></div>';
+  }
+
+  function tourEnd() {
+    ui.tour = false;
+    try { localStorage.setItem(TOUR_KEY, '1'); } catch (e) { /* private mode */ }
+    render();
+  }
+
+  // Swipe left or right on the tour to move between screens.
+  let tourX = null;
+  document.addEventListener('touchstart', (ev) => { if (ui.tour && ev.touches.length === 1) tourX = ev.touches[0].clientX; }, { passive: true });
+  document.addEventListener('touchend', (ev) => {
+    if (!ui.tour || tourX === null) return;
+    const dx = ev.changedTouches[0].clientX - tourX;
+    tourX = null;
+    if (Math.abs(dx) < 50) return;
+    const i = (ui.tourStep || 0) + (dx < 0 ? 1 : -1);
+    if (i >= TOUR.length) { tourEnd(); return; }
+    ui.tourStep = Math.max(0, i);
+    render();
+  }, { passive: true });
 
   // ---------- privacy and backup ----------
 
@@ -3222,8 +3581,15 @@
           '<div class="amt ' + (d.rate >= 15 ? 'bad' : '') + '">' + tr('{amount} interest/month', { amount: inr(i) }) + '</div></div>';
       }).join('') + '</div>' : '') +
       '</section>';
+    const noDebts = !state.debts.some((d) => Number(d.balance) > 0) && !(state.cards || []).length;
     return hub('debts',
       rolloverCard() +
+      (noDebts
+        ? '<section class="card debt-picture"><h2>' + tr('Your debt picture') + '</h2>' +
+          '<p class="good"><b>' + tr('No loans or credit cards added. Debt-free ✓') + '</b></p>' +
+          '<p class="hint">' + tr('Have a loan, an EMI or a credit card? Add it, so your plan and dates count it.') + '</p>' +
+          '<div class="row"><button data-action="page-open" data-key="loans">' + tr('Add a loan') + '</button><button data-action="page-open" data-key="cards">' + tr('Add a credit card') + '</button></div></section>'
+        : '') +
       journeyCard() +
       leakBanner() +
       (L && L.follow ? '<section class="card">' + followUp(L.follow) + '</section>' : ''), [
@@ -3473,6 +3839,34 @@
       case 'page-back':
         if (history.state && history.state.page) history.back(); else closePage();
         return;
+      case 'profile-open': openProfile(); return;
+      case 'profile-close':
+        if (history.state && history.state.profile) history.back(); else closeProfile();
+        return;
+      case 'set-theme':
+        try { if (btn.dataset.theme) localStorage.setItem(THEME_KEY, btn.dataset.theme); else localStorage.removeItem(THEME_KEY); } catch (e) { /* private mode */ }
+        applyTheme(btn.dataset.theme);
+        break;
+      case 'lock-on': lockOn(); return;
+      case 'lock-off': lockOff(); return;
+      case 'lock-settings': Promise.resolve().then(() => AppLock.openSettings()).catch(() => {}); ui.lockStatus = null; return;
+      case 'unlock': unlockApp(); return;
+      case 'lock-reset': ui.lockReset = true; renderLock(); return;
+      case 'lock-reset-no': ui.lockReset = false; renderLock(); return;
+      case 'lock-reset-yes':
+        // The key is gone: clear the unreadable data and open the restore screen.
+        try { [KEY, LOCK_KEY].forEach((k) => localStorage.removeItem(k)); } catch (e) { /* ignore */ }
+        Promise.resolve().then(() => AppLock.disable()).catch(() => {});
+        sealedBlob = null; dataKey = null; locked = false; ui.lockReset = false; ui.lockError = '';
+        state = emptyState(); save();
+        ui.restore = {};
+        if (!booted) boot();
+        openPage('profile', 'data');
+        return;
+      case 'tour-open': ui.tour = true; ui.tourStep = 0; break;
+      case 'tour-next': ui.tourStep = (ui.tourStep || 0) + 1; break;
+      case 'tour-back': ui.tourStep = Math.max(0, (ui.tourStep || 0) - 1); break;
+      case 'tour-skip': case 'tour-done': tourEnd(); return;
       case 'start-own':
         state = emptyState();
         state.onboarding = { step: 1 };
@@ -3513,7 +3907,9 @@
       case 'wipe-cancel': ui.confirmWipe = false; break;
       case 'wipe-confirm':
         // Everything the app keeps: its storage here, and the widget, SMS alerts, notifications and shared files.
-        try { [KEY, LANG_KEY, CHART_KEY, VIZ_KEY].forEach((k) => localStorage.removeItem(k)); } catch (e) { /* ignore */ }
+        try { [KEY, LANG_KEY, CHART_KEY, VIZ_KEY, LOCK_KEY, THEME_KEY, TOUR_KEY].forEach((k) => localStorage.removeItem(k)); } catch (e) { /* ignore */ }
+        dataKey = null;
+        applyTheme('');
         if (SpendWidget) Promise.resolve().then(() => SpendWidget.eraseAll()).catch(() => {});
         state = emptyState(); ui.confirmWipe = false; ui.backupForm = null; ui.restore = null; save(); toast('All data erased'); break;
       case 'viz-view':
@@ -4091,6 +4487,16 @@
       }
       save(); refreshAfterEdit(); return;
     }
+    if (el.id === 'lock-after' || el.id === 'lock-hide' || el.id === 'lock-secure') {
+      const cfg = lockCfg();
+      if (!cfg.on) return;
+      if (el.id === 'lock-after') cfg.after = Number(el.value) || 0;
+      if (el.id === 'lock-hide') { cfg.hide = el.checked; widgetSent = ''; }
+      if (el.id === 'lock-secure') { cfg.secure = el.checked; Promise.resolve().then(() => AppLock.setSecure({ on: el.checked })).catch(() => {}); }
+      setLockCfg(cfg);
+      rerenderKeepScroll();
+      return;
+    }
     if (el.id === 'restore-file') {
       const f = el.files && el.files[0];
       if (!f) return;
@@ -4289,7 +4695,9 @@
     else if (ev.key === 'Escape' && ui.borrow) { ui.borrow = null; rerenderKeepScroll(); }
     else if (ev.key === 'Escape' && document.getElementById('report-card')) { ui.report = false; ui.reportHidden = true; ui.reportThenPay = false; rerenderKeepScroll(); }
     else if (ev.key === 'Escape' && ui.reset) { ui.reset = null; rerenderKeepScroll(); }
+    else if (ev.key === 'Escape' && ui.tour) tourEnd();
     else if (ev.key === 'Escape' && ui.page) { if (history.state && history.state.page) history.back(); else closePage(); }
+    else if (ev.key === 'Escape' && tab === 'profile') { if (history.state && history.state.profile) history.back(); else closeProfile(); }
   });
 
   window.addEventListener('hashchange', () => {
@@ -4633,6 +5041,9 @@
       // Tomorrow's safe amount = pool / daysAfter; the widget lowers the pool as you overspend.
       tomorrowPool: Math.round(r.tomorrowAllowance * r.remainingDays),
       daysAfter: r.remainingDays,
+      // The widget's colour and sign follow the zone; with the app lock it can hide the rupees.
+      zone: Core.zoneStatus(state, today(), r).zone,
+      hideAmounts: !!(lockCfg().on && lockCfg().hide !== false),
     };
     const key = JSON.stringify(payload);
     if (key === widgetSent) return;
@@ -4760,7 +5171,7 @@
 
   if (NATIVE) {
     document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'visible') collectNative();
+      if (document.visibilityState === 'visible' && !locked && state) collectNative();
     });
   }
 
@@ -4779,13 +5190,32 @@
   try {
     ui.viz = ['where', 'when', 'trend'].indexOf(localStorage.getItem(VIZ_KEY)) !== -1 ? localStorage.getItem(VIZ_KEY) : 'where';
   } catch (e) { /* private mode */ }
+  applyTheme(themeChoice());
+
+  // Everything after the data is open: from the start, or after unlocking.
+  function boot() {
+    booted = true;
+    assignWaitingSaved();
+    if (NATIVE) collectNative();
+    const fromHash = (location.hash || '').replace('#', '');
+    tab = TABS.indexOf(fromHash) !== -1 ? fromHash : 'home';
+    // The tour opens once, the first time the app is opened (with the example numbers).
+    let seen = '1';
+    try { seen = localStorage.getItem(TOUR_KEY); } catch (e) { /* private mode */ }
+    if (!seen && state.isDemo) { ui.tour = true; ui.tourStep = 0; }
+    render();
+    announceAutoSaved();
+  }
+
   state = load();
-  assignWaitingSaved();
-  if (NATIVE) collectNative();
-  const fromHash = (location.hash || '').replace('#', '');
-  tab = TABS.indexOf(fromHash) !== -1 ? fromHash : 'home';
-  render();
-  announceAutoSaved();
+  if (lockCfg().on && AppLock) {
+    // Locked: nothing shows until fingerprint, face or the screen lock.
+    locked = true;
+    unlockApp();
+  } else {
+    if (!state) state = Demo.demoState(today()); // encrypted data without a lock to open it: shouldn't happen
+    boot();
+  }
   // For the offline check on an emulator: the app's first screen is drawn.
   console.info('Hisab Se: ready');
 })();

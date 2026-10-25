@@ -20,7 +20,7 @@ import java.util.Set;
 @CapacitorPlugin(name = "SpendWidget")
 public class SpendWidgetPlugin extends Plugin {
 
-    /** left: rupees left today (negative when over), allowance: today's amount, date: yyyy-MM-dd, categories: budget names (with labels), lang. */
+    /** left: rupees left today (negative when over), allowance: today's amount, date: yyyy-MM-dd, categories: budget names (with labels), lang, zone: green/amber/red, hideAmounts. */
     @PluginMethod
     public void update(PluginCall call) {
         double left = call.getDouble("left", 0.0);
@@ -32,13 +32,15 @@ public class SpendWidgetPlugin extends Plugin {
         int daysAfter = call.getInt("daysAfter", 0);
         Lang.set(getContext(), call.getString("lang"));
         WidgetStore.setSummary(getContext(), Math.round(left), Math.round(allowance), date, categories, labels, Math.round(pool), daysAfter);
+        WidgetStore.setLook(getContext(), call.getString("zone", ""), Boolean.TRUE.equals(call.getBoolean("hideAmounts", false)));
         SpendWidgetProvider.updateAll(getContext());
         call.resolve();
     }
 
     /**
      * "Erase everything": the widget's numbers and queue, bank SMS alerts,
-     * the saved language, shared files in the cache and any notifications.
+     * the saved language, the app lock's key, shared files in the cache and
+     * any notifications.
      * The web app clears its own storage.
      */
     @PluginMethod
@@ -47,6 +49,7 @@ public class SpendWidgetPlugin extends Plugin {
         for (String name : new String[] {"spend_widget", "sms_alerts", "salary_runway_lang"}) {
             context.getSharedPreferences(name, Context.MODE_PRIVATE).edit().clear().commit();
         }
+        AppLockPlugin.forget(context);
         deleteTree(context.getCacheDir());
         android.app.NotificationManager nm = (android.app.NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
         if (nm != null) nm.cancelAll();

@@ -44,4 +44,10 @@
     <string name="sms_text_salary">अपनी मासिक योजना देखने के लिए टैप करें</string>
     <string name="widget_payday_in">%1$d दिन में सैलरी</string>
     <string name="widget_payday_tomorrow">कल सैलरी</string>
+    <string name="widget_zone_green">✨ सही रास्ते पर</string>
+    <string name="widget_zone_amber">⚠️ सावधान</string>
+    <string name="widget_zone_red">🛑 रुकें: सिर्फ़ ज़रूरतें</string>
+    <string name="widget_locked">लॉक है</string>
+    <string name="widget_locked_hint">आज की रकम देखने के लिए Hisab Se खोलें</string>
+    <string name="notify_locked">नया बैंक पेमेंट. जाँचने के लिए Hisab Se खोलें.</string>
 </resources>

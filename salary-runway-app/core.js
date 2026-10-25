@@ -2568,7 +2568,7 @@
     recordCardPayment, convertCardBalance, answerCardDue, cardLateFee, cardRate, CARD_RATE, undoCardConvert, cardFreeDays, byCategory, DEFAULT_SPLIT,
     isLoanCredit, borrowedThisCycle, borrowCheck, rolloverOptions, personal, investPlan, sipValue, ASSUMED_RETURN, setTranslator,
     payoffOrder, tickDebts, debtJourney, lenderTasks, lastBorrowed,
-    encryptBackup, openBackup, backupInfo,
+    encryptBackup, openBackup, backupInfo, toB64, fromB64,
     daySpent, daySpending, dayTally, roundSnapshot, roundResult, weekRecap,
     monthReport, aiReport, LEAKS, leakNames, leakOf, leakSummary, leakSuggestions, spendWhere, spendWhen, spendTrend, BASICS,
   };

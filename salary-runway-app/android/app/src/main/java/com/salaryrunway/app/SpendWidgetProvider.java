@@ -19,6 +19,8 @@ import java.util.Map;
  * Home-screen widget: the app's logo and name, what's left to spend today
  * with a bar for how much of today's amount remains, days to payday, and a
  * button to add an expense. Two rows by default; one row shows a compact version.
+ * Its colour and sign follow today's zone: green, careful (amber) or red.
+ * With the app lock's "hide amounts" on, it shows the zone but no rupees.
  */
 public class SpendWidgetProvider extends AppWidgetProvider {
 
@@ -58,7 +60,35 @@ public class SpendWidgetProvider extends AppWidgetProvider {
         Context text = Lang.wrap(context);
         views.setTextViewText(R.id.widget_add, text.getString(R.string.widget_add));
         Long left = WidgetStore.leftToday(context);
-        if (left == null) {
+        String zone = WidgetStore.zone(context);
+        boolean hidden = WidgetStore.hideAmounts(context);
+        // Amber is light: dark text on it. Teal, green and red keep white text.
+        boolean light = "amber".equals(zone);
+        int strong = light ? 0xFF2A1A00 : 0xFFFFFFFF;
+        int soft = light ? 0xCC2A1A00 : 0xD9FFFFFF;
+        views.setInt(R.id.widget_root, "setBackgroundResource",
+            "green".equals(zone) ? R.drawable.widget_bg_green
+                : "amber".equals(zone) ? R.drawable.widget_bg_amber
+                : "red".equals(zone) ? R.drawable.widget_bg_red
+                : R.drawable.widget_bg);
+        String zoneText = "green".equals(zone) ? text.getString(R.string.widget_zone_green)
+            : "amber".equals(zone) ? text.getString(R.string.widget_zone_amber)
+            : "red".equals(zone) ? text.getString(R.string.widget_zone_red) : null;
+        if (large) {
+            views.setTextViewText(R.id.widget_brand, zoneText != null ? zoneText : text.getString(R.string.app_name));
+            views.setTextColor(R.id.widget_brand, strong);
+            views.setTextColor(R.id.widget_payday, strong);
+        }
+        views.setTextColor(R.id.widget_amount, strong);
+        if (hidden) {
+            views.setTextViewText(R.id.widget_amount, "🔒 " + text.getString(R.string.widget_locked));
+            views.setTextViewText(R.id.widget_label, zoneText != null && !large ? zoneText : text.getString(R.string.widget_locked_hint));
+            views.setTextColor(R.id.widget_label, soft);
+            if (large) {
+                views.setViewVisibility(R.id.widget_bar, View.GONE);
+                views.setViewVisibility(R.id.widget_payday, View.GONE);
+            }
+        } else if (left == null) {
             views.setTextViewText(R.id.widget_amount, text.getString(R.string.widget_open_app));
             views.setTextViewText(R.id.widget_label, text.getString(R.string.widget_open_app_hint));
         } else if (left >= 0) {
@@ -71,11 +101,15 @@ public class SpendWidgetProvider extends AppWidgetProvider {
             views.setTextViewText(R.id.widget_label, tomorrow == null
                 ? text.getString(R.string.widget_over_hint)
                 : text.getString(R.string.widget_tomorrow_drops, WidgetStore.rupees(tomorrow)));
-            views.setTextColor(R.id.widget_label, 0xFFFFDCA8);
+            views.setTextColor(R.id.widget_label, light ? 0xFF7A2C12 : 0xFFFFDCA8);
         }
-        if (left == null || left >= 0) views.setTextColor(R.id.widget_label, 0xD9FFFFFF);
+        if (!hidden && (left == null || left >= 0)) views.setTextColor(R.id.widget_label, soft);
+        // One row has no room for the zone line: its sign goes before the label.
+        if (!hidden && !large && zoneText != null && left != null && left >= 0) {
+            views.setTextViewText(R.id.widget_label, zoneText);
+        }
 
-        if (large) {
+        if (large && !hidden) {
             // How much of today's amount is still there.
             Integer pct = WidgetStore.leftPercent(context);
             views.setViewVisibility(R.id.widget_bar, pct == null ? View.GONE : View.VISIBLE);

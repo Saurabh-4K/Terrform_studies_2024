@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Widget card in the red zone. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <gradient
+        android:angle="315"
+        android:startColor="#A32A15"
+        android:centerColor="#C2361D"
+        android:endColor="#E0472B"
+        android:type="linear" />
+    <corners android:radius="24dp" />
+</shape>

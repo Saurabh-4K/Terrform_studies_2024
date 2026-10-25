@@ -47,4 +47,10 @@
     <string name="sms_text_salary">Tap to review your monthly plan</string>
     <string name="widget_payday_in">Payday in %1$d days</string>
     <string name="widget_payday_tomorrow">Payday tomorrow</string>
+    <string name="widget_zone_green">✨ On track</string>
+    <string name="widget_zone_amber">⚠️ Careful</string>
+    <string name="widget_zone_red">🛑 Stop: basics only</string>
+    <string name="widget_locked">Locked</string>
+    <string name="widget_locked_hint">Open Hisab Se to see today\'s amount</string>
+    <string name="notify_locked">New bank payment. Open Hisab Se to check it.</string>
 </resources>

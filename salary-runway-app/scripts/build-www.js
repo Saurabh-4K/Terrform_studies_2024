@@ -23,6 +23,9 @@ const faces = fonts.map(([family, pkg, file, weight]) => {
 });
 fs.writeFileSync(path.join(out, 'fonts.css'), faces.join('\n') + '\n');
 
+// The build number for Profile → About (the CI run number; "dev" when built by hand).
+fs.writeFileSync(path.join(out, 'build-info.js'), 'window.HISAB_BUILD = ' + JSON.stringify(process.env.GITHUB_RUN_NUMBER || 'dev') + ';\n');
+
 let html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 html = html
   // The app allows only its own files: no font hosts in its security policy.
@@ -32,6 +35,6 @@ html = html
   .filter((line) => !/fonts\.(googleapis|gstatic)\.com/.test(line))
   .join('\n')
   .replace('<link rel="stylesheet" href="styles.css">', '<link rel="stylesheet" href="fonts.css">\n  <link rel="stylesheet" href="styles.css">')
-  .replace('<script src="i18n-mr.js"></script>', '<script src="capacitor.js"></script>\n  <script src="i18n-mr.js"></script>');
+  .replace('<script src="i18n-mr.js"></script>', '<script src="capacitor.js"></script>\n  <script src="build-info.js"></script>\n  <script src="i18n-mr.js"></script>');
 fs.writeFileSync(path.join(out, 'index.html'), html);
 console.log('www/ ready');

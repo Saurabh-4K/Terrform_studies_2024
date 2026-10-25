@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Widget card in the green zone. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <gradient
+        android:angle="315"
+        android:startColor="#075C47"
+        android:centerColor="#0B6E55"
+        android:endColor="#14876A"
+        android:type="linear" />
+    <corners android:radius="24dp" />
+</shape>

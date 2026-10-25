@@ -27,6 +27,62 @@ Everything the app can do today, screen by screen, with the rules it follows. Fo
 
 ---
 
+## Profile, tour and app lock
+
+### Profile (the round button at the top right)
+A settings list like most apps:
+- **App:**
+  - **Appearance:** Same as phone, Light or Dark
+  - **Language & sounds**
+- **Security:**
+  - **App lock**
+  - **Privacy & data protection:** what the app reads and never does
+- **Your data:**
+  - **Backup & data:** backup file, restore, example data, erase everything, personal mode; it shows the last backup date or *No backup yet*
+  - **Clean up SMS imports**
+- **Help:**
+  - **See the app tour**
+  - **About Hisab Se:** the tagline *Make your salary last*, and the build number
+
+Back, or the phone's back button, returns to the tab you came from. These settings are no longer on the Plan tab.
+
+### First-time tour
+Seven short screens the first time the app opens, with example numbers:
+1. What Hisab Se does
+2. Today's limit
+3. The three zones and their signs
+4. Days of Freedom
+5. Rounds and won days
+6. The way out of debt
+7. Privacy
+
+**Skip** is on every screen, and swiping moves between them. It shows once; *Profile → See the app tour* replays it any time.
+
+### App lock (Android)
+- **Unlock** with fingerprint, face or the phone's own screen lock (PIN, pattern or password), through Android's own prompt. There's no separate app password to remember or forget.
+- **The data on the phone is encrypted** while the lock is on:
+  - Encryption: AES-256-GCM, with a fresh IV on every save.
+  - The data key is itself encrypted by a key in the Android Keystore (the phone's secure hardware). That key can be used only within 30 seconds of unlocking.
+  - A copy of the app's storage shows nothing readable.
+- **Turning it on is checked before anything changes:**
+  - The phone wraps the key, asks you to unlock, unwraps it and compares.
+  - The app then encrypts the data, decrypts it again and compares.
+  - Only then is the encrypted copy written. Any failure leaves the data exactly as it was.
+- **Options:**
+  - Lock again: every time you leave the app, or after 1, 5 or 15 minutes away (1 minute by default).
+  - Hide amounts on the widget and in SMS notifications. The widget then shows its zone colour and sign with a lock, and the notification says only *New bank payment*, opening the app behind the lock.
+  - Hide Hisab Se in recent apps and screenshots.
+- **The honest risk, said before turning it on:** if the phone's screen lock is ever removed, Android deletes the key and the data can't be opened again. The lock screen then explains this and offers *Start again and restore a backup*. Turning the lock off asks you to unlock, then writes the data back unencrypted.
+- A new fingerprint added later doesn't lock you out. *Erase everything* also removes the lock and its key.
+
+### Widget in zone colours
+The home-screen widget takes the zone's colour and sign:
+- **Green ✨ On track**
+- **Yellow ⚠️ Careful**, with dark text
+- **Red 🛑 Stop: basics only**
+
+On the two-row widget the zone replaces the app name. On the one-row widget it replaces the label under the amount. Before the app has been opened today, it stays teal.
+
 ## Layout: essentials open, the rest as icons
 Every tab keeps what always matters open, and shows its other cards as small icons in groups, four to a row. Tap an icon and that card opens as its own page; **Back** (or the phone's back button) returns to the icons.
 - **Always open:**

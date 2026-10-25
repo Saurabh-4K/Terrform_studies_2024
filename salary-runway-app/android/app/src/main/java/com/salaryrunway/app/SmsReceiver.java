@@ -86,8 +86,15 @@ public class SmsReceiver extends BroadcastReceiver {
                 : context.getString(R.string.sms_text_received);
         }
 
+        // App lock with amounts hidden: no amount or shop in the notification, and it opens the app (behind the lock).
+        boolean hidden = WidgetStore.hideAmounts(app);
+        if (hidden) {
+            title = context.getString(R.string.notify_locked);
+            text = "";
+        }
+
         // Salary and statements open the app; a payment opens the "check this payment" window.
-        Intent open = statement
+        Intent open = statement || hidden
             ? new Intent(app, MainActivity.class).setFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             : new Intent(app, SmsConfirmActivity.class)
                 .putExtra(SmsConfirmActivity.EXTRA_KEY, key)

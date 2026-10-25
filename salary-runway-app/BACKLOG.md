@@ -1,8 +1,8 @@
 # Hisab Se: noted requests (not built yet)
 
-Requests written down to build later. Nothing here is in the app yet.
+Requests written down to build later. Items marked (built) are in the app; FEATURES.md describes them.
 
-## 1. Profile screen (like standard apps)
+## 1. Profile screen (like standard apps) (built)
 A **Profile** button in the top bar (an avatar or person icon) opens one screen that holds the settings now spread around the app:
 - **Appearance:** Light, Dark, or Same as phone. Today the app only follows the phone's setting.
 - **Language:** English, मराठी, हिंदी (moved here from the Plan tab).
@@ -12,7 +12,7 @@ A **Profile** button in the top bar (an avatar or person icon) opens one screen 
 - **See the app tour** (see 2).
 - About: version and build number.
 
-## 2. First-time tour (demo)
+## 2. First-time tour (demo) (built)
 - Shown the first time the app opens, before setup. It is a few swipeable screens explaining the main ideas:
   - today's limit
   - zones (green, careful, red)
@@ -24,7 +24,7 @@ A **Profile** button in the top bar (an avatar or person icon) opens one screen 
 - Anyone who skipped it can replay it from **Profile → See the app tour**.
 - Uses example numbers, never the person's own.
 
-## 3. App lock: fingerprint, face or the phone's own lock
+## 3. App lock: fingerprint, face or the phone's own lock (built)
 Decided: **no separate app password.** The lock uses what the phone already has:
 - **Fingerprint or face unlock** through Android's own biometric prompt. It works offline.
 - **The phone's screen lock (PIN, pattern or password) as the fallback**, through the same prompt, for when a finger isn't read or the phone has no fingerprint sensor.
@@ -35,7 +35,7 @@ Decided: **no separate app password.** The lock uses what the phone already has:
   - hide the app's contents in the recent-apps screen
 - The home-screen widget and SMS notifications show amounts. Add an option to hide them while the lock is on.
 
-## 4. Data protected even if the phone is lost
+## 4. Data protected even if the phone is lost (built)
 - **Backup file: already encrypted.** Since build 40 it's locked with the user's password (AES-256-GCM, key from PBKDF2-SHA256, 210,000 rounds). Without the password nobody can open it, wherever the file is. Keep this, and say it clearly on the backup screen.
 - **Data on the phone:** today it sits in the app's private storage. Other apps can't read it, and Android encrypts the phone's storage while the phone is locked. But someone holding an unlocked phone can open the app. To build:
   - the app lock from 3
@@ -43,7 +43,7 @@ Decided: **no separate app password.** The lock uses what the phone already has:
 
   Then even a copied storage dump shows nothing readable.
 
-## 5. Widget in zone colours
+## 5. Widget in zone colours (built)
 The home-screen widget changes colour with the zone, with the same signs as the app's zone cards, so the state shows without opening the app:
 - **Green** with a sparkle/celebration sign: on track.
 - **Yellow (careful)** with a warning sign ⚠️: at this pace, money runs out early.

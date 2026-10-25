@@ -37,6 +37,22 @@ final class WidgetStore {
      * left: rupees left today (negative when over). pool and daysAfter work out
      * tomorrow's safe amount: pool / daysAfter, lowered by spending added later.
      */
+    /** The zone ("green", "amber", "red") for the widget's colour and sign, and whether amounts are hidden (app lock). */
+    static void setLook(Context context, String zone, boolean hideAmounts) {
+        prefs(context).edit().putString("zone", zone == null ? "" : zone).putBoolean("hideAmounts", hideAmounts).apply();
+    }
+
+    /** Today's zone, or "" when not known today. */
+    static String zone(Context context) {
+        SharedPreferences p = prefs(context);
+        if (!today().equals(p.getString("date", ""))) return "";
+        return p.getString("zone", "");
+    }
+
+    static boolean hideAmounts(Context context) {
+        return prefs(context).getBoolean("hideAmounts", false);
+    }
+
     static void setSummary(Context context, long left, long allowance, String date, JSONArray categories, JSONArray categoryLabels, long pool, int daysAfter) {
         prefs(context).edit()
             .putLong("left", left)
