@@ -173,7 +173,8 @@
     report: false,
     reportHidden: false,
     reportFocused: false,
-    ringOffset: null,
+    limitPct: null,
+    explain: null,
     counted: false,
     chartOpen: false,
     viz: 'where',
@@ -491,7 +492,7 @@
       ).join('') +
       '</div></nav>' +
       (tab !== 'spend' && state.settings.salary ? '<button class="fab" data-action="fab-add" aria-label="' + tr('Add an expense') + '"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></svg></button>' : '') +
-      resetModal() + helpModal() + borrowModal() + reportModal();
+      resetModal() + helpModal() + explainModal() + borrowModal() + reportModal();
     if (tab === 'home') { drawRunway(); animateRunway(); }
     if (ui.reset) {
       const first = document.querySelector('#reset-card input, #reset-card button.primary');
@@ -505,7 +506,9 @@
       ui.borrow.focus = false;
       document.getElementById('borrow-card').focus();
     }
-    if (ui.help) {
+    if (ui.explain) {
+      document.querySelector('#explain-card button.primary').focus();
+    } else if (ui.help) {
       document.querySelector('#help-card button.primary').focus();
     } else if (ui.helpFrom) {
       const back = document.querySelector('[data-help="' + ui.helpFrom + '"]');
@@ -534,7 +537,6 @@
     }
     const r = Core.projectRunway(state, t);
     const cyc = r.cycle;
-    const lastDay = Core.addDays(cyc.next, -1);
     const daysToPay = Core.daysBetween(t, cyc.next);
     const z = Core.zoneStatus(state, t, r);
     recordToday(r);
@@ -545,7 +547,9 @@
       sub = tr('The money left doesn’t cover the bills still to pay and groceries and health until {date}. Here’s how to stay above ₹0:', { date: fmtDate(cyc.next) });
     } else if (z.zone === 'amber') {
       headline = tr('Careful: at this pace, money runs out on <span class="date warn">{date}</span>', { date: fmtDate(r.zeroPace || Core.addDays(cyc.next, -1)) });
-      sub = tr('You’re spending about {pace} a day. Keep to <b>{safe} a day</b> until payday and you’ll stay out of the red.', { pace: inr(r.paceRate), safe: inr(z.safeDaily) });
+      // The same number the card shows: today's limit, or tomorrow's once today is over it.
+      const keep = r.overToday > 0 && r.savedToday < r.overToday ? r.tomorrowAllowance : r.dailyAllowance;
+      sub = tr('You’re spending about {pace} a day. Keep to <b>{safe} a day</b> until payday and you’ll stay out of the red.', { pace: inr(r.paceRate), safe: inr(keep) });
     } else {
       headline = tr('You’re in the green');
       sub = tr('At this pace you reach payday on {date} with about <b>{amount}</b> left.', { date: fmtDate(cyc.next), amount: inr(r.endPace) });
@@ -573,12 +577,13 @@
       rolloverCard() +
       loanDebtNote() +
       '<section class="hero">' +
-      '<p class="eyebrow">' + tr('Salary cycle · {from} – {to} · day {day} of {days}', { from: fmtDate(cyc.start), to: fmtDate(lastDay), day: r.idxToday + 1, days: cyc.days }) + '</p>' +
       '<p class="coach-line">' + coachLine(z, r, streak, daysToPay) + '</p>' +
-      runwayCard(r, z, cyc, daysToPay, headline, sub) +
+      limitCard(r, z, headline, sub) +
       (z.zone === 'red' ? redOptions(z, r) : '') +
-      winsRow(streak) +
+      freedomCard() +
       '</section>' +
+      roundBoard(cyc, r) +
+      debtFreeCard() +
       savedCard() +
       cardHomeNotes(cyc) +
       (askBalance || ui.balanceOpen ? balanceForm(askBalance && !ui.balanceOpen) : '') +
@@ -591,6 +596,9 @@
       (adj ? '<div class="callout warn"><b>' + tr('Recovery plan active until {date}.', { date: fmtDate(adj.until, true) }) + '</b><span class="hint">' +
         [adj.flexCutPct ? tr('Flexible budgets are {pct}% lower.', { pct: adj.flexCutPct }) : '', adj.pauseInvest ? tr('The Grow budget is paused.') : '', adj.pauseDebtExtra ? tr('Extra debt payments are paused.') : '']
           .filter(Boolean).join(' ') + '</span></div>' : '') +
+      bigExpenseCard() +
+      billsCard() +
+      detailsCard(
       '<section class="tiles">' +
       tile('Balance now', inr(r.balanceToday),
         (r.anchor ? tr('From your balance on {date}', { date: fmtDate(r.anchor.date) }) : tr('Worked out from your plan')) +
@@ -599,11 +607,9 @@
         (r.extraIn ? ' ' + tr('+ {amount} received', { amount: inr(r.extraIn) }) : '') + (r.anchor ? ' ' + tr('since {date}', { date: fmtDate(r.anchor.date) }) : '')) +
       '</section>' +
       chartCard() +
-      bigExpenseCard() +
       paydayPreviewCard() +
       '<section class="card"><div class="card-head"><h2>' + tr(r.anchor && r.anchorIdx > 0 ? 'You can spend until payday' : 'You can spend this cycle') + '</h2><button class="ghost" data-action="tab" data-tab="plan">' + tr('Adjust') + '</button></div>' +
       '<div class="bars">' + bars.join('') + '</div></section>' +
-      billsCard() +
       '<section class="card"><div class="card-head"><h2>' + tr('Coming up before payday') + '</h2><span class="hint">' + inr(upcoming.reduce((s, e) => s + e.amount, 0)) + '</span></div>' +
       (upcoming.length
         ? '<div class="list">' + upcoming.map((e) =>
@@ -614,7 +620,7 @@
       '</section>' +
       '<section class="card"><h2>' + tr('What your spending says') + '</h2><div>' +
       ins.map((i) => '<div class="insight lvl-' + i.level + '"><div><h3>' + esc(i.title) + '</h3><p>' + esc(i.body) + '</p></div></div>').join('') +
-      '</div></section>'
+      '</div></section>')
     );
   }
 
@@ -975,73 +981,147 @@
     return tr('You’re on track. Keep it going.');
   }
 
-  const RING = 2 * Math.PI * 52;
-
-  // Where the ring was last drawn, so it moves from there to the new amount.
-  function ringTarget(r) {
+  /*
+   * Hero 1, today's limit: the amount, a spent/left bar, the zone and what
+   * to do. Win the day by staying inside it.
+   */
+  function limitCard(r, z, headline, sub) {
     const over = r.overToday > 0 && r.savedToday < r.overToday;
-    const frac = over ? 1 : r.dailyAllowance > 0 ? Math.max(0, Math.min(1, r.leftToday / r.dailyAllowance)) : 0;
-    return RING * (1 - frac);
+    const used = r.dailyAllowance > 0 ? Math.min(100, ((r.spentToday + r.savedToday) / r.dailyAllowance) * 100) : (r.spentToday ? 100 : 0);
+    const zoneName = { green: 'Green', amber: 'Careful', red: 'Red' }[z.zone];
+    const from = ui.limitPct == null ? 0 : ui.limitPct;
+    return '<div class="runway-card zone-' + z.zone + '">' +
+      '<div class="runway-head"><span class="hero-label">' + tr('Today’s limit') + '</span><span class="zone-pill">' + tr(zoneName) + '</span></div>' +
+      '<div class="limit-big"><b data-count="' + Math.round(r.dailyAllowance) + '">' + inr(r.dailyAllowance) + '</b></div>' +
+      '<div class="limit-bar' + (over ? ' over' : '') + '" role="img" aria-label="' + esc(todayTileNote(r)) + '"><span id="limit-fill" style="width:' + from.toFixed(1) + '%" data-to="' + used.toFixed(1) + '"></span></div>' +
+      '<div class="limit-line"><span>' + (over ? tr('{amount} over', { amount: inr(r.overToday) }) : tr('{amount} spent', { amount: inr(r.spentToday + r.savedToday) })) + '</span>' +
+      '<span>' + (over ? tr('Tomorrow: {amount}', { amount: inr(r.tomorrowAllowance) }) : tr('{amount} left', { amount: inr(r.leftToday) })) + '</span></div>' +
+      '<h1>' + headline + '</h1><p class="runway-sub">' + sub + '</p>' +
+      '<button class="explain-link" data-action="explain" data-explain="limit">' + tr('How is this calculated?') + '</button></div>';
+  }
+
+  const SHIELD = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l7 3v5c0 5-3 8-7 10-4-2-7-5-7-10V6z" fill="currentColor"/></svg>';
+
+  // Hero 2, Days of Freedom: how long savings cover the basics. Win the game.
+  function freedomCard() {
+    const f = Core.freedomDays(state, today());
+    if (!f) {
+      return '<div class="freedom-card"><span class="hero-label">' + tr('Days of Freedom') + '</span>' +
+        '<p class="hint">' + tr('Add your fixed payments and budgets to see your Days of Freedom.') + '</p></div>';
+    }
+    const next = !f.next ? tr('Three months of basics covered. Keep it there.')
+      : f.next.target === 90 ? tr('{n} more days ({amount}) to three months safe.', { n: f.next.days, amount: inr(f.next.amount) })
+        : tr(f.next.days === 1 ? '1 more day ({amount}) turns it {level}.' : '{n} more days ({amount}) turns it {level}.', { n: f.next.days, amount: inr(f.next.amount), level: tr(f.next.level) });
+    return '<div class="freedom-card lvl-' + f.level + '">' +
+      '<div class="runway-head"><span class="hero-label">' + tr('Days of Freedom') + '</span><span class="level-pill">' + SHIELD + tr(f.badge) + '</span></div>' +
+      '<div class="freedom-big"><b>' + f.days + '</b><span>' + tr(f.days === 1 ? 'day your savings cover the basics' : 'days your savings cover the basics') + '</span></div>' +
+      '<p class="freedom-next">' + next + '</p>' +
+      '<button class="explain-link" data-action="explain" data-explain="freedom">' + tr('How is this calculated?') + '</button></div>';
   }
 
   /*
-   * Today's amount as a ring (it empties as you spend), the zone and what to
-   * do, and the road to payday: today, and where the money would run out.
+   * This round, day by day: won (inside the day's limit), over, today, to
+   * come. Logging a bad day still counts: the next day starts fresh.
    */
-  function runwayCard(r, z, cyc, daysToPay, headline, sub) {
-    const over = r.overToday > 0 && r.savedToday < r.overToday;
-    const zoneName = { green: 'Green', amber: 'Careful', red: 'Red' }[z.zone];
-    const from = ui.ringOffset == null ? RING : ui.ringOffset;
-    const pos = (iso) => Math.max(0, Math.min(100, (Core.daysBetween(cyc.start, iso) / cyc.days) * 100));
-    const today = pos(Core.addDays(cyc.start, r.idxToday));
-    const runsOut = r.zeroPace ? pos(r.zeroPace) : null;
-    return '<div class="runway-card zone-' + z.zone + '">' +
-      '<div class="runway-top">' +
-      '<div class="ring' + (over ? ' over' : '') + '"><svg viewBox="0 0 136 136" aria-hidden="true"><circle class="ring-track" cx="68" cy="68" r="52"/>' +
-      '<circle id="ring-fill" class="ring-fill" cx="68" cy="68" r="52" stroke-dasharray="' + RING.toFixed(1) + '" style="stroke-dashoffset:' + from.toFixed(1) + '" transform="rotate(-90 68 68)"/></svg>' +
-      '<div class="ring-text"><b' + (inr(over ? r.overToday : r.leftToday).length > 5 ? ' class="long"' : '') + ' data-count="' + Math.round(over ? r.overToday : r.leftToday) + '">' + inr(over ? r.overToday : r.leftToday) + '</b>' +
-      '<span>' + (over ? tr('over today') : tr('left of {amount} today', { amount: inr(r.dailyAllowance) })) + '</span></div></div>' +
-      '<div class="runway-say"><div class="runway-head"><span class="zone-pill">' + tr(zoneName) + '</span>' + info('runway') + '</div>' +
-      '<h1>' + headline + '</h1></div></div>' +
-      '<p class="runway-sub">' + sub + '</p>' +
-      '<div class="pay-strip">' +
-      '<div class="pay-labels"><span>' + fmtDate(cyc.start) + '</span><span class="' + (runsOut != null ? 'out' : '') + '">' +
-        (runsOut != null ? tr('₹0 on {date} at this pace', { date: fmtDate(r.zeroPace) }) : tr('About {amount} left on payday', { amount: inr(r.endPace) })) + '</span><span>' + fmtDate(cyc.next) + '</span></div>' +
-      '<div class="pay-track" aria-hidden="true"><span class="pay-done" style="width:' + today.toFixed(1) + '%"></span>' +
-        (runsOut != null ? '<span class="pay-out" style="left:' + runsOut.toFixed(1) + '%"></span>' : '') +
-        '<span class="pay-today" style="left:' + today.toFixed(1) + '%"></span></div>' +
-      '<p class="pay-days">' + tr('{days} to payday', { days: '<b>' + plural(daysToPay, 'day') + '</b>' }) + ' · ' + todayTileNote(r) + '</p>' +
-      '</div></div>';
-  }
-
-  // Small wins, in numbers: no card spending, nothing borrowed, the safety fund.
-  function winsRow(streak) {
+  function roundBoard(cyc, r) {
     const t = today();
-    const cardsUsed = (state.cards || []).length > 0;
-    const cf = Core.cardFreeDays(state, t);
+    let won = 0;
+    let over = 0;
+    const tiles = [];
+    for (let i = 0; i < cyc.days; i++) {
+      const d = Core.addDays(cyc.start, i);
+      let cls = 'future';
+      let tip = fmtDate(d);
+      if (d === t) { cls = 'today'; tip += ': ' + tr('today'); }
+      else if (d < t) {
+        const day = state.days && state.days[d];
+        if (!day) { cls = 'none'; tip += ': ' + tr('not tracked'); }
+        else if (spentOn(d) <= day.allowance) { cls = 'won'; won++; tip += ': ' + tr('won ({spent} of {limit})', { spent: inr(spentOn(d)), limit: inr(day.allowance) }); }
+        else { cls = 'over'; over++; tip += ': ' + tr('over ({spent} of {limit})', { spent: inr(spentOn(d)), limit: inr(day.allowance) }); }
+      }
+      tiles.push('<span class="round-tile ' + cls + '" title="' + esc(tip) + '">' + (cls === 'won' ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12l4 4 10-10" stroke="currentColor" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>' : '') + '</span>');
+    }
+    const y = Core.addDays(t, -1);
+    const yDay = state.days && state.days[y];
+    const recover = yDay && y >= cyc.start && spentOn(y) > yDay.allowance
+      ? '<p class="round-recover">' + tr('Yesterday went over. Today’s limit already takes it into account: keep to {amount} and you’re back on track.', { amount: inr(r.dailyAllowance) }) + '</p>' : '';
     const b = Core.borrowedThisCycle(state, t);
-    const f = Core.freedomDays(state, t);
-    const win = (cls, icon, value, name) => '<div class="win ' + cls + '"><span class="win-icon">' + icon + '</span><span><b>' + value + '</b><small>' + name + '</small></span></div>';
-    const flame = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3c1 3 4 5 4 9a4 4 0 0 1-8 0c0-2 1-3 2-4 0 2 1 3 2 3 0-3-1-5 0-8z" fill="currentColor"/></svg>';
-    const check = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12l4 4 10-10" stroke="currentColor" stroke-width="2.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-    const shield = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l7 3v5c0 5-3 8-7 10-4-2-7-5-7-10V6z" fill="currentColor"/></svg>';
-    return '<div class="wins" aria-label="' + tr('Your wins this month') + '">' +
-      (cardsUsed
-        ? win('w-flame', flame, String(cf), tr(cf === 1 ? 'card-free day' : 'card-free days'))
-        : win('w-flame', flame, String(streak), tr(streak === 1 ? 'day within budget' : 'days within budget'))) +
-      win(b.total ? 'w-bad' : 'w-good', check, inr(b.total), tr('borrowed this month')) +
-      win('w-shield', shield, String(f ? f.days : 0), tr(f && f.days === 1 ? 'day of freedom' : 'days of freedom')) +
-      '</div>';
+    return '<section class="card round-card"><div class="card-head"><h2>' + tr('This round') + '</h2><span class="hint">' + tr('{from} – {to} · day {day} of {days}', { from: fmtDate(cyc.start), to: fmtDate(Core.addDays(cyc.next, -1)), day: r.idxToday + 1, days: cyc.days }) + '</span></div>' +
+      '<div class="round-grid" role="img" aria-label="' + esc(tr('{won} days won, {over} over', { won, over })) + '">' + tiles.join('') + '</div>' +
+      '<div class="viz-legend"><span><i class="round-key won"></i>' + tr('Won {n}', { n: won }) + '</span><span><i class="round-key over"></i>' + tr('Over {n}', { n: over }) + '</span><span><i class="round-key today"></i>' + tr('Today') + '</span></div>' +
+      '<p class="round-borrowed ' + (b.total ? 'bad' : 'good') + '">' + tr('Borrowed this round: {amount}', { amount: inr(b.total) }) + (b.total ? '' : ' ✓') + '</p>' + recover + '</section>';
   }
 
-  // The full graph, one tap away.
-  function chartCard() {
-    if (!ui.chartOpen) {
-      return '<section class="card chart-card"><div class="card-head"><h2>' + tr('Your runway graph') + '</h2>' +
-        '<button class="ghost" data-action="chart-toggle" aria-expanded="false">' + tr('Show') + '</button></div></section>';
+  function monthYear(iso) {
+    const d = Core.parseISO(iso);
+    return monthName(d.getMonth()) + ' ' + d.getFullYear();
+  }
+
+  // Two debt-free dates: no change (minimums only) and with the plan.
+  function debtFreeCard() {
+    const d = Core.debtFreeDates(state, today());
+    if (!d) return '';
+    const date = (x) => (x.never ? tr('Never') : monthYear(x.date));
+    return '<section class="card debtfree-card"><div class="card-head"><h2>' + tr('Debt-free date') + '</h2></div>' +
+      '<div class="debtfree-cols"><div><span class="hint">' + tr('Minimums only') + '</span><b>' + date(d.now) + '</b></div>' +
+      '<div class="plan"><span class="hint">' + tr('With your plan') + '</span><b>' + date(d.plan) + '</b></div></div>' +
+      (d.now.never ? '<p class="hint bad">' + tr('At the minimums the interest grows faster than the payments.') + '</p>' : '') +
+      (d.sooner > 0 ? '<p class="good">' + tr('{months} sooner, saving about {amount} in interest.', { months: plural(d.sooner, 'month'), amount: inr(d.saved) }) + '</p>'
+        : '<p class="hint">' + tr('Set aside an extra amount for loans in Plan to bring this date closer.') + '</p>') +
+      '<button class="explain-link" data-action="explain" data-explain="debtfree">' + tr('How is this calculated?') + '</button></section>';
+  }
+
+  // Everything else on the Runway tab, one tap away.
+  function detailsCard(inner) {
+    return '<section class="card details-card"><div class="card-head"><h2>' + tr('More details') + '</h2>' +
+      '<button class="ghost" data-action="chart-toggle" aria-expanded="' + !!ui.chartOpen + '">' + tr(ui.chartOpen ? 'Hide' : 'Show') + '</button></div>' +
+      (ui.chartOpen ? '' : '<p class="hint">' + tr('Your runway graph, balance, budgets, what’s coming before payday and what your spending says.') + '</p>') + '</section>' +
+      (ui.chartOpen ? inner : '');
+  }
+
+  // "How is this calculated?": the formula with the person's own numbers.
+  function explainModal() {
+    if (!ui.explain) return '';
+    const t = today();
+    let title = '';
+    let lines = [];
+    if (ui.explain === 'limit') {
+      const r = Core.projectRunway(state, t);
+      const l = r.limit;
+      title = tr('Today’s limit');
+      lines = [
+        tr('It’s the smaller of two amounts, so you never spend money the bills still need:'),
+        tr('<b>What the budget allows:</b> flexible money left this round ÷ {days} days to payday (today included) = <b>{amount}</b>.', { days: l.days, amount: inr(l.byBudget) }),
+        tr('<b>What the account can cover:</b> ({money} in the account this morning − {bills} of bills still to come) ÷ {days} days = <b>{amount}</b>.', { money: inr(l.money), bills: inr(l.bills), days: l.days, amount: inr(l.byMoney) }),
+        tr('Today’s limit: <b>{amount}</b>. Spending or saving today uses it up; going over lowers the days that follow.', { amount: inr(r.dailyAllowance) }),
+      ];
+    } else if (ui.explain === 'freedom') {
+      const f = Core.freedomDays(state, t);
+      title = tr('Days of Freedom');
+      lines = f ? [
+        tr('How many days your savings would pay for the basics if your salary stopped.'),
+        tr('Basics a month: fixed payments {fixed} + loan minimums {debt} + bills {bills} + groceries and health {food} = <b>{total}</b>. A day: {total} ÷ 30 = <b>{daily}</b>.',
+          { fixed: inr(f.parts.fixed), debt: inr(f.parts.debtMin), bills: inr(f.parts.bills), food: inr(f.parts.essentials), total: inr(f.needs), daily: inr(f.daily) }),
+        tr('Emergency fund {fund} ÷ {daily} a day = <b>{days} days</b>.', { fund: inr(f.fund), daily: inr(f.daily), days: f.days }),
+        tr('<b>Red</b> 0–6 days: at risk. <b>Amber</b> 7–29: building. <b>Green</b> 30 or more: a month safe.'),
+      ] : [tr('Add your fixed payments and budgets to see your Days of Freedom.')];
+    } else if (ui.explain === 'debtfree') {
+      const d = Core.debtFreeDates(state, t);
+      title = tr('Debt-free date');
+      lines = d ? [
+        tr('<b>Minimums only:</b> you keep paying {amount} a month in minimums and EMIs, interest added every month, nothing extra.', { amount: inr(d.minimums) }),
+        tr('<b>With your plan:</b> the same, plus {amount} a month extra on the loan with the highest interest first. When a loan is cleared, its payment moves on to the next one.', { amount: inr(d.extra) }),
+        tr('These use today’s balances and rates. Update the balances from your statements to keep the dates honest. Lenders’ actual charges can differ.'),
+      ] : [];
     }
-    return '<section class="card chart-card"><div class="card-head"><h2>' + tr('Your runway graph') + '</h2>' +
-      '<button class="ghost" data-action="chart-toggle" aria-expanded="true">' + tr('Hide') + '</button></div>' +
+    return '<div class="reset-modal-overlay help-overlay" role="presentation"><div class="reset-modal-card help-card" role="dialog" aria-modal="true" aria-labelledby="explain-title" id="explain-card">' +
+      '<h2 id="explain-title">' + title + '</h2>' + lines.map((x) => '<p>' + x + '</p>').join('') +
+      '<div><button class="primary" data-action="explain-close">' + tr('Got it') + '</button></div></div></div>';
+  }
+
+  // The runway graph.
+  function chartCard() {
+    return '<section class="card chart-card"><div class="card-head"><h2>' + tr('Your runway graph') + '</h2></div>' +
       '<div class="chart-wrap"><div id="runway-chart" role="img" aria-label="' + tr('Balance through this salary cycle') + '"></div>' +
       '<div class="legend"><span><i></i>' + tr('Balance so far') + '</span><span><i class="pace"></i>' + tr('If you keep this pace') + '</span><span><i class="plan"></i>' + tr('If you keep to budget') + '</span>' +
       '<span><i class="red-band"></i>' + tr('Red zone: bills and basics still to pay') + '</span><span><svg width="10" height="10" aria-hidden="true"><circle cx="5" cy="5" r="4" class="c-event"/></svg>' + tr('Bill or EMI') + '</span></div></div></section>';
@@ -1055,16 +1135,15 @@
    * almost no battery; the phone's "reduce animations" setting turns it off.
    */
   function animateRunway() {
-    const fill = document.getElementById('ring-fill');
+    const fill = document.getElementById('limit-fill');
     if (!fill) return;
-    const r = Core.projectRunway(state, today());
-    const target = ringTarget(r);
-    ui.ringOffset = target;
-    if (REDUCE_MOTION) { fill.style.strokeDashoffset = target.toFixed(1); return; }
-    requestAnimationFrame(() => requestAnimationFrame(() => { fill.style.strokeDashoffset = target.toFixed(1); }));
+    const to = Number(fill.dataset.to) || 0;
+    ui.limitPct = to;
+    if (REDUCE_MOTION) { fill.style.width = to + '%'; return; }
+    requestAnimationFrame(() => requestAnimationFrame(() => { fill.style.width = to + '%'; }));
     if (ui.counted) return;
     ui.counted = true;
-    const el = document.querySelector('.ring-text [data-count]');
+    const el = document.querySelector('.limit-big [data-count]');
     const end = Number(el && el.dataset.count) || 0;
     if (!el || end <= 0) return;
     const t0 = performance.now();
@@ -1075,6 +1154,7 @@
     };
     requestAnimationFrame(step);
   }
+
 
   // Ways out of the red, each with its amount.
   // ---------- month-end report card ----------
@@ -1292,8 +1372,8 @@
     const allowance = Math.round(r.dailyAllowance);
     if (day.allowance !== allowance && !day.prompted) {
       state.days[t] = Object.assign(day, { allowance });
-      // Keep two weeks of days.
-      Object.keys(state.days).filter((d) => d < Core.addDays(t, -14)).forEach((d) => { delete state.days[d]; });
+      // Keep about two rounds of days, for the round board.
+      Object.keys(state.days).filter((d) => d < Core.addDays(t, -70)).forEach((d) => { delete state.days[d]; });
       save();
     }
   }
@@ -2696,6 +2776,8 @@
         try { localStorage.setItem(VIZ_KEY, ui.viz); } catch (e) { /* private mode */ }
         break;
       case 'viz-tip': showVizTip(btn); return;
+      case 'explain': ui.explain = btn.dataset.explain; break;
+      case 'explain-close': ui.explain = null; break;
       case 'chart-toggle':
         ui.chartOpen = !ui.chartOpen;
         try { localStorage.setItem(CHART_KEY, ui.chartOpen ? '1' : ''); } catch (e) { /* private mode */ }
@@ -3281,7 +3363,8 @@
   });
 
   document.addEventListener('keydown', (ev) => {
-    if (ev.key === 'Escape' && ui.help) { ui.helpFrom = ui.help; ui.help = null; rerenderKeepScroll(); }
+    if (ev.key === 'Escape' && ui.explain) { ui.explain = null; rerenderKeepScroll(); }
+    else if (ev.key === 'Escape' && ui.help) { ui.helpFrom = ui.help; ui.help = null; rerenderKeepScroll(); }
     else if (ev.key === 'Escape' && ui.borrow) { ui.borrow = null; rerenderKeepScroll(); }
     else if (ev.key === 'Escape' && document.getElementById('report-card')) { ui.report = false; ui.reportHidden = true; ui.reportThenPay = false; rerenderKeepScroll(); }
     else if (ev.key === 'Escape' && ui.reset) { ui.reset = null; rerenderKeepScroll(); }

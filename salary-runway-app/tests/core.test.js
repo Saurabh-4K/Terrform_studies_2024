@@ -394,11 +394,20 @@ test('Days of Freedom: how long the fund covers the basics', () => {
   // Basics: rent 15,000 + groceries 6,000 = 21,000 a month = 700 a day.
   s.savings.emergencyBalance = 7000;
   let f = Core.freedomDays(s, '2026-10-05');
-  assert.deepEqual([f.days, Math.round(f.daily), f.badge], [10, 700, 'Starter shield']);
+  assert.deepEqual([f.days, Math.round(f.daily), f.badge, f.level], [10, 700, 'Building', 'amber']);
+  // 20 more days (₹14,000) to 30: green
+  assert.deepEqual(f.next, { days: 20, amount: 14000, target: 30, level: 'green' });
+  assert.deepEqual(f.parts, { fixed: 15000, debtMin: 0, bills: 0, essentials: 6000 });
   s.savings.emergencyBalance = 0;
-  assert.equal(Core.freedomDays(s, '2026-10-05').badge, 'Unprotected');
+  f = Core.freedomDays(s, '2026-10-05');
+  assert.deepEqual([f.badge, f.level, f.next.days, f.next.amount, f.next.level], ['At risk', 'red', 7, 4900, 'amber']);
+  s.savings.emergencyBalance = 4800; // 6 days: still red
+  assert.equal(Core.freedomDays(s, '2026-10-05').level, 'red');
+  s.savings.emergencyBalance = 21000; // 30 days
+  assert.deepEqual([Core.freedomDays(s, '2026-10-05').level, Core.freedomDays(s, '2026-10-05').badge], ['green', 'A month safe']);
   s.savings.emergencyBalance = 70000;
-  assert.equal(Core.freedomDays(s, '2026-10-05').badge, 'Unshakeable');
+  f = Core.freedomDays(s, '2026-10-05');
+  assert.deepEqual([f.badge, f.next], ['Three months safe', null]);
   // Nothing set up: no number rather than a silly one.
   assert.equal(Core.freedomDays(baseState({ fixed: [], budgets: [] }), '2026-10-05'), null);
 });
@@ -971,4 +980,22 @@ test('a bill added just before it’s due is paid in full from this month: the p
   assert.equal(due(), 300); // bills from before `added` count as full
   s.bills[0].added = '2026-11-01';
   assert.equal(Core.payBill(s, 'v1', 900, 3, '2026-11-12').fromPot, 0);
+});
+
+test('debt-free dates: minimums only against the plan', () => {
+  const s = baseState({ debts: [{ id: 'd1', name: 'Card', balance: 50000, rate: 36, minPayment: 2500, dueDay: 5 }] });
+  let d = Core.debtFreeDates(s, '2026-11-01');
+  assert.equal(d.extra, 0);
+  assert.equal(d.sooner, 0);
+  assert.equal(d.now.months, d.plan.months);
+  s.savings.debtExtra = 2500;
+  d = Core.debtFreeDates(s, '2026-11-01');
+  assert.equal(d.minimums, 2500);
+  assert.ok(d.plan.months < d.now.months && d.sooner === d.now.months - d.plan.months);
+  assert.ok(d.saved > 0);
+  assert.equal(d.plan.date, Core.addMonths('2026-11-01', d.plan.months));
+  // A minimum below the interest never pays off
+  s.debts[0].minPayment = 1000; s.savings.debtExtra = 0;
+  assert.equal(Core.debtFreeDates(s, '2026-11-01').now.never, true);
+  assert.equal(Core.debtFreeDates(baseState(), '2026-11-01'), null);
 });

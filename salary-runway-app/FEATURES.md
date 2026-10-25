@@ -143,18 +143,21 @@ A zone label on the Runway card, **Green · Careful · Red**, with a headline th
 3. Spend only on basics (a daily amount for groceries and health).
 4. Avoid the credit card for daily spending.
 
-### The Runway card
-The top of the Runway tab, in the Hisab Se colours (deep teal, cream, mint for good, coral for bad, amber for careful):
-- **A coach line first**, one friendly sentence: *Slow down a little. You're nearly at payday.*, *Today went over. Tomorrow is a fresh start.*, *You're on track. Keep it going.*, or a streak within the daily amount.
-- **The ring:** today's amount left (it empties as you spend; coral and "over today" when you go over), with the zone (Green, Careful, Red), the headline and what to do.
-- **The road to payday:** a line from payday to payday with a dot for today; coral from the day the money would run out at this pace, or "About ₹X left on payday".
-- **Wins:** card-free days in a row (or days within the daily amount, without cards), ₹ borrowed this month (coral if not ₹0), and days of freedom.
+### The first screen
+Each salary cycle is a **round**: reach payday without borrowing, and build Days of Freedom. Only two hero numbers, then the round:
+- **A coach line first**, one friendly sentence: *Slow down a little. You're nearly at payday.*, *Today went over. Tomorrow is a fresh start.*, *You're on track. Keep it going.*, or a streak within the daily amount. Never shaming.
+- **Today's limit** (win the day): the amount, a spent/left bar (coral when over, with tomorrow's limit), the zone (Green, Careful, Red, always with its name) and what to do. *How is this calculated?* shows the smaller of what the budget allows and what the account can cover after bills still to come, with your numbers.
+- **Days of Freedom** (win the game): savings ÷ basics a day. **Red 0–6 days** (*At risk*), **amber 7–29** (*Building*), **green 30+** (*A month safe*; 90+ *Three months safe*), always with a shield and a label. The next milestone in days and rupees: *1 more day (₹470) turns it amber.* *How is this calculated?* shows fixed payments + loan minimums + bills + groceries and health, ÷ 30, and the fund ÷ that.
+- **This round:** a tile for each day: **won** (inside that day's limit, ✓), **over** (amber outline), today, days to come, and days not tracked. *Borrowed this round: ₹0 ✓*. After a day over: *Yesterday went over. Today's limit already takes it into account: keep to ₹364 and you're back on track.* Logging a bad day still counts; nothing "breaks".
+- **Debt-free date** (with loans): *Minimums only* against *With your plan* (the extra each month on the costliest loan first, and each cleared loan's payment moving on), with *11 months sooner, saving about ₹35,503 in interest*, or a nudge to set an extra amount aside. *How is this calculated?* explains both.
+- Then whatever needs you (payday check-in, a loan just cleared, payments to check, money received, Big expense coming?, bills to pay), and **More details** (remembered): balance and flexible spending, the runway graph, the next payday preview, budgets, what's coming before payday and what your spending says.
 - **A coral + button** (every tab but Spend) opens Spend with the amount ready to type.
-- **Light animation:** the ring moves to the new amount and the amount counts up when the app opens. Nothing loops; the phone's *reduce animations* setting turns it off. A short burst of colour marks a real win.
+- **Light animation:** the limit bar moves to the new amount and the amount counts up when the app opens. Nothing loops; the phone's *reduce animations* setting turns it off. A short burst of colour marks a real win.
 - **Sounds** (Plan → Language card, on by default): a tick when an expense is saved, a chime for a win, a low note when today goes over. Made on the spot (no sound files), quiet when the phone is on silent or vibrate.
+- A "month" in the app always means **payday to payday** (the round), on every tab.
 
 ### Graph
-One tap away: **Your runway graph → Show** (remembered on the phone).
+Under **More details** on the Runway tab.
 - Balance so far (solid line), **if you keep this pace** (dashed), **if you keep to budget** (dotted).
 - **Red band:** what bills and basics still need from each day to payday. If a line dips into it, trouble is coming.
 - Dots for bills and EMIs, a *Today* marker, and the date the pace line crosses ₹0.
@@ -318,7 +321,7 @@ The Grow card shows where the Grow budget should go, freedom first:
 
 - **This month's set-aside:** what to move aside this cycle, with *I've moved this money aside* to add it to your funds.
 - **Saved from daily leftovers** this month.
-- **Days of Freedom:** the emergency fund as time. *6 Days of Freedom 🛡️* means it covers your basics (fixed payments, loan minimums, bills that vary, groceries and health) for that long, at your own daily cost. Badges: **Unprotected** (0 days), **Starter shield** (1–14), **Incident proof** (15–89), **Unshakeable** (90+). At 0 days: *Every ₹1,253 saved buys one day of complete financial security.* Until basics are set up: *Add your fixed payments and budgets to see your Days of Freedom.*
+- **Days of Freedom:** the emergency fund as time. *6 Days of Freedom 🛡️* means it covers your basics (fixed payments, loan minimums, bills that vary, groceries and health) for that long, at your own daily cost. Levels: **At risk** (0–6 days, red), **Building** (7–29, amber), **A month safe** (30+, green), **Three months safe** (90+). At 0 days: *Every ₹1,253 saved buys one day of complete financial security.* Until basics are set up: *Add your fixed payments and budgets to see your Days of Freedom.*
 - **Emergency fund:** amount saved, target (3 or 6 months of needs) and progress. A first milestone of one month of needs, then the full target, with how long each takes.
 - **Yearly costs:** progress for each.
 - **Something unexpected happened? (Emergency mode)**

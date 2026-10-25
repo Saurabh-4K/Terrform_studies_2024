@@ -420,6 +420,8 @@
       ? plan.flexTotal / N + (extraIn - (moved - savedToday)) / (N - aIdx)
       : Math.max(0, plan.flexTotal + extraIn - (moved - savedToday) - (paceSpend - spentToday)) / (remainingDays + 1);
     const dailyAllowance = Math.min(byMoney, byBudget);
+    // The parts of today's limit, for "how is this calculated?".
+    const limit = { byMoney, byBudget, money: bal + spentToday + savedToday, bills: billsAhead, days: remainingDays + 1 };
     // What is left of today's amount after spending and saving, and tomorrow's amount once today is counted.
     const usedToday = spentToday + savedToday;
     const leftToday = Math.max(0, dailyAllowance - usedToday);
@@ -438,7 +440,7 @@
 
     const last = points[points.length - 1];
     return {
-      cycle, plan, events, points, idxToday, remainingDays, anchor, anchorIdx: anchor ? aIdx : null,
+      cycle, plan, events, points, idxToday, remainingDays, anchor, anchorIdx: anchor ? aIdx : null, limit,
       spentToDate, spentToday, savedToday, flexLeft, extraIn, moved, billsAhead, paceRate, planRate, dailyAllowance, leftToday, overToday, tomorrowAllowance,
       balanceToday: points[idxToday].actual,
       zeroPace: firstBelowZero('pace'),
@@ -1076,6 +1078,26 @@
     return { months: month, totalInterest: Math.round(totalInterest), order: cleared, neverPaysOff: month >= MAX };
   }
 
+  /*
+   * Two debt-free dates: paying only the minimums ("no change"), and the
+   * plan: the extra set aside each month on the costliest loan first, and
+   * each cleared loan's payment moving on to the next. null with no loans.
+   */
+  function debtFreeDates(state, todayIso) {
+    const debts = state.debts.filter((d) => d.balance > 0);
+    if (!debts.length) return null;
+    const extra = monthlyPlan(Object.assign({}, state, { adjustment: null }), todayIso).debtExtra;
+    const when = (sim) => ({ months: sim.months, interest: sim.totalInterest, never: sim.neverPaysOff, date: sim.neverPaysOff ? null : addMonths(todayIso, sim.months) });
+    const now = when(simulateDebts(debts, 0, 'avalanche', false));
+    const plan = when(simulateDebts(debts, extra, 'avalanche', true));
+    return {
+      now, plan, extra,
+      minimums: sum(debts, (d) => Number(d.minPayment) || 0),
+      sooner: now.never || plan.never ? 0 : now.months - plan.months,
+      saved: now.never || plan.never ? 0 : Math.max(0, now.interest - plan.interest),
+    };
+  }
+
   function compareDebtPlans(debts, extra) {
     return {
       minimum: simulateDebts(debts, 0, 'avalanche', false),
@@ -1277,8 +1299,14 @@
     const daily = needs / 30;
     const fund = Number(state.savings.emergencyBalance) || 0;
     const days = Math.floor(fund / daily);
-    const badge = days === 0 ? 'Unprotected' : days <= 14 ? 'Starter shield' : days <= 89 ? 'Incident proof' : 'Unshakeable';
-    return { days, daily, needs, fund, badge };
+    // Levels: red 0-6 days, amber 7-29, green 30+ (a month of basics covered). Always shown with a label.
+    const level = days >= 30 ? 'green' : days >= 7 ? 'amber' : 'red';
+    const badge = days >= 90 ? 'Three months safe' : days >= 30 ? 'A month safe' : days >= 7 ? 'Building' : 'At risk';
+    // The next milestone: 7 days turns it amber, 30 green, 90 is three months.
+    const target = days < 7 ? 7 : days < 30 ? 30 : days < 90 ? 90 : 0;
+    const next = target ? { days: target - days, amount: Math.max(0, Math.ceil(target * daily - fund)), target, level: target === 7 ? 'amber' : target === 30 ? 'green' : 'three months' } : null;
+    const parts = { fixed: p.fixedTotal, debtMin: p.debtMin, bills: p.variableBills, essentials };
+    return { days, daily, needs, fund, badge, level, next, parts };
   }
 
   /*
@@ -2035,7 +2063,7 @@
   const Core = {
     parseISO, toISO, addDays, addMonths, daysBetween, cycleFor, previousCycle,
     occurrenceInCycle, monthlyPlan, cycleEvents, projectRunway, autoSavings, allocate,
-    insights, simulateDebts, compareDebtPlans, emergencyPlan, parseSms,
+    insights, simulateDebts, compareDebtPlans, debtFreeDates, emergencyPlan, parseSms,
     splitSmsBatch, smsKey, categorize, normalizeMerchant, sinkingMonthly, inCycle,
     spendInRange, incomeInRange, incomeKept, isIncome, isMove, isBillPayment, isFlexible, incomeOptions,
     salaryFor, salaryHistory, paydayReset, suggestUse, freedomDays, interestLeak, nextPaydayPreview,
