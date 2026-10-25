@@ -184,6 +184,9 @@
     importBusy: false,
     importFound: null,
     sortAsk: null,
+    onboardHidden: false,
+    onboardFocus: false,
+    onboardError: '',
   };
 
   // ---------- storage ----------
@@ -501,9 +504,13 @@
       ).join('') +
       '</div></nav>' +
       (tab !== 'spend' && state.settings.salary ? '<button class="fab" data-action="fab-add" aria-label="' + tr('Add an expense') + '"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></svg></button>' : '') +
-      resetModal() + helpModal() + explainModal() + borrowModal() + reportModal();
+      resetModal() + helpModal() + explainModal() + borrowModal() + reportModal() + onboardModal();
     if (tab === 'home') { drawRunway(); animateRunway(); }
-    if (ui.cardForm && ui.cardForm.focus && ui.cardForm.bad && document.getElementById(ui.cardForm.bad)) {
+    if (document.getElementById('onboard-card') && ui.onboardFocus) {
+      ui.onboardFocus = false;
+      const first = document.querySelector('#onboard-card input');
+      if (first) first.focus(); else document.getElementById('onboard-card').focus();
+    } else if (ui.cardForm && ui.cardForm.focus && ui.cardForm.bad && document.getElementById(ui.cardForm.bad)) {
       ui.cardForm.focus = false;
       const bad = document.getElementById(ui.cardForm.bad);
       bad.scrollIntoView({ block: 'center' });
@@ -2166,6 +2173,8 @@
       '<div class="seg" role="group" aria-label="' + tr('Language') + '">' + I18N.LANGS.map(([code, name]) =>
         '<button data-action="set-lang" data-lang="' + code + '" lang="' + code + '" aria-pressed="' + (I18N.getLang() === code) + '">' + name + '</button>').join('') + '</div></div>' +
       '<label class="check"><input id="sounds-on" type="checkbox"' + (s.sounds === false ? '' : ' checked') + '> ' + tr('Sounds (quiet when the phone is on silent)') + '</label></section>' +
+      (state.onboarding && ui.onboardHidden ? '<div class="callout"><b>' + tr('Finish setting up · step {step} of {total}', { step: state.onboarding.step, total: ONBOARD_STEPS }) + '</b>' +
+        '<div><button class="primary" data-action="onboard-resume">' + tr('Continue') + '</button></div></div>' : '') +
       (s.salary ? '' : '<div class="callout"><b>' + tr('Start here.') + '</b><span class="hint">' + tr('Enter your salary and payday, then your fixed payments. Everything else can come later.') + '</span></div>') +
       '<section class="card">' + titled('Salary', 'salary') + '<div class="form-grid">' +
       numInput('salary', 'settings.salary', s.salary || '', 'Monthly salary in hand (₹)') +
@@ -2801,7 +2810,26 @@
     switch (a) {
       case 'tab': setTab(btn.dataset.tab); return;
       case 'start-own':
-        state = emptyState(); save(); setTab('plan'); toast('Example data cleared. Add your salary to begin.'); return;
+        state = emptyState();
+        state.onboarding = { step: 1 };
+        ui.onboardHidden = false; ui.onboardFocus = true;
+        save(); setTab('home'); return;
+      case 'onboard-next': onboardNext(); break;
+      case 'onboard-back': if (state.onboarding && state.onboarding.step > 1) { state.onboarding.step--; ui.onboardError = ''; ui.onboardFocus = true; save(); } break;
+      case 'onboard-later': ui.onboardHidden = true; toast('Your setup is saved. Finish it any time from the Plan tab.'); break;
+      case 'onboard-resume': ui.onboardHidden = false; ui.onboardFocus = true; break;
+      case 'onboard-add-loan': {
+        onboardKeepLoans();
+        state.onboarding.loans = (state.onboarding.loans || []).concat({});
+        save(); break;
+      }
+      case 'onboard-no-debts': state.onboarding.step = 5; ui.onboardFocus = true; save(); break;
+      case 'onboard-sms': {
+        finishOnboarding();
+        readNativeSms(false);
+        return;
+      }
+      case 'onboard-finish': finishOnboarding(); return;
       case 'load-demo':
         state = Demo.demoState(t); save(); setTab('home'); return;
       case 'wipe': ui.confirmWipe = true; break;
@@ -3489,6 +3517,7 @@
 
   document.addEventListener('keydown', (ev) => {
     if (ev.key === 'Escape' && ui.explain) { ui.explain = null; rerenderKeepScroll(); }
+    else if (ev.key === 'Escape' && document.getElementById('onboard-card')) { ui.onboardHidden = true; rerenderKeepScroll(); }
     else if (ev.key === 'Escape' && ui.help) { ui.helpFrom = ui.help; ui.help = null; rerenderKeepScroll(); }
     else if (ev.key === 'Escape' && ui.borrow) { ui.borrow = null; rerenderKeepScroll(); }
     else if (ev.key === 'Escape' && document.getElementById('report-card')) { ui.report = false; ui.reportHidden = true; ui.reportThenPay = false; rerenderKeepScroll(); }
@@ -3548,6 +3577,153 @@
       if (!quiet) toast(err && err.code === 'PERMISSION_DENIED' ? 'SMS permission is off. You can turn it on in Android settings.' : 'Couldn’t read messages');
       rerenderKeepScroll();
     });
+  }
+
+  // ---------- first-time setup ----------
+
+  /*
+   * Five short steps, each unlocking something real: salary, payday and the
+   * money in the account today give today's limit within a minute; fixed
+   * payments and savings give Days of Freedom; loans give a debt-free date;
+   * bank SMS (with what's read and what never happens, before any
+   * permission) records payments. Everything is saved as it goes, and
+   * "Finish later" keeps the place.
+   */
+  const ONBOARD_STEPS = 5;
+
+  function obValue(id) { return ((document.getElementById(id) || {}).value || '').trim(); }
+
+  function onboardKeepLoans() {
+    const ob = state.onboarding;
+    (ob.loans || []).forEach((l, i) => {
+      ['name', 'balance', 'emi', 'rate'].forEach((k) => { const v = obValue('ob-loan-' + i + '-' + k); if (v !== '') l[k] = v; });
+    });
+  }
+
+  function onboardNext() {
+    const ob = state.onboarding;
+    if (!ob) return;
+    ui.onboardError = '';
+    const t = today();
+    if (ob.step === 1) {
+      const salary = Math.round(Number(obValue('ob-salary')) || 0);
+      const payday = Math.round(Number(obValue('ob-payday')) || 0);
+      if (salary <= 0) { ui.onboardError = tr('Enter your monthly salary in hand.'); return; }
+      if (payday < 1 || payday > 31) { ui.onboardError = tr('Enter the day of the month your salary comes, from 1 to 31.'); return; }
+      state.settings.salary = salary;
+      state.settings.payday = payday;
+    } else if (ob.step === 2) {
+      const v = obValue('ob-balance');
+      if (v === '' || Number(v) < 0) { ui.onboardError = tr('Enter what’s in your bank account now. ₹0 is fine.'); return; }
+      state.balanceCheck = { date: t, amount: Math.round(Number(v)) };
+    } else if (ob.step === 3) {
+      const rent = Math.round(Number(obValue('ob-rent')) || 0);
+      const day = Math.min(31, Math.max(1, Math.round(Number(obValue('ob-rent-day')) || 1)));
+      const other = Math.round(Number(obValue('ob-other')) || 0);
+      state.fixed = state.fixed.filter((f) => !f.fromSetup);
+      if (rent > 0) state.fixed.push({ id: uid(), name: tr('Rent'), amount: rent, dueDay: day, fromSetup: true });
+      if (other > 0) state.fixed.push({ id: uid(), name: tr('Other fixed payments'), amount: other, dueDay: 1, fromSetup: true });
+      state.savings.emergencyBalance = Math.max(0, Math.round(Number(obValue('ob-savings')) || 0));
+    } else if (ob.step === 4) {
+      onboardKeepLoans();
+      state.debts = state.debts.filter((d) => !d.fromSetup);
+      (ob.loans || []).forEach((l) => {
+        const balance = Math.round(Number(l.balance) || 0);
+        if (balance > 0) state.debts.push({ id: uid(), name: l.name || tr('Loan'), balance, rate: Number(l.rate) || 14, minPayment: Math.round(Number(l.emi) || 0), dueDay: 5, fromSetup: true });
+      });
+      ob.cards = !!(document.getElementById('ob-cards') || {}).checked;
+    }
+    ob.step++;
+    ui.onboardFocus = true;
+    save();
+  }
+
+  function finishOnboarding() {
+    const cards = state.onboarding && state.onboarding.cards;
+    delete state.onboarding;
+    state.onboarded = true;
+    ui.onboardHidden = false;
+    save();
+    if (cards) { ui.cardForm = {}; setTab('debts'); toast('Now add your credit card: name, last 4 digits, statement and due day.'); return; }
+    setTab('home');
+    celebrate(tr('You’re set. Your first round starts today.'));
+  }
+
+  // What the steps so far have unlocked, shown at the top of the next one.
+  function onboardUnlocked(step) {
+    const t = today();
+    if (step === 3 && state.settings.salary) {
+      const r = Core.projectRunway(state, t);
+      return '<div class="ob-unlock"><span>' + tr('Unlocked: today’s limit') + '</span><b>' + inr(r.dailyAllowance) + '</b><small>' +
+        tr('What you can spend today and still reach payday on {date}.', { date: fmtDate(r.cycle.next) }) + ' ' + tr('It gets more exact with the next steps.') + '</small></div>';
+    }
+    if (step === 4) {
+      const f = Core.freedomDays(state, t);
+      if (f) return '<div class="ob-unlock"><span>' + tr('Unlocked: Days of Freedom') + '</span><b>' + f.days + ' · ' + tr(f.badge) + '</b><small>' +
+        (f.next ? tr(f.next.days === 1 ? '1 more day ({amount}) turns it {level}.' : '{n} more days ({amount}) turns it {level}.', { n: f.next.days, amount: inr(f.next.amount), level: tr(f.next.level) }) : '') + '</small></div>';
+    }
+    if (step === 5) {
+      const d = Core.debtFreeDates(state, t);
+      if (d) return '<div class="ob-unlock"><span>' + tr('Unlocked: debt-free date') + '</span><b>' + (d.now.never ? tr('Never') : monthYear(d.now.date)) + '</b><small>' +
+        tr('Paying the minimums. Your plan can bring it closer.') + '</small></div>';
+    }
+    return '';
+  }
+
+  function onboardModal() {
+    const ob = state.onboarding;
+    if (!ob || ui.onboardHidden || state.isDemo) return '';
+    const step = ob.step;
+    const mins = Math.max(1, Math.ceil(((ONBOARD_STEPS - step + 1) * 40) / 60));
+    const num = (id, label, value, extra) => '<label class="field" for="' + id + '"><span>' + label + '</span><input id="' + id + '" type="number" inputmode="numeric" min="0" value="' + esc(value == null ? '' : value) + '"' + (extra || '') + '></label>';
+    let body = '';
+    let next = tr('Next');
+    if (step === 1) {
+      body = '<h2 id="ob-title">' + tr('Your salary') + '</h2><p class="hint">' + tr('Three quick answers and you’ll see today’s limit.') + '</p>' +
+        '<div class="form-grid">' + num('ob-salary', tr('Monthly salary in hand (₹)'), state.settings.salary || '', ' placeholder="30000"') +
+        num('ob-payday', tr('Payday (day of month)'), state.settings.salary ? state.settings.payday : '', ' max="31" placeholder="1"') + '</div>';
+    } else if (step === 2) {
+      body = '<h2 id="ob-title">' + tr('Money in your account now') + '</h2><p class="hint">' + tr('From your bank app. Today’s spending so far is already out of it.') + '</p>' +
+        '<div class="form-grid">' + num('ob-balance', tr('Bank balance now (₹)'), state.balanceCheck ? state.balanceCheck.amount : '', ' placeholder="9000"') + '</div>';
+      next = tr('Show today’s limit');
+    } else if (step === 3) {
+      const rent = state.fixed.find((f) => f.fromSetup && f.name === tr('Rent'));
+      const other = state.fixed.find((f) => f.fromSetup && f.name !== tr('Rent'));
+      body = onboardUnlocked(3) + '<h2 id="ob-title">' + tr('Fixed payments and savings') + '</h2><p class="hint">' + tr('Leave anything you don’t have at 0. Loans come next.') + '</p>' +
+        '<div class="form-grid">' + num('ob-rent', tr('Rent or home loan (₹ a month)'), rent ? rent.amount : '') + num('ob-rent-day', tr('Paid on day'), rent ? rent.dueDay : '', ' max="31" placeholder="5"') +
+        num('ob-other', tr('Other fixed payments (₹ a month)'), other ? other.amount : '', ' placeholder="' + tr('school fees, phone, subscriptions') + '"') +
+        num('ob-savings', tr('Savings you could use in an emergency (₹)'), state.savings.emergencyBalance || '') + '</div>';
+      next = tr('Show my Days of Freedom');
+    } else if (step === 4) {
+      if (!ob.loans) ob.loans = state.debts.filter((d) => d.fromSetup).map((d) => ({ name: d.name, balance: d.balance, emi: d.minPayment, rate: d.rate }));
+      if (!ob.loans.length) ob.loans = [{}];
+      body = onboardUnlocked(4) + '<h2 id="ob-title">' + tr('Loans and credit cards') + '</h2><p class="hint">' + tr('Personal loans, app loans, EMIs. Interest is in your loan app; about 14% if you’re not sure.') + '</p>' +
+        ob.loans.map((l, i) => '<div class="form-grid ob-loan">' +
+          '<label class="field" for="ob-loan-' + i + '-name"><span>' + tr('Loan') + '</span><input id="ob-loan-' + i + '-name" type="text" value="' + esc(l.name || '') + '" placeholder="' + tr('Personal loan') + '"></label>' +
+          num('ob-loan-' + i + '-balance', tr('Left to pay (₹)'), l.balance) + num('ob-loan-' + i + '-emi', tr('EMI a month (₹)'), l.emi) +
+          num('ob-loan-' + i + '-rate', tr('Interest % a year'), l.rate, ' placeholder="14"') + '</div>').join('') +
+        '<div><button class="ghost" data-action="onboard-add-loan">' + tr('Add another loan') + '</button></div>' +
+        '<label class="check"><input id="ob-cards" type="checkbox"' + (ob.cards ? ' checked' : '') + '> ' + tr('I have credit cards (add them right after this)') + '</label>' +
+        '<div><button data-action="onboard-no-debts">' + tr('No loans or cards') + '</button></div>';
+      next = tr('Save and continue');
+    } else {
+      body = onboardUnlocked(5) + '<h2 id="ob-title">' + tr('Bank SMS') + '</h2>' +
+        (SmsInbox
+          ? '<div class="ob-privacy"><p><b>' + tr('What we read:') + '</b> ' + tr('messages from banks and payment apps (senders like VM-HDFCBK), on this phone, from today on.') + '</p>' +
+            '<p><b>' + tr('Why:') + '</b> ' + tr('to record your payments for you, so you don’t have to type them.') + '</p>' +
+            '<p><b>' + tr('What we never do:') + '</b> ' + tr('read personal chats, keep messages that aren’t payments, or send anything anywhere. Hisab Se has no server.') + '</p></div>' +
+            '<p class="hint">' + tr('Android will ask for SMS permission next. You can turn it off any time in Android settings.') + '</p>' +
+            '<div class="row"><button class="primary" data-action="onboard-sms">' + tr('Allow SMS reading') + '</button><button class="ghost" data-action="onboard-finish">' + tr('Not now') + '</button></div>'
+          : '<p class="hint">' + tr('In the Android app, Hisab Se can record payments from your bank SMS. Here, add them on the Spend tab.') + '</p>' +
+            '<div><button class="primary" data-action="onboard-finish">' + tr('Start my first round') + '</button></div>');
+    }
+    return '<div class="reset-modal-overlay onboard-overlay" role="presentation"><div class="reset-modal-card onboard-card" role="dialog" aria-modal="true" aria-labelledby="ob-title" id="onboard-card" tabindex="-1">' +
+      '<div class="ob-progress"><span style="width:' + (((step - 1) / ONBOARD_STEPS) * 100).toFixed(0) + '%"></span></div>' +
+      '<span class="eyebrow">' + tr('Step {step} of {total} · about {min} min', { step, total: ONBOARD_STEPS, min: mins }) + '</span>' +
+      body + (ui.onboardError ? '<p class="bad" role="alert">' + esc(ui.onboardError) + '</p>' : '') +
+      (step < ONBOARD_STEPS ? '<div class="row"><button class="primary" data-action="onboard-next">' + next + '</button>' +
+        (step > 1 ? '<button class="ghost" data-action="onboard-back">' + tr('Back') + '</button>' : '') + '</div>' : '') +
+      '<div><button class="link" data-action="onboard-later">' + tr('Finish later') + '</button></div></div></div>';
   }
 
   // ---------- importing past bank SMS (optional) ----------

@@ -37,6 +37,14 @@ Everything the app can do today, screen by screen, with the rules it follows. Fo
 - **Example data:** the app opens with example numbers (₹55,000 salary, rent, a bike EMI, a credit card and a personal loan, four months of spending), clearly marked. *Start with my numbers* clears them.
 - **Updates keep your data.** New versions install over the old one because the app ID and signing key never change. Uninstalling deletes the data, so take a backup first.
 
+## 1b. First-time setup (about 3 minutes)
+*Start with my numbers* opens five short steps, each unlocking something real, with a progress bar (*Step 2 of 5 · about 3 min*). Everything is saved as you go; **Finish later** keeps your place (Plan tab: *Finish setting up · step 3 of 5*).
+1. **Your salary:** monthly salary in hand and payday.
+2. **Money in your account now** (₹0 is fine). → **Unlocked: today's limit** (*₹774: what you can spend today and still reach payday on 1 Nov. It gets more exact with the next steps.*)
+3. **Fixed payments and savings:** rent or home loan and its day, other fixed payments, savings you could use in an emergency. → **Unlocked: Days of Freedom** (*6 · At risk · 1 more day (₹174) turns it amber*)
+4. **Loans and credit cards:** each loan's name, amount left, EMI and interest (about 14% if unsure); *I have credit cards* opens the card form right after; or *No loans or cards*. → **Unlocked: debt-free date**
+5. **Bank SMS** (Android): first *What we read* (bank and payment-app messages, on this phone, from today), *Why* (to record payments for you) and *What we never do* (read personal chats, keep messages that aren't payments, send anything anywhere; there's no server), then *Allow SMS reading* (Android asks for permission) or *Not now*.
+
 ## 2. Plan tab: setting up your month
 
 ### Salary

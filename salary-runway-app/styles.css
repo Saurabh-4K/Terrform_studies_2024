@@ -730,3 +730,14 @@ label.check input { width: 18px; height: 18px; accent-color: var(--accent); }
 :root[data-theme="dark"] .freedom-card.lvl-red { background: #3a1a15; border-color: #ff8a75; --zb-bg: #ff8a75; --zb-ink: #3a1a15; }
 :root[data-theme="dark"] .freedom-card.lvl-amber { background: #3a2c0c; border-color: #f5b83d; --zb-bg: #f5b83d; --zb-ink: #2b1d00; }
 :root[data-theme="dark"] .freedom-card.lvl-green { background: #0f3a2f; border-color: #79e3c3; --zb-bg: #79e3c3; --zb-ink: #06372a; }
+
+/* ---------- First-time setup ---------- */
+.onboard-card { display: grid; gap: 12px; max-height: calc(100dvh - 32px); overflow-y: auto; }
+.ob-progress { height: 8px; border-radius: 4px; background: var(--surface-2); overflow: hidden; }
+.ob-progress span { display: block; height: 100%; background: var(--good); border-radius: 4px; transition: width 0.5s ease; }
+.ob-unlock { display: grid; gap: 2px; background: var(--teal); color: var(--cream); border-radius: 16px; padding: 12px 14px; }
+.ob-unlock span { font-size: 0.75rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--mint); }
+.ob-unlock b { font-family: var(--font-display); font-size: 1.8rem; font-weight: 800; line-height: 1.1; }
+.ob-unlock small { font-size: 0.85rem; color: #d5e3e0; }
+.ob-privacy { display: grid; gap: 8px; background: var(--surface-2); border-radius: 14px; padding: 12px 14px; font-size: 0.92rem; }
+.ob-loan { border-top: 1px solid var(--line); padding-top: 10px; }
