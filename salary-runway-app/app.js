@@ -639,44 +639,44 @@
 
   // Line icons for the grid, drawn on a 24×24 grid in the tab bar's style.
   const HUB_ICONS = {
-    grid: '<rect x="4" y="4" width="6" height="6" rx="1.5"/><rect x="14" y="4" width="6" height="6" rx="1.5"/><rect x="4" y="14" width="6" height="6" rx="1.5"/><path d="M15 17l2 2 3-4"/>',
-    bill: '<path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6M9 16h3"/>',
-    upcoming: '<rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M9 3v4M15 3v4M8 14h3M8 17h6"/>',
-    payday: '<rect x="3" y="6" width="18" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M6 9v.01M18 15v.01"/>',
-    big: '<path d="M12 3l9 16H3z"/><path d="M12 10v4M12 17v.01"/>',
-    graph: '<path d="M4 19h16"/><path d="M5 15l4-4 3 3 6-7"/>',
-    budgets: '<path d="M6 20V10M12 20V4M18 20v-7"/>',
-    insight: '<path d="M9 18h6M10 21h4"/><path d="M12 3a6 6 0 0 0-3.5 10.9V16h7v-2.1A6 6 0 0 0 12 3z"/>',
-    wallet: '<path d="M4 7a2 2 0 0 1 2-2h12v4"/><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M16 13.5h2"/>',
-    flag: '<path d="M5 21V4M5 4h11l-2 4 2 4H5"/>',
-    where: '<path d="M12 3v9l7 4"/><circle cx="12" cy="12" r="9"/>',
-    when: '<rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16"/><rect x="8" y="13" width="3" height="3"/><rect x="13" y="13" width="3" height="3"/>',
-    trend: '<path d="M4 17l5-5 4 3 7-8"/><path d="M15 7h5v5"/>',
-    drop: '<path d="M12 3c3 4.5 6 7.5 6 11a6 6 0 0 1-12 0c0-3.5 3-6.5 6-11z"/>',
-    list: '<path d="M8 6h12M8 12h12M8 18h12"/><path d="M4 6h.01M4 12h.01M4 18h.01"/>',
-    sms: '<path d="M4 5h16v11H9l-5 4z"/><path d="M8 9h8M8 12h5"/>',
-    rupee: '<path d="M7 5h10M7 9h10M9 5c4 0 5 2 5 4s-2 4-5 4H7l7 7"/>',
-    repeat: '<path d="M4 12a7 7 0 0 1 12-5l2 2M20 12a7 7 0 0 1-12 5l-2-2"/><path d="M18 4v5h-5M6 20v-5h5"/>',
-    bolt: '<path d="M13 3L5 14h6l-1 7 8-11h-6z"/>',
-    yearly: '<rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M9 3v4M15 3v4"/><path d="M12 13v4M10 15h4"/>',
-    shield: '<path d="M12 3l7 3v5c0 5-3 8-7 10-4-2-7-5-7-10V6z"/>',
-    sliders: '<path d="M5 6h14M5 12h14M5 18h14"/><circle cx="9" cy="6" r="2"/><circle cx="15" cy="12" r="2"/><circle cx="8" cy="18" r="2"/>',
-    sparkle: '<path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M19 16l.7 1.8L21.5 18.5l-1.8.7L19 21l-.7-1.8-1.8-.7 1.8-.7z"/>',
-    lang: '<path d="M4 6h9M8.5 4v2c0 4-2 7-4.5 8M6 10c1.5 2 3.5 3.5 6 4"/><path d="M13 20l4-9 4 9M14.5 17h5"/>',
-    lock: '<rect x="5" y="10" width="14" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/><path d="M12 14v2"/>',
-    data: '<ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v6c0 1.7 3.1 3 7 3s7-1.3 7-3V6M5 12v6c0 1.7 3.1 3 7 3s7-1.3 7-3v-6"/>',
-    broom: '<path d="M14 4l-4 8M7 12h8l2 8H5z"/><path d="M9 16v4M13 16v4"/>',
-    target: '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4"/><path d="M12 12h.01"/>',
-    loan: '<path d="M4 10l8-6 8 6"/><path d="M6 10v9M10 10v9M14 10v9M18 10v9M4 20h16"/>',
-    card: '<rect x="3" y="6" width="18" height="12" rx="2"/><path d="M3 10h18M7 15h3"/>',
-    phone: '<path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a1 1 0 0 1-1 1A16 16 0 0 1 4 5a1 1 0 0 1 1-1z"/>',
-    plans: '<path d="M4 19h16"/><path d="M6 16V9M11 16V5M16 16v-4"/><path d="M19 5l-3 3"/>',
-    sprout: '<path d="M12 20v-8M12 12c0-4 3-7 7-7 0 4-3 7-7 7zM12 14c0-3-2-5-6-5 0 3 2 5 6 5z"/>',
-    book: '<path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2z"/><path d="M4 19V5"/>',
-    pot: '<path d="M5 9h14l-1 10H6z"/><path d="M9 9V6a3 3 0 0 1 6 0v3"/>',
-    add: '<circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/>',
-    theme: '<path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/>',
-    info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.01"/>',
+    grid: '<rect x="3" y="3" width="8" height="8" rx="2"/><rect x="13" y="3" width="8" height="8" rx="2"/><rect x="3" y="13" width="8" height="8" rx="2"/><path d="M15 13h4a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-4a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2zm.1 4.3l1.6 1.6 3-3-.9-.9-2.1 2.1-.7-.7z"/>',
+    bill: '<path d="M5 2h14v20l-2.3-1.5L14.3 22 12 20.5 9.7 22l-2.4-1.5L5 22zm3 5v1.6h8V7zm0 4v1.6h8V11zm0 4v1.6h5V15z"/>',
+    upcoming: '<path d="M7 2h2v2h6V2h2v2h2a2 2 0 0 1 2 2v13a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2zM5 9v10h14V9zm2 2h3v3H7zm5 0h3v3h-3z"/>',
+    payday: '<path d="M2 6h20v12H2zm10 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM4.5 8.5v2a2 2 0 0 0 2-2zm15 7v-2a2 2 0 0 0-2 2z"/>',
+    big: '<path d="M12 2.5l10 18H2zm-1 6.5v5h2V9zm0 7v2h2v-2z"/>',
+    graph: '<path d="M3 3h2v16h16v2H3z"/><path d="M6.2 14.6l4-5 3 3 5-7 1.6 1.2-6.4 9-3-3-2.6 3.3z"/>',
+    budgets: '<rect x="3.5" y="11" width="4.5" height="10" rx="1.5"/><rect x="9.75" y="3" width="4.5" height="18" rx="1.5"/><rect x="16" y="7.5" width="4.5" height="13.5" rx="1.5"/>',
+    insight: '<path d="M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2zM8.5 18.5h7V20a2 2 0 0 1-2 2h-3a2 2 0 0 1-2-2z"/>',
+    wallet: '<path d="M4 4h13v2.5H5.5a1 1 0 0 0 0 2H20a1 1 0 0 1 1 1V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a1 1 0 0 1 1-1zm12.5 10a1.5 1.5 0 1 0 3 0 1.5 1.5 0 0 0-3 0z"/>',
+    flag: '<path d="M5 2h2v20H5z"/><path d="M8.5 3H20l-2.6 4.5L20 12H8.5z"/>',
+    card: '<path d="M2 6a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v2H2zm0 4h20v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2zm3 5v1.6h5V15z"/>',
+    where: '<path d="M11 2.05V12l7.1 7.1A10 10 0 1 1 11 2.05z"/><path d="M13 2.05A10 10 0 0 1 21.95 11H13z"/>',
+    when: '<path d="M7 2h2v2h6V2h2v2h2a2 2 0 0 1 2 2v13a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2zM5 9v10h14V9zm2 2h2.5v2.5H7zm4 0h2.5v2.5H11zm4 0h2.5v2.5H15zm-8 4h2.5v2.5H7zm4 0h2.5v2.5H11z"/>',
+    trend: '<path d="M2.6 17.2l6.4-6.4 4 4 5.2-5.2H15V7.4h7v7h-2.2v-3.3L13 17.9l-4-4-4.8 4.8z"/>',
+    drop: '<path d="M12 2c3.6 4.7 6.5 8.2 6.5 11.5a6.5 6.5 0 0 1-13 0C5.5 10.2 8.4 6.7 12 2z"/>',
+    list: '<path d="M3 4.5h3.5V8H3zm5.5.75H21v2H8.5zM3 10.25h3.5v3.5H3zm5.5.75H21v2H8.5zM3 16h3.5v3.5H3zm5.5.75H21v2H8.5z"/>',
+    sms: '<path d="M4 3h16a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H9l-6 4.5V5a2 2 0 0 1 1-2zm3 5v1.8h10V8zm0 3.6v1.8h6v-1.8z"/>',
+    rupee: '<path d="M12 2a10 10 0 1 1 0 20 10 10 0 0 1 0-20zM8 6.5V8h2.6c.9 0 1.6.4 1.9 1H8v1.5h4.5c-.3.8-1.1 1.3-2.2 1.3H8v1.4l4.2 4.8h2.1l-4-4.5c1.7-.2 2.9-1.4 3.2-3H16V9h-2.5a3 3 0 0 0-.6-1H16V6.5z"/>',
+    repeat: '<path d="M17 1.5l4.5 4.5L17 10.5V7.5H8.5a3 3 0 0 0-3 3V12h-2.5v-1.5a5.5 5.5 0 0 1 5.5-5.5H17zM7 22.5L2.5 18 7 13.5v3h8.5a3 3 0 0 0 3-3V12H21v1.5a5.5 5.5 0 0 1-5.5 5.5H7z"/>',
+    bolt: '<path d="M13.5 2L4 13.5h6.5L9 22l11-12.5h-6.7z"/>',
+    yearly: '<path d="M7 2h2v2h6V2h2v2h2a2 2 0 0 1 2 2v13a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2zM5 9v10h14V9zm6 1.5h2v2.5h2.5v2H13v2.5h-2V15H8.5v-2H11z"/>',
+    shield: '<path d="M12 2l8.5 3.2V11c0 5.3-3.5 9.7-8.5 11.2C7 20.7 3.5 16.3 3.5 11V5.2zm-1.1 13.3l5.8-5.8-1.4-1.4-4.4 4.4-2.1-2.1-1.4 1.4z"/>',
+    sliders: '<path d="M3 5.5h4a2.5 2.5 0 0 1 4.9 0H21v2h-9.1a2.5 2.5 0 0 1-4.9 0H3zm0 6.5h10a2.5 2.5 0 0 1 4.9 0H21v2h-3.1a2.5 2.5 0 0 1-4.9 0H3zm0 6.5h2.5a2.5 2.5 0 0 1 4.9 0H21v2H10.4a2.5 2.5 0 0 1-4.9 0H3z"/>',
+    sparkle: '<path d="M11 2l2.1 6.1L19 10l-5.9 1.9L11 18l-2.1-6.1L3 10l5.9-1.9z"/><path d="M18.5 14l1.1 2.6 2.4 1.1-2.4 1.1-1.1 2.7-1.1-2.7-2.4-1.1 2.4-1.1z"/>',
+    target: '<path d="M12 2a10 10 0 1 1 0 20 10 10 0 0 1 0-20zm0 3.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13zm0 3a3.5 3.5 0 1 1 0 7 3.5 3.5 0 0 1 0-7z"/>',
+    loan: '<path d="M12 2l10 5v2.5H2V7zM4 11h3v7H4zm6.5 0h3v7h-3zM17 11h3v7h-3zM2 19.5h20V22H2z"/>',
+    plans: '<path d="M2.5 20h19v2h-19z"/><rect x="4" y="12" width="4" height="7" rx="1.2"/><rect x="10" y="8" width="4" height="11" rx="1.2"/><rect x="16" y="3.5" width="4" height="15.5" rx="1.2"/>',
+    phone: '<path d="M6.5 2.5l3.2.6 1.6 4.6-2.4 1.7a12.5 12.5 0 0 0 5.7 5.7l1.7-2.4 4.6 1.6.6 3.2a2 2 0 0 1-2 2.3A17.5 17.5 0 0 1 2.2 4.5a2 2 0 0 1 2.3-2z"/>',
+    pot: '<path d="M9 2.5h6v2h-1v2.3c3.4.8 6 3.9 6 7.7a8 8 0 0 1-16 0c0-3.8 2.6-6.9 6-7.7V4.5H9zM11 11v1.6H9.5v1.6H11V16h2v-1.8h1.5v-1.6H13V11z"/>',
+    sprout: '<path d="M11 21.5v-7.8C5.8 13.4 2.5 10.2 2.5 4.5c5.3 0 8.4 2.8 9.1 7C12.5 7 15.6 3.5 21.5 3.5c0 6.3-3.6 9.7-8.5 10.1v7.9z"/>',
+    book: '<path d="M5 2h14v15.5H7.2a1.2 1.2 0 0 0 0 2.5H19V22H7.2A3.2 3.2 0 0 1 4 18.8V3a1 1 0 0 1 1-1zm3 4v1.8h8V6z"/>',
+    theme: '<path d="M20.5 14.5A8.5 8.5 0 0 1 9.5 3.5a8.5 8.5 0 1 0 11 11z"/>',
+    lang: '<path d="M2.5 4h8.5v2H8.6c-.3 2-1 3.8-2 5.3.8.8 1.8 1.4 2.9 1.9l-.8 1.8c-1.3-.6-2.4-1.3-3.3-2.2-1 1-2.1 1.8-3.4 2.4l-.8-1.8c1.1-.5 2-1.2 2.8-2-.8-1.2-1.4-2.6-1.8-4.1l1.9-.5c.3 1.1.7 2.1 1.2 3 .7-1.2 1.2-2.4 1.4-3.8H2.5zm12 4h2.6l4.9 12.5h-2.3l-1.1-3h-5.6l-1.1 3h-2.3zm1.3 2.6l-2 5h4z"/>',
+    lock: '<path d="M7 10V7a5 5 0 0 1 10 0v3h1a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2zm2 0h6V7a3 3 0 0 0-6 0zm2 4v3.5h2V14z"/>',
+    data: '<path d="M12 2c4.4 0 8 1.6 8 3.5S16.4 9 12 9 4 7.4 4 5.5 7.6 2 12 2zM4 8.4c1.6 1.4 4.6 2.1 8 2.1s6.4-.7 8-2.1V12c0 1.9-3.6 3.5-8 3.5S4 13.9 4 12zm0 6.6c1.6 1.4 4.6 2.1 8 2.1s6.4-.7 8-2.1v3.5c0 1.9-3.6 3.5-8 3.5s-8-1.6-8-3.5z"/>',
+    broom: '<path d="M14.6 2l1.8.9-3.6 7.1H17l2 12H5l2-12h3.4z"/>',
+    info: '<path d="M12 2a10 10 0 1 1 0 20 10 10 0 0 1 0-20zm-1.1 8v7.5h2.2V10zm0-3.6V8.6h2.2V6.4z"/>',
+    add: '<path d="M12 2a10 10 0 1 1 0 20 10 10 0 0 1 0-20zm-1.1 5v3.9H7v2.2h3.9V17h2.2v-3.9H17v-2.2h-3.9V7z"/>',
   };
   const BACK_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 
@@ -712,7 +712,7 @@
 
   function settingsRow(x) {
     return '<button class="settings-row" data-action="' + (x.action || 'page-open') + '" data-tab="profile" data-key="' + x.key + '">' +
-      '<span class="settings-icon"><svg viewBox="0 0 24 24" aria-hidden="true">' + (HUB_ICONS[x.icon] || '') + '</svg></span>' +
+      '<span class="settings-icon' + (x.tone === 'bad' ? ' alert' : '') + '"><svg viewBox="0 0 24 24" fill-rule="evenodd" aria-hidden="true">' + (HUB_ICONS[x.icon] || '') + '</svg></span>' +
       '<span class="settings-label">' + tr(x.label) + '</span>' +
       (x.value ? '<span class="settings-value' + (x.tone ? ' ' + x.tone : '') + '">' + x.value + '</span>' : '') +
       '<svg class="settings-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></button>';
@@ -720,9 +720,10 @@
 
   function hubTile(x) {
     const b = x.badge;
-    return '<button class="hub-tile tone-' + (x.tone || 'teal') + '" data-action="page-open" data-key="' + x.key + '"' +
+    // Calm by default; coral only when the badge is a warning, so colour always means something.
+    return '<button class="hub-tile' + (b && b.tone === 'bad' ? ' alert' : '') + '" data-action="page-open" data-key="' + x.key + '"' +
       (x.tab ? ' data-tab="' + x.tab + '"' : '') + (x.viz ? ' data-viz="' + x.viz + '"' : '') + '>' +
-      '<span class="hub-icon"><svg viewBox="0 0 24 24" aria-hidden="true">' + (HUB_ICONS[x.icon] || '') + '</svg>' +
+      '<span class="hub-icon"><svg viewBox="0 0 24 24" fill-rule="evenodd" aria-hidden="true">' + (HUB_ICONS[x.icon] || '') + '</svg>' +
       (b && b.text ? '<span class="hub-badge' + (b.tone ? ' ' + b.tone : '') + '">' + b.text + '</span>' : '') + '</span>' +
       '<span class="hub-label">' + tr(x.label) + '</span></button>';
   }
@@ -831,6 +832,7 @@
       followBanner() +
       loanDebtNote() +
       '<section class="hero">' +
+      '<p class="greeting">' + greeting() + '</p>' +
       '<p class="coach-line">' + coachLine(z, r, streak, daysToPay) + '</p>' +
       limitCard(r, z, headline, sub) +
       (z.zone === 'red' ? redOptions(z, r) : '') +
@@ -853,7 +855,9 @@
       (adj ? '<div class="callout warn"><b>' + tr('Recovery plan active until {date}.', { date: fmtDate(adj.until, true) }) + '</b><span class="hint">' +
         [adj.flexCutPct ? tr('Flexible budgets are {pct}% lower.', { pct: adj.flexCutPct }) : '', adj.pauseInvest ? tr('The Grow budget is paused.') : '', adj.pauseDebtExtra ? tr('Extra debt payments are paused.') : '']
           .filter(Boolean).join(' ') + '</span></div>' : '') +
-      backupNudge();
+      backupNudge() +
+      weekChart(r) +
+      recentCard();
 
     // Live badges: what each icon would show if opened.
     const billsDue = (state.bills || []).filter((b) => (Number(b.estimate) || 0) > 0 && Core.billDue(b, cyc) && !Core.billPaidIn(state, b, cyc)).length;
@@ -2023,10 +2027,12 @@
   }
 
   function showVizTip(el) {
-    const tip = document.getElementById('viz-tip');
+    // The tip line in the same card (the weekly chart has its own).
+    const card = el.closest('.card, .viz-card');
+    const tip = (card && card.querySelector('.viz-tip')) || document.getElementById('viz-tip');
     if (!tip || !el.dataset.tip) return;
     tip.textContent = el.dataset.tip;
-    document.querySelectorAll('.viz-card [data-tip].on').forEach((x) => x.classList.remove('on'));
+    document.querySelectorAll('[data-tip].on').forEach((x) => x.classList.remove('on'));
     el.classList.add('on');
   }
 
@@ -2220,7 +2226,6 @@
       .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
     const spent = list.filter((x) => Core.isFlexible(x) || Core.isBillPayment(x)).reduce((s, x) => s + x.amount, 0);
     const received = list.filter(Core.isIncome).reduce((s, x) => s + x.amount, 0);
-    const shown = list.slice(0, 200);
     const moneyIn = ui.txKind === 'in';
     const saving = ui.txKind === 'save';
 
@@ -2257,35 +2262,29 @@
         { key: 'leaks', group: 'Your spending', icon: 'drop', label: 'Little leaks', tone: 'mint',
           badge: leakAsks ? { text: tr('{n} new', { n: leakAsks }), tone: 'bad' } : leaks.perMonth ? { text: shortInr(leaks.perMonth) } : null, html: () => leaksCard() },
         { key: 'payments', group: 'Records', icon: 'list', label: 'Payments', tone: 'teal', badge: { text: String(list.filter((x) => Core.inCycle(x.date, cyc)).length) },
-          html: () =>
-      '<section class="card"><div class="card-head">' + titled('Payments', 'payments') +
-      '<div class="seg" role="group" aria-label="' + tr('Show') + '"><button data-action="tx-filter" data-filter="cycle" aria-pressed="' + (ui.txFilter === 'cycle') + '">' + tr('This cycle') + '</button>' +
-      '<button data-action="tx-filter" data-filter="all" aria-pressed="' + (ui.txFilter === 'all') + '">' + tr('All') + '</button></div></div>' +
-      '<p class="hint">' + tr('{amount} spent', { amount: inr(spent) }) + (received ? ' · <span class="good">' + tr('{amount} received', { amount: inr(received) }) + '</span>' : '') + '</p>' +
-      (shown.length
-        ? '<div class="table-wrap"><table><thead><tr><th>' + tr('Payment') + '</th><th>' + tr('Category') + '</th><th class="amt">' + tr('Amount') + '</th><th><span class="sr">' + tr('Delete') + '</span></th></tr></thead><tbody>' +
-          shown.map((x) => {
-            const isIn = Core.isIncome(x);
-            if (Core.isMove(x) || Core.isBillPayment(x) || Core.isCardTransfer(x)) {
-              const kindLabel = tr(Core.isMove(x) ? INCOME_USE_LABELS[x.useFor] || 'Saved · choose where it counts' : x.kind === 'cardpay' ? 'Card bill paid from your account' : x.kind === 'cardconvert' ? 'Moved off the card to your loans' : 'Bill payment');
-              const change = Core.isMove(x) && x.useFor ? ' <button class="link" data-action="saved-change" data-id="' + esc(x.id) + '">' + tr('Change') + '</button>' : '';
-              return '<tr><td><div class="cell-title">' + esc(tr(x.note)) + '</div><div class="cell-sub">' + fmtDate(x.date) + ' · ' + kindLabel + change + '</div></td>' +
-                '<td>' + tr(Core.isMove(x) ? 'Saved' : Core.isCardTransfer(x) ? 'Card' : 'Bills') + '</td><td class="amt' + (Core.isMove(x) ? ' good' : '') + '">' + inr(x.amount) + '</td>' +
-                '<td><button class="icon" data-action="tx-delete" data-id="' + esc(x.id) + '" aria-label="' + tr('Delete') + '">✕</button></td></tr>';
-            }
-            const onCard = x.paidFrom && x.paidFrom !== 'account' ? (state.cards || []).find((c) => c.id === x.paidFrom) : null;
-            const sub = fmtDate(x.date) + (x.source === 'sms' ? ' · ' + tr('from SMS') : x.source === 'widget' ? ' · ' + tr('from widget') : '') +
-              (onCard ? ' · <span class="warn">' + tr('on {card}', { card: cardLabel(onCard) }) + '</span>' : x.paidFrom && x.paidFrom.indexOf('card:') === 0 ? ' · <span class="warn">' + tr('on a card') + '</span>' : '') +
-              (isIn ? ' · ' + (x.useFor ? tr(INCOME_USE_LABELS[x.useFor]) + ' <button class="link" data-action="income-change" data-id="' + esc(x.id) + '">' + tr('Change') + '</button>' : '<button class="link" data-action="income-change" data-id="' + esc(x.id) + '">' + tr('Choose what it does') + '</button>') : '');
-            return '<tr' + (x.needsReview ? ' class="needs-check"' : '') + '><td><div class="cell-title">' + esc(tr(x.note || (isIn ? 'Money received' : 'Payment'))) +
-              (x.needsReview ? ' <span class="chip chip-check">' + tr('Check') + '</span>' : '') + '</div><div class="cell-sub">' + sub + '</div></td>' +
-              '<td><select data-tx-cat="' + esc(x.id) + '" aria-label="' + tr('Category') + '">' + (isIn ? incomeCategoryOptions(x.category) : categoryOptions(x.category)) + '</select></td>' +
-              '<td class="amt' + (isIn ? ' good' : '') + '">' + (isIn ? '+' : '') + inr(x.amount) + '</td>' +
-              '<td><button class="icon" data-action="tx-delete" data-id="' + esc(x.id) + '" aria-label="' + tr('Delete') + '">✕</button></td></tr>';
-          }).join('') + '</tbody></table></div>' +
-          (list.length > shown.length ? '<p class="hint">' + tr('Showing the latest 200.') + '</p>' : '')
-        : '<p class="hint">' + tr('No payments yet.') + '</p>') +
-      '</section>' },
+          html: () => {
+            // Money out / in / saved, and search by shop or category.
+            const kind = ui.txShow || 'all';
+            const q = (ui.txSearch || '').trim().toLowerCase();
+            const rows = list.filter((x) => (kind === 'all' ||
+              (kind === 'in' && Core.isIncome(x)) || (kind === 'save' && Core.isMove(x)) ||
+              (kind === 'out' && !Core.isIncome(x) && !Core.isMove(x))) &&
+              (!q || (String(x.note || '') + ' ' + label(x.category || '')).toLowerCase().indexOf(q) !== -1));
+            const show = rows.slice(0, 200);
+            return '<section class="card payments-card"><div class="card-head">' + titled('Payments', 'payments') +
+              '<div class="seg" role="group" aria-label="' + tr('Show') + '"><button data-action="tx-filter" data-filter="cycle" aria-pressed="' + (ui.txFilter === 'cycle') + '">' + tr('This cycle') + '</button>' +
+              '<button data-action="tx-filter" data-filter="all" aria-pressed="' + (ui.txFilter === 'all') + '">' + tr('All') + '</button></div></div>' +
+              '<label class="search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg>' +
+              '<input id="tx-search" type="search" placeholder="' + tr('Search payments…') + '" value="' + esc(ui.txSearch || '') + '" aria-label="' + tr('Search payments…') + '"></label>' +
+              '<div class="pills" role="group" aria-label="' + tr('Type') + '">' + [['all', 'All'], ['out', 'Money out'], ['in', 'Money in'], ['save', 'Saved']].map((k) =>
+                '<button class="pill" data-action="tx-show" data-show="' + k[0] + '" aria-pressed="' + (kind === k[0]) + '">' + tr(k[1]) + '</button>').join('') + '</div>' +
+              '<p class="hint">' + tr('{amount} spent', { amount: inr(spent) }) + (received ? ' · <span class="good">' + tr('{amount} received', { amount: inr(received) }) + '</span>' : '') + '</p>' +
+              (show.length ? '<div class="tx-list">' + show.map((x) => txRow(x, true)).join('') + '</div>' +
+                (rows.length > show.length ? '<p class="hint">' + tr('Showing the latest 200.') + '</p>' : '')
+                : '<p class="hint">' + tr(q ? 'No payments match.' : 'No payments yet.') + '</p>') +
+              '</section>';
+          } },
+        { key: 'calendar', group: 'Records', icon: 'upcoming', label: 'Calendar', tone: 'teal', badge: null, html: () => calendarCard() },
         { key: 'bills', group: 'Records', icon: 'bill', label: 'Bills to pay', tone: 'teal',
           badge: (() => { const n = (state.bills || []).filter((b) => (Number(b.estimate) || 0) > 0 && Core.billDue(b, cyc) && !Core.billPaidIn(state, b, cyc)).length; return n ? { text: tr('{n} due', { n }), tone: 'bad' } : { text: '✓', tone: 'good' }; })(),
           html: () => billsCard() || '<section class="card"><h2>' + tr('Bills to pay') + '</h2><p class="hint">' + tr('No bills due before payday.') + '</p></section>' },
@@ -2623,6 +2622,149 @@
       ]);
   }
 
+  // ---------- category icons, weekly chart, payments, calendar ----------
+
+  // A solid glyph in a soft circle for each category. Never the warning colours (amber, coral): those stay for warnings.
+  const CAT_GLYPHS = {
+    cart: '<path d="M2.5 3.5h2.6l.6 2.5H21l-2 8.2a2 2 0 0 1-1.9 1.5H8.8a2 2 0 0 1-1.9-1.6L4.3 5.5H2.5z"/><circle cx="9.5" cy="19.5" r="1.7"/><circle cx="17" cy="19.5" r="1.7"/>',
+    food: '<path d="M6.5 2h1.3v6h.9V2H10v6h.9V2h1.3v7.2A2.5 2.5 0 0 1 10.6 11.6V22H8.4V11.6A2.5 2.5 0 0 1 6.5 9.2z"/><path d="M15.5 2c2.3 0 3.6 2.6 3.6 6.2 0 2.1-1 3.4-2.1 3.8V22h-2.2V2z"/>',
+    travel: '<path d="M5 11l1.6-4.4A2 2 0 0 1 8.5 5.3h7a2 2 0 0 1 1.9 1.3L19 11a2 2 0 0 1 2 2v4.5a1 1 0 0 1-1 1h-1.2a2.3 2.3 0 0 1-4.5 0H9.7a2.3 2.3 0 0 1-4.5 0H4a1 1 0 0 1-1-1V13a2 2 0 0 1 2-2zm2.2 0h9.6l-1.2-3.4a.8.8 0 0 0-.7-.5H9.1a.8.8 0 0 0-.7.5z"/>',
+    bag: '<path d="M8 7V6a4 4 0 0 1 8 0v1h3l1 14H4L5 7zm2 0h4V6a2 2 0 0 0-4 0z"/>',
+    ticket: '<path d="M3 7a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v2.5a2.5 2.5 0 0 0 0 5V17a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-2.5a2.5 2.5 0 0 0 0-5zm6 1v1.8h2V8zm0 3.1v1.8h2v-1.8zm0 3.1V16h2v-1.8z"/>',
+    heart: '<path d="M12 21s-8.5-5.2-8.5-11.2A4.8 4.8 0 0 1 12 6.9a4.8 4.8 0 0 1 8.5 2.9C20.5 15.8 12 21 12 21z"/>',
+    drop: '<path d="M12 2c3.6 4.7 6.5 8.2 6.5 11.5a6.5 6.5 0 0 1-13 0C5.5 10.2 8.4 6.7 12 2z"/>',
+    dots: '<circle cx="5" cy="12" r="2.2"/><circle cx="12" cy="12" r="2.2"/><circle cx="19" cy="12" r="2.2"/>',
+    bolt: '<path d="M13.5 2L4 13.5h6.5L9 22l11-12.5h-6.7z"/>',
+    save: '<path d="M12 2l8.5 3.2V11c0 5.3-3.5 9.7-8.5 11.2C7 20.7 3.5 16.3 3.5 11V5.2zm-1.1 13.3l5.8-5.8-1.4-1.4-4.4 4.4-2.1-2.1-1.4 1.4z"/>',
+    cash: '<path d="M2 6h20v12H2zm10 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/>',
+    alert: '<path d="M12 2.5l10 18H2zm-1 6.5v5h2V9zm0 7v2h2v-2z"/>',
+    in: '<path d="M10.9 3h2.2v9.3l3.4-3.4 1.5 1.5-6 6-6-6 1.5-1.5 3.4 3.4zM4 18.5h16V21H4z"/>',
+    card: '<path d="M2 6a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v2H2zm0 4h20v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2zm3 5v1.6h5V15z"/>',
+    tag: '<path d="M3 3h8.6l9.4 9.4-8.6 8.6L3 11.6zm4.5 6a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3z"/>',
+  };
+  const CAT_LOOK = {
+    Groceries: ['cart', 'aqua'], 'Food & dining': ['food', 'magenta'], Travel: ['travel', 'blue'], Shopping: ['bag', 'violet'],
+    Entertainment: ['ticket', 'green'], Health: ['heart', 'blue'], 'Personal care': ['drop', 'magenta'], Misc: ['dots', 'grey'],
+    Bills: ['bolt', 'teal'], Savings: ['save', 'green'], Cash: ['cash', 'grey'], Emergency: ['alert', 'coral'],
+  };
+
+  function catIcon(x) {
+    let look = CAT_LOOK[x.category] || ['tag', 'grey'];
+    if (Core.isIncome(x)) look = ['in', 'green'];
+    else if (Core.isMove(x)) look = ['save', 'green'];
+    else if (Core.isCardTransfer(x)) look = ['card', 'teal'];
+    else if (Core.isBillPayment(x)) look = ['bolt', 'teal'];
+    return '<span class="cat-icon c-' + look[1] + '"><svg viewBox="0 0 24 24" fill-rule="evenodd" aria-hidden="true">' + CAT_GLYPHS[look[0]] + '</svg></span>';
+  }
+
+  function txTitle(x) {
+    return esc(tr(x.note || (Core.isIncome(x) ? 'Money received' : x.category || 'Payment')));
+  }
+
+  // One payment as a row: icon, what and when, amount. In: green with +. Out: plain ink (red stays for warnings).
+  function txRow(x, edit) {
+    const isIn = Core.isIncome(x);
+    const saved = Core.isMove(x);
+    const onCard = x.paidFrom && x.paidFrom !== 'account' ? (state.cards || []).find((c) => c.id === x.paidFrom) : null;
+    const cat = edit && !saved && !Core.isBillPayment(x) && !Core.isCardTransfer(x)
+      ? '<select data-tx-cat="' + esc(x.id) + '" aria-label="' + tr('Category') + '">' + (isIn ? incomeCategoryOptions(x.category) : categoryOptions(x.category)) + '</select>'
+      : esc(label(saved ? 'Saved' : Core.isCardTransfer(x) ? 'Card' : Core.isBillPayment(x) ? 'Bills' : x.category || ''));
+    const sub = cat + ' · ' + fmtDate(x.date) +
+      (x.source === 'sms' ? ' · ' + tr('from SMS') : x.source === 'widget' ? ' · ' + tr('from widget') : '') +
+      (onCard ? ' · <span class="warn">' + tr('on {card}', { card: cardLabel(onCard) }) + '</span>' : '');
+    const extra = edit && isIn
+      ? ' <button class="link" data-action="income-change" data-id="' + esc(x.id) + '">' + tr(x.useFor ? INCOME_USE_LABELS[x.useFor] : 'Choose what it does') + '</button>'
+      : edit && saved && x.useFor ? ' <button class="link" data-action="saved-change" data-id="' + esc(x.id) + '">' + tr('Change') + '</button>' : '';
+    return '<div class="tx-row' + (x.needsReview ? ' needs-check' : '') + '">' + catIcon(x) +
+      '<div class="tx-main"><div class="tx-title">' + txTitle(x) + (x.needsReview ? ' <span class="chip chip-check">' + tr('Check') + '</span>' : '') + '</div>' +
+      '<div class="tx-sub">' + sub + extra + '</div></div>' +
+      '<div class="tx-side"><span class="tx-amt' + (isIn || saved ? ' good' : '') + '">' + (isIn ? '+' : '') + inr(x.amount) + '</span>' +
+      (edit ? '<button class="icon tx-del" data-action="tx-delete" data-id="' + esc(x.id) + '" aria-label="' + tr('Delete') + '">✕</button>' : '') + '</div></div>';
+  }
+
+  function recentCard() {
+    const latest = state.transactions.slice().sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0)).slice(0, 4);
+    if (!latest.length) return '';
+    return '<section class="card recent-card"><div class="card-head"><h2>' + tr('Recent payments') + '</h2>' +
+      '<button class="link" data-action="page-open" data-tab="spend" data-key="payments">' + tr('See all') + '</button></div>' +
+      '<div class="tx-list">' + latest.map((x) => txRow(x, false)).join('') + '</div></section>';
+  }
+
+  // This week, day by day: spent against each day's limit. Over the limit shows in coral, with "over" written on it.
+  function weekChart(r) {
+    const t = today();
+    const days = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = Core.addDays(t, -i);
+      const rec = state.days && state.days[d];
+      const limit = d === t ? Math.round(r.dailyAllowance) : rec ? rec.allowance : null;
+      days.push({ d, spent: Math.round(Core.daySpending(state, d)), limit });
+    }
+    const max = Math.max(1, ...days.map((x) => Math.max(x.spent, x.limit || 0)));
+    const within = days.filter((x) => x.limit !== null && x.spent <= x.limit && x.d !== t).length;
+    const tracked = days.filter((x) => x.limit !== null && x.d !== t).length;
+    const wd = (d) => Core.parseISO(d).toLocaleDateString(I18N.locale(), { weekday: 'short' });
+    const bars = days.map((x) => {
+      const over = x.limit !== null && x.spent > x.limit;
+      const tip = tr(x.limit !== null ? '{day}: {spent} spent of a {limit} limit' : '{day}: {spent} spent', { day: wd(x.d) + ' ' + fmtDate(x.d), spent: inr(x.spent), limit: inr(x.limit || 0) }) +
+        (over ? ' · ' + tr('{amount} over', { amount: inr(x.spent - x.limit) }) : '');
+      return '<button class="wk-col' + (x.d === t ? ' today' : '') + '" data-action="viz-tip" data-tip="' + esc(tip) + '" aria-label="' + esc(tip) + '">' +
+        '<span class="wk-plot">' +
+        (x.limit !== null ? '<span class="wk-limit" style="bottom:' + ((x.limit / max) * 100).toFixed(1) + '%"></span>' : '') +
+        '<span class="wk-bar' + (over ? ' over' : '') + '" style="height:' + Math.max(x.spent ? 3 : 0, (x.spent / max) * 100).toFixed(1) + '%">' + (over ? '<i>' + tr('over') + '</i>' : '') + '</span></span>' +
+        '<span class="wk-day">' + wd(x.d) + '</span></button>';
+    }).join('');
+    return '<section class="card week-chart"><div class="card-head"><h2>' + tr('This week') + '</h2>' +
+      (tracked ? '<span class="hint">' + tr('{n} of {total} days within the limit', { n: within, total: tracked }) + '</span>' : '') + '</div>' +
+      '<div class="wk-grid">' + bars + '</div>' +
+      '<div class="viz-legend"><span><i class="wk-key"></i>' + tr('Spent') + '</span><span><i class="over"></i>' + tr('Over the limit') + '</span><span><i class="tick"></i>' + tr('That day’s limit') + '</span></div>' +
+      '<p class="viz-tip" aria-live="polite">' + tr('Tap a day to see its numbers.') + '</p>' +
+      numbersTable([tr('Day'), tr('Spent'), tr('Limit')], days.map((x) => [wd(x.d) + ' ' + fmtDate(x.d), inr(x.spent), x.limit !== null ? inr(x.limit) : '–'])) +
+      '</section>';
+  }
+
+  // A month as a calendar: each day's spending (coral when over that day's limit) and money in; tap a day for its payments.
+  function calendarCard() {
+    const t = today();
+    const month = ui.calMonth || t.slice(0, 7) + '-01';
+    const first = Core.parseISO(month);
+    const y = first.getFullYear();
+    const m = first.getMonth();
+    const daysIn = new Date(y, m + 1, 0).getDate();
+    const lead = (first.getDay() + 6) % 7; // Monday first
+    const pick = ui.calDay && ui.calDay.slice(0, 7) === month.slice(0, 7) ? ui.calDay : (t.slice(0, 7) === month.slice(0, 7) ? t : month);
+    const cells = [];
+    for (let i = 0; i < lead; i++) cells.push('<span class="mcal-cell blank"></span>');
+    for (let dnum = 1; dnum <= daysIn; dnum++) {
+      const d = y + '-' + String(m + 1).padStart(2, '0') + '-' + String(dnum).padStart(2, '0');
+      const spent = Math.round(Core.daySpending(state, d));
+      const inAmt = state.transactions.filter((x) => Core.isIncome(x) && x.date === d).reduce((a, x) => a + x.amount, 0);
+      const rec = state.days && state.days[d];
+      const over = rec && spent > rec.allowance;
+      cells.push('<button class="mcal-cell' + (d === pick ? ' on' : '') + (d === t ? ' today' : '') + (d > t ? ' future' : '') + '" data-action="cal-day" data-day="' + d + '">' +
+        '<b>' + dnum + '</b>' +
+        (inAmt ? '<small class="in">+' + shortInr(inAmt).replace('₹', '') + '</small>' : '') +
+        (spent ? '<small class="' + (over ? 'over' : rec ? 'won' : '') + '">' + shortInr(spent).replace('₹', '') + '</small>' : '') + '</button>');
+    }
+    const heads = [0, 1, 2, 3, 4, 5, 6].map((i) => new Date(2024, 0, 1 + i).toLocaleDateString(I18N.locale(), { weekday: 'narrow' }));
+    const list = state.transactions.filter((x) => x.date === pick);
+    const prev = Core.addMonths(month, -1);
+    const next = Core.addMonths(month, 1);
+    return '<section class="card mcal-card"><div class="mcal-nav">' +
+      '<button class="icon" data-action="cal-month" data-month="' + prev + '" aria-label="' + tr('Previous month') + '">‹</button>' +
+      '<b>' + first.toLocaleDateString(I18N.locale(), { month: 'long', year: 'numeric' }) + '</b>' +
+      '<button class="icon" data-action="cal-month" data-month="' + next + '" aria-label="' + tr('Next month') + '"' + (next > t ? ' disabled' : '') + '>›</button></div>' +
+      '<div class="mcal-grid">' + heads.map((h) => '<span class="mcal-head">' + h + '</span>').join('') + cells.join('') + '</div>' +
+      '<div class="viz-legend"><span><i class="wk-key"></i>' + tr('Within the limit') + '</span><span><i class="over"></i>' + tr('Over the limit') + '</span><span><i class="in-key"></i>' + tr('Money in') + '</span></div></section>' +
+      '<section class="card"><div class="card-head"><h2>' + fmtDate(pick) + '</h2><span class="hint">' + plural(list.length, 'payment') + '</span></div>' +
+      (list.length ? '<div class="tx-list">' + list.map((x) => txRow(x, true)).join('') + '</div>' : '<p class="hint">' + tr('Nothing recorded on this day.') + '</p>') + '</section>';
+  }
+
+  function greeting() {
+    const h = new Date().getHours();
+    return tr(h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening');
+  }
+
   // ---------- profile: appearance, language, lock, privacy, data, tour, about ----------
 
   const THEMES = [['', 'Same as phone'], ['light', 'Light'], ['dark', 'Dark']];
@@ -2858,7 +3000,7 @@
         (c === 'w' ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12l4 4 10-10" stroke="currentColor" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>' : '') + '</span>').join('') + '</div>';
     }
     if (kind === 'debt') return '<ol class="journey-steps tour-steps"><li class="done"><span class="js-dot">✓</span>' + tr('Survive') + '</li><li class="now"><span class="js-dot">2</span>' + tr('Stabilize') + '</li><li><span class="js-dot">3</span>' + tr('Escape') + '</li></ol>';
-    return '<span class="hub-icon tour-lock"><svg viewBox="0 0 24 24" aria-hidden="true">' + HUB_ICONS.lock + '</svg></span>';
+    return '<span class="hub-icon tour-lock"><svg viewBox="0 0 24 24" fill-rule="evenodd" aria-hidden="true">' + HUB_ICONS.lock + '</svg></span>';
   }
 
   function tourModal() {
@@ -3818,6 +3960,18 @@
     if (el) el.focus();
   }
 
+  let searchTimer;
+  document.addEventListener('input', (ev) => {
+    if (ev.target.id !== 'tx-search') return;
+    ui.txSearch = ev.target.value;
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => {
+      rerenderKeepScroll();
+      const el = document.getElementById('tx-search');
+      if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); }
+    }, 200);
+  });
+
   document.addEventListener('click', (ev) => {
     if (ev.target.classList && ev.target.classList.contains('help-overlay')) {
       ui.helpFrom = ui.help; ui.help = null; rerenderKeepScroll(); return;
@@ -3836,6 +3990,9 @@
         }
         openPage(btn.dataset.tab || tab, btn.dataset.key);
         return;
+      case 'tx-show': ui.txShow = btn.dataset.show; break;
+      case 'cal-day': ui.calDay = btn.dataset.day; break;
+      case 'cal-month': ui.calMonth = btn.dataset.month; ui.calDay = null; break;
       case 'page-back':
         if (history.state && history.state.page) history.back(); else closePage();
         return;

@@ -926,3 +926,118 @@ details.prep ul { margin: 6px 0 0; padding-left: 20px; color: var(--muted); font
 .tour-lock { width: 84px; height: 84px; border-radius: 26px; }
 .tour-lock svg { width: 40px; height: 40px; }
 .topbar .privacy-chip { margin-left: auto; }
+
+/* ---------- Polish borrowed from calm apps, without losing our warning colours ---------- */
+
+/* Hero card: soft light rays from the top right, in every zone colour. */
+.runway-card::before {
+  right: 0; top: 0; width: 75%; height: 100%; border-radius: 0; opacity: 1;
+  background: repeating-conic-gradient(from 180deg at 100% 0%, rgba(255, 255, 255, 0.14) 0deg 2.5deg, transparent 2.5deg 9deg);
+  -webkit-mask-image: radial-gradient(circle at 100% 0%, #000 0%, transparent 72%);
+  mask-image: radial-gradient(circle at 100% 0%, #000 0%, transparent 72%);
+}
+.runway-card > * { position: relative; z-index: 1; }
+.greeting { font-size: 0.85rem; font-weight: 650; color: var(--muted); letter-spacing: 0.02em; margin-bottom: -6px; }
+
+/* Icons: solid glyphs. Calm teal on a soft tile; coral only when something needs you. */
+.hub-icon { background: var(--surface-2); color: var(--accent); border-radius: 20px; width: 58px; height: 58px; }
+.hub-icon svg { width: 28px; height: 28px; fill: currentColor; stroke: none; }
+.tone-mint .hub-icon, .tone-amber .hub-icon, .tone-coral .hub-icon { background: var(--surface-2); color: var(--accent); }
+.hub-tile.alert .hub-icon { background: var(--bad-soft); color: var(--bad); }
+.settings-icon svg { fill: currentColor; stroke: none; }
+.settings-icon.alert { background: var(--bad-soft); color: var(--bad); }
+.tour-lock svg { fill: currentColor; stroke: none; }
+
+/* Category icons: a solid glyph in a soft circle. */
+.cat-icon { --c: #6b7b7c; width: 42px; height: 42px; flex: none; border-radius: 50%; display: grid; place-items: center; color: var(--c); background: color-mix(in srgb, var(--c) 15%, transparent); }
+.cat-icon svg { width: 21px; height: 21px; fill: currentColor; }
+.cat-icon.c-aqua { --c: #12936a; }
+.cat-icon.c-magenta { --c: #c2407a; }
+.cat-icon.c-blue { --c: #2a78d6; }
+.cat-icon.c-violet { --c: #6250d6; }
+.cat-icon.c-green { --c: #0b7a3a; }
+.cat-icon.c-teal { --c: #0c3b3d; }
+.cat-icon.c-coral { --c: var(--bad); }
+.cat-icon.c-grey { --c: #6b7b7c; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .cat-icon.c-aqua { --c: #3fd3a0; }
+  :root:not([data-theme="light"]) .cat-icon.c-magenta { --c: #ef8fb6; }
+  :root:not([data-theme="light"]) .cat-icon.c-blue { --c: #6aa8f0; }
+  :root:not([data-theme="light"]) .cat-icon.c-violet { --c: #a99cf2; }
+  :root:not([data-theme="light"]) .cat-icon.c-green { --c: #5ccf7f; }
+  :root:not([data-theme="light"]) .cat-icon.c-teal { --c: #79e3c3; }
+  :root:not([data-theme="light"]) .cat-icon.c-grey { --c: #a9bdba; }
+}
+:root[data-theme="dark"] .cat-icon.c-aqua { --c: #3fd3a0; }
+:root[data-theme="dark"] .cat-icon.c-magenta { --c: #ef8fb6; }
+:root[data-theme="dark"] .cat-icon.c-blue { --c: #6aa8f0; }
+:root[data-theme="dark"] .cat-icon.c-violet { --c: #a99cf2; }
+:root[data-theme="dark"] .cat-icon.c-green { --c: #5ccf7f; }
+:root[data-theme="dark"] .cat-icon.c-teal { --c: #79e3c3; }
+:root[data-theme="dark"] .cat-icon.c-grey { --c: #a9bdba; }
+
+/* Payments as rows. */
+.tx-list { display: grid; gap: 8px; }
+.tx-row { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 16px; background: var(--bg); }
+.tx-row.needs-check { box-shadow: inset 0 0 0 2px var(--caution); }
+.tx-main { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.tx-title { font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tx-sub { font-size: 0.8rem; color: var(--muted); display: flex; flex-wrap: wrap; align-items: center; gap: 2px 4px; }
+.tx-sub select { font-size: 0.8rem; padding: 2px 6px; min-height: 0; max-width: 150px; }
+.tx-side { display: grid; justify-items: end; gap: 2px; }
+.tx-amt { font-family: var(--font-display); font-weight: 750; font-size: 1.02rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.tx-amt.good { color: var(--good); }
+.tx-del { padding: 2px 6px; font-size: 0.8rem; min-height: 0; color: var(--muted); }
+.recent-card, .payments-card { display: grid; gap: 12px; }
+.link { background: none; border: 0; padding: 0; color: var(--accent); font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
+
+/* Search and pill filters. */
+.search { display: flex; align-items: center; gap: 8px; background: var(--surface-2); border-radius: 14px; padding: 4px 12px; }
+.search svg { width: 18px; height: 18px; flex: none; fill: none; stroke: var(--muted); stroke-width: 2; stroke-linecap: round; }
+.search input { border: 0; background: transparent; box-shadow: none; flex: 1; min-width: 0; padding: 8px 0; }
+.search input:focus { outline: none; }
+.search:focus-within { box-shadow: 0 0 0 2px var(--ink); }
+.pills { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; }
+.pill { border-radius: 99px; padding: 7px 14px; font-size: 0.85rem; font-weight: 650; white-space: nowrap; background: var(--surface-2); border: 0; color: var(--muted); }
+.pill[aria-pressed="true"] { background: var(--ink); color: var(--surface); }
+
+/* This week: spent against each day's limit. */
+.week-chart { display: grid; gap: 12px; }
+.wk-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; height: 150px; }
+.wk-col { display: grid; grid-template-rows: 1fr auto; gap: 6px; background: none; border: 0; padding: 0; min-width: 0; cursor: pointer; }
+.wk-plot { position: relative; display: flex; align-items: flex-end; justify-content: center; }
+.wk-bar { width: 70%; max-width: 34px; background: var(--accent); border-radius: 4px 4px 0 0; position: relative; display: flex; justify-content: center; }
+.wk-bar.over { background: var(--coral); }
+.wk-bar i { position: absolute; top: -17px; font-style: normal; font-size: 0.62rem; font-weight: 800; color: var(--bad); text-transform: uppercase; letter-spacing: 0.04em; }
+.wk-limit { position: absolute; left: 4%; right: 4%; height: 0; border-top: 2px dashed var(--ink); opacity: 0.55; z-index: 1; }
+.wk-day { font-size: 0.72rem; color: var(--muted); text-align: center; }
+.wk-col.today .wk-day { color: var(--ink); font-weight: 800; }
+.wk-col.on .wk-bar { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--ink); }
+.viz-legend i.wk-key { background: var(--accent); }
+.viz-legend i.in-key { background: var(--good); }
+
+/* Calendar: each day's spending, coral when over that day's limit. */
+.mcal-card { display: grid; gap: 12px; }
+.mcal-nav { display: flex; align-items: center; justify-content: space-between; background: var(--bg); border-radius: 14px; padding: 4px; }
+.mcal-nav b { font-family: var(--font-display); font-size: 1.05rem; }
+.mcal-nav .icon { font-size: 1.4rem; line-height: 1; padding: 6px 12px; }
+.mcal-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px 2px; }
+.mcal-head { font-size: 0.72rem; color: var(--muted); text-align: center; padding-bottom: 4px; }
+.mcal-cell { display: grid; justify-items: center; align-content: start; gap: 1px; min-height: 52px; padding: 6px 0 4px; border: 0; border-radius: 12px; background: none; font: inherit; color: var(--ink); cursor: pointer; }
+.mcal-cell.blank { cursor: default; }
+.mcal-cell b { font-size: 0.92rem; font-weight: 650; width: 28px; height: 28px; display: grid; place-items: center; border-radius: 50%; }
+.mcal-cell.today b { box-shadow: inset 0 0 0 2px var(--ink); }
+.mcal-cell.on b { background: var(--ink); color: var(--surface); }
+.mcal-cell.future { opacity: 0.4; }
+.mcal-cell small { font-size: 0.66rem; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--muted); }
+.mcal-cell small.won { color: var(--accent); }
+.mcal-cell small.over { color: var(--bad); }
+.mcal-cell small.in { color: var(--good); }
+
+/* Bigger numbers, more room. */
+.card { padding: 18px; }
+.tile-value { font-size: 1.5rem; }
+.wk-grid { padding-top: 20px; height: 170px; }
+.tx-row .tx-sub select { font-size: 0.8rem; padding: 2px 22px 2px 8px; min-height: 0; height: auto; width: auto; max-width: 160px; border-radius: 8px; background-position: right 6px center; }
+.tx-row .tx-del { border: 0; background: none; box-shadow: none; padding: 4px; min-height: 0; min-width: 0; width: auto; height: auto; font-size: 0.85rem; color: var(--muted); }
+.tx-sub > * { flex: none; }

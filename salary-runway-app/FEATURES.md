@@ -27,6 +27,19 @@ Everything the app can do today, screen by screen, with the rules it follows. Fo
 
 ---
 
+## Look and feel
+- **Colour means something.** Screens stay calm cream and teal. The zone colours (green, careful, red), coral warnings and badges appear only when something needs you, so a red card can't be missed. Category colours never use amber or coral.
+- **Solid icons:**
+  - The grid icons are filled glyphs on a soft tile. A tile turns coral only when its badge is a warning (*2 due*, *3 over*).
+  - Payments show a category icon in a soft circle: cart for Groceries, fork and knife for Food & dining, car for Travel, and so on. Money in and saved show in green.
+- **Runway extras:**
+  - a greeting (*Good morning*)
+  - soft light rays on the hero card, in every zone colour
+  - **This week:** a bar per day against that day's limit (dashed). A day over the limit is coral with *OVER* written on it; tap a day for its numbers, or see them as a table.
+  - **Recent payments:** the latest four, with *See all*
+- **Payments** (Spend → Records): rows with icon, name, category and date, and the amount. You can search by shop or category, and filter with pills: *All, Money out, Money in, Saved*. The category can still be changed, and a payment deleted, from the row.
+- **Calendar** (Spend → Records): each day of the month shows what was spent, coral when over that day's limit, and money in, in green. Tap a day to see and edit its payments. Previous and next month are one tap away.
+
 ## Profile, tour and app lock
 
 ### Profile (the round button at the top right)
