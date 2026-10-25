@@ -286,7 +286,9 @@
   // Paying a card bill, or moving a card balance to a loan, only moves money
   // between your account and the card: the spending was counted when it happened.
   function isCardTransfer(t) { return t.kind === 'cardpay' || t.kind === 'cardconvert'; }
-  function isFlexible(t) { return !isIncome(t) && !isMove(t) && !isBillPayment(t) && !isCardTransfer(t); }
+  // Money moved between your own wallets (bank to cash at an ATM, bank to Paytm): neither spending nor income.
+  function isTransfer(t) { return t.kind === 'transfer'; }
+  function isFlexible(t) { return !isIncome(t) && !isMove(t) && !isBillPayment(t) && !isCardTransfer(t) && !isTransfer(t); }
 
   function spendInRange(transactions, cycle) {
     return transactions.filter((t) => isFlexible(t) && inCycle(t.date, cycle));
@@ -1801,6 +1803,37 @@
     };
   }
 
+  // ---------- wallets ----------
+
+  /*
+   * Where the money sits. Each wallet other than the main bank account starts
+   * from its own count ("balance this morning", or ₹0 when it was added) and
+   * moves with what is paid from it, received into it and moved between
+   * wallets. The main account is what's left of the total once the other
+   * wallets are counted, so the parts always add up to the total.
+   * morning: leave out today's entries (the balances as the day began).
+   */
+  function walletBalances(state, todayIso, total, morning) {
+    const wallets = (state.wallets || []).map((w) => {
+      const from = w.check ? w.check.date : w.created || '0000-00-00';
+      let bal = w.check ? Number(w.check.amount) || 0 : 0;
+      state.transactions.forEach((t) => {
+        if (t.date < from || t.date > todayIso || (morning && t.date >= todayIso)) return;
+        if (isTransfer(t)) {
+          if (t.to === w.id) bal += t.amount;
+          if (t.from === w.id) bal -= t.amount;
+          return;
+        }
+        if (t.wallet !== w.id) return;
+        if (isIncome(t)) bal += incomeKept(t);
+        else if (isFlexible(t) && !(t.paidFrom && t.paidFrom !== 'account')) bal -= t.amount;
+        else if (isMove(t) || isBillPayment(t) || t.kind === 'cardpay') bal -= t.amount;
+      });
+      return { id: w.id, name: w.name, kind: w.kind, last4: w.last4 || '', balance: Math.round(bal) };
+    });
+    return { main: Math.round((Number(total) || 0) - sum(wallets, (w) => w.balance)), wallets };
+  }
+
   // ---------- round result and weekly recap ----------
 
   // Spent and saved on a day: saved money can't be spent either. Emergencies don't count against the day.
@@ -2213,7 +2246,7 @@
       const cards = {};
       (state.cards || []).forEach((c) => { cards[c.id] = c.name + ' card'; });
       const type = (t) => (isIncome(t) ? (t.borrowed ? 'Money in (borrowed)' : 'Money in') : isMove(t) ? 'Saved to ' + (USE_NAMES[t.useFor] || 'savings')
-        : isBillPayment(t) ? 'Bill' : t.kind === 'cardpay' ? 'Card bill paid' : t.kind === 'cardconvert' ? 'Card balance to EMI' : 'Spent');
+        : isBillPayment(t) ? 'Bill' : t.kind === 'cardpay' ? 'Card bill paid' : t.kind === 'cardconvert' ? 'Card balance to EMI' : isTransfer(t) ? 'Moved between my wallets' : 'Spent');
       out.push('');
       out.push('### Every entry (' + f.txs.length + ')');
       out.push(table(['Date', 'Type', 'Amount', 'Category', 'Note', 'Paid from'], f.txs.slice().sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0)).map((t) => [
@@ -2506,6 +2539,9 @@
       return { type: 'cardpayment', amount, last4: cardLast4(t), merchant: 'Card bill payment', category: 'Bills', date: parseSmsDate(t, todayIso), raw: t };
     }
     const isDebit = /\b(debited|spent|paid|sent|withdrawn|purchase|debit|payment of)\b/i.test(t);
+    // Cash taken out at an ATM, and the account it came from (a/c XX1234), so it lands in the right wallet.
+    const atm = /\batm\b|cash\s*withdraw|cash\s*wdl|withdrawn\s+at/i.test(t);
+    const acct = (t.match(/\ba\/?c(?:count)?\.?\s*(?:no\.?\s*)?[x*.]*\s*[x*.]*(\d{3,4})\b/i) || [])[1] || null;
     const isCredit = /\b(credited|received|deposited|refund(?:ed)?)\b/i.test(t);
     if (!isDebit && !isCredit) return null;
     const type = isDebit ? 'debit' : 'credit';
@@ -2521,7 +2557,7 @@
         date: parseSmsDate(t, todayIso),
         category: /refund|reversal|reversed|cashback/i.test(t) ? 'Refund' : 'Money received',
         salary: /\bsal(ary)?\b|payroll/i.test(t),
-        paidFrom, last4,
+        paidFrom, last4, acct,
         raw: t,
       };
     }
@@ -2530,8 +2566,8 @@
       amount,
       merchant: merchant || 'Bank payment',
       date: parseSmsDate(t, todayIso),
-      category: categorize(merchant || t, rules),
-      paidFrom, last4,
+      category: atm ? 'Cash' : categorize(merchant || t, rules),
+      paidFrom, last4, acct, atm: atm && !onCard,
       raw: t,
     };
   }
@@ -2568,7 +2604,7 @@
     recordCardPayment, convertCardBalance, answerCardDue, cardLateFee, cardRate, CARD_RATE, undoCardConvert, cardFreeDays, byCategory, DEFAULT_SPLIT,
     isLoanCredit, borrowedThisCycle, borrowCheck, rolloverOptions, personal, investPlan, sipValue, ASSUMED_RETURN, setTranslator,
     payoffOrder, tickDebts, debtJourney, lenderTasks, lastBorrowed,
-    encryptBackup, openBackup, backupInfo, toB64, fromB64,
+    encryptBackup, openBackup, backupInfo, toB64, fromB64, isTransfer, walletBalances,
     daySpent, daySpending, dayTally, roundSnapshot, roundResult, weekRecap,
     monthReport, aiReport, LEAKS, leakNames, leakOf, leakSummary, leakSuggestions, spendWhere, spendWhen, spendTrend, BASICS,
   };

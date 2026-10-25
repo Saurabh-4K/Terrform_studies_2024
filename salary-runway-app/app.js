@@ -483,6 +483,11 @@
       'Each card shows the bill, the due date and how much of the limit you’re using.',
       '<b>Pay in full</b> whenever you can: no interest. The minimum keeps most of the interest running. EMI is suggested only when you can’t pay in full and it’s clearly cheaper.',
     ]],
+    wallets: ['Wallets', [
+      'Where your money sits: your main bank account, other banks, cash and UPI wallets like Paytm. Today’s limit still uses all of it together.',
+      '<b>Moving money</b> between wallets (an ATM withdrawal, topping up Paytm) is never spending. With a <b>Cash</b> wallet, an ATM withdrawal moves money into it, and what you note as spent in cash comes out of it.',
+      'Add the last 4 digits of a bank account and its SMS go to that wallet by themselves. <b>Update balances</b> with what your bank apps and purse show at the start of the day: together they are where the runway starts.',
+    ]],
     journey: ['Your way out of debt', [
       'Three stages. <b>Survive:</b> pay the basics and every minimum without borrowing more. <b>Stabilize:</b> build a cushion of 7 Days of Freedom. <b>Escape:</b> clear the loans, one at a time.',
       'There’s always a next move, in your own numbers. When the salary is short, it’s closing the gap in small steps, never skipping rent, food, medicine, school fees or a minimum payment.',
@@ -901,7 +906,7 @@
             ' · <button class="link" data-action="balance-open">' + tr('Update') + '</button>') +
           tile('Flexible spending', inr(flexSpent), tr('of {amount} budget', { amount: inr(Math.round((r.plan.flexTotal * share) / 10) * 10) }) +
             (r.extraIn ? ' ' + tr('+ {amount} received', { amount: inr(r.extraIn) }) : '') + (r.anchor ? ' ' + tr('since {date}', { date: fmtDate(r.anchor.date) }) : '')) +
-          '</section>' },
+          '</section>' + ((state.wallets || []).length ? walletsCard() : '<p class="hint">' + tr('Keep cash, a second bank or Paytm apart? Add wallets in Plan → Wallets.') + '</p>') },
       { key: 'debtfree', group: 'Money', icon: 'flag', label: 'Debt-free date', tone: 'teal', hide: !dfd, badge: dfd ? { text: dfd.plan.never ? '!' : monthYear(dfd.plan.date), tone: dfd.plan.never ? 'bad' : '' } : null, html: () => debtFreeCard() },
       { key: 'cards', group: 'Money', icon: 'card', label: 'Credit cards', tone: 'teal', tab: 'debts', hide: !(state.cards || []).length, badge: cardsDue ? { text: tr('{n} due', { n: cardsDue }), tone: 'bad' } : (state.cards || []).length ? { text: String(state.cards.length) } : null, html: () => '' },
     ]);
@@ -1806,7 +1811,7 @@
       '<span class="hint">' + tr(firstTime
         ? 'The app can’t see what you spent before you started. Enter your bank balance as it was at the start of today, and the graph will start from there. Add any spending from today after this.'
         : 'Check your bank app and enter the balance from the start of today. The graph starts again from this amount, which covers cash and anything not recorded.') + '</span>' +
-      '<div class="row"><label class="field grow-field" for="balance-amount"><span>' + tr('Balance this morning (₹)') + '</span><input id="balance-amount" type="number" inputmode="numeric" min="0" step="1" required value="' + esc(current) + '" placeholder="12500"></label></div>' +
+      '<div class="row"><label class="field grow-field" for="balance-amount"><span>' + tr((state.wallets || []).length ? 'All your money this morning, every wallet together (₹)' : 'Balance this morning (₹)') + '</span><input id="balance-amount" type="number" inputmode="numeric" min="0" step="1" required value="' + esc(current) + '" placeholder="12500"></label></div>' +
       '<div class="row"><button class="primary" type="submit">' + tr('Save balance') + '</button>' +
       '<button type="button" class="ghost" data-action="balance-skip">' + tr(firstTime ? 'Not now' : 'Cancel') + '</button></div></form>';
   }
@@ -2249,9 +2254,12 @@
       '<label class="field">' + tr('Category') + '<select id="tx-category">' + (moneyIn ? incomeCategoryOptions('Money received') : categoryOptions('Food & dining')) + '</select></label>' +
       '<label class="field">' + tr('Date') + '<input id="tx-date" type="date" value="' + t + '" max="' + t + '" required></label>' +
       '<label class="field">' + tr(moneyIn ? 'From' : 'Where / what') + '<input id="tx-note" type="text" placeholder="' + (moneyIn ? 'Rahul' : 'Swiggy') + '"></label>' +
-      (!moneyIn && (state.cards || []).length
-        ? '<label class="field wide" for="tx-from"><span>' + tr('Paid from') + '</span><select id="tx-from">' + paidFromOptions('account') + '</select></label>' +
+      (!moneyIn && ((state.cards || []).length || (state.wallets || []).length)
+        ? '<label class="field wide" for="tx-from"><span>' + tr('Paid from') + '</span><select id="tx-from">' + fromOptions(null) + '</select></label>' +
           '<p id="tx-from-warn" class="borrow-warn wide" hidden></p>'
+        : '') +
+      (moneyIn && (state.wallets || []).length
+        ? '<label class="field wide" for="tx-into"><span>' + tr('Into') + '</span><select id="tx-into">' + intoOptions(null) + '</select></label>'
         : '') +
       '<div class="wide"><button class="primary" type="submit">' + tr(moneyIn ? 'Add money received' : 'Add payment') + '</button></div>' +
       '</form>') + '</section>';
@@ -2406,8 +2414,16 @@
     let paidFrom = 'account';
     if (o.cardId) paidFrom = o.cardId;
     else if (p.paidFrom === 'card') paidFrom = card ? card.id : 'card:' + (p.last4 || '');
+    const fromWallet = paidFrom === 'account' ? walletForAcct(p.acct) : null;
+    // With a Cash wallet, cash from an ATM is moved, not spent: what's spent in cash is noted from the wallet.
+    if (p.type === 'debit' && p.atm && paidFrom === 'account' && cashWallet() && (o.category || p.category) === 'Cash') {
+      state.transactions.push({ id: uid(), kind: 'transfer', date: p.date, amount: p.amount, from: fromWallet ? fromWallet.id : 'main', to: cashWallet().id,
+        note: tr('ATM withdrawal'), source: o.source || 'sms', smsKey: o.key });
+      return true;
+    }
     const tx = { id: uid(), date: p.date, amount: p.amount, category: o.category || p.category, note: o.note || p.merchant, source: 'sms', smsKey: o.key };
     if (paidFrom !== 'account') tx.paidFrom = paidFrom;
+    else if (fromWallet) tx.wallet = fromWallet.id;
     if (p.type !== 'credit' && tx.category === 'Savings') {
       // A locked-in set-aside of this amount this cycle? This SMS is that transfer.
       const cycStart = Core.cycleFor(p.date, Number(state.settings.payday) || 1).start;
@@ -2558,7 +2574,7 @@
       '<section class="card">' + titled('Salary', 'salary') + '<div class="form-grid">' +
       numInput('salary', 'settings.salary', s.salary || '', 'Monthly salary in hand (₹)') +
       numInput('payday', 'settings.payday', s.payday, 'Payday (day of month)', ' max="31"') +
-      '<label class="field wide" for="plan-balance"><span>' + tr('Money in your account this morning (₹)') + '</span><input id="plan-balance" type="number" inputmode="numeric" min="0" step="1" data-balance="1" value="' +
+      '<label class="field wide" for="plan-balance"><span>' + tr((state.wallets || []).length ? 'All your money this morning, every wallet together (₹)' : 'Money in your account this morning (₹)') + '</span><input id="plan-balance" type="number" inputmode="numeric" min="0" step="1" data-balance="1" value="' +
         esc(state.balanceCheck && state.balanceCheck.date === today() ? state.balanceCheck.amount : '') + '" placeholder="' +
         (state.balanceCheck ? tr('Last entered {date}: {amount}', { date: fmtDate(state.balanceCheck.date), amount: inr(state.balanceCheck.amount) }) : tr('Optional')) + '"></label>' +
       '</div>' +
@@ -2574,6 +2590,7 @@
       (ui.paydayOpen ? paydayCard() : '') +
       '<section class="card" id="plan-summary">' + planSummary() + '</section>', [
         { key: 'salary', group: 'Your money', icon: 'rupee', label: 'Salary', tone: 'mint', hide: !s.salary, badge: { text: shortInr(s.salary) }, html: () => salaryCard },
+        { key: 'wallets', group: 'Your money', icon: 'wallet', label: 'Wallets', tone: 'mint', badge: (state.wallets || []).length ? { text: String((state.wallets || []).length + 1) } : null, html: () => walletsCard() },
         { key: 'fixed', group: 'Your money', icon: 'repeat', label: 'Fixed payments', tone: 'mint', badge: plan.fixedTotal ? { text: shortInr(plan.fixedTotal) } : null, html: () =>
       '<section class="card"><div class="card-head">' + titled('Fixed payments', 'fixed') + '<span class="hint">' + tr('Rent, EMIs, subscriptions') + '</span></div>' +
       '<div class="edit-rows">' + state.fixed.map((f) =>
@@ -2630,6 +2647,201 @@
       ]);
   }
 
+  // ---------- wallets: where the money sits ----------
+
+  const WALLET_KINDS = [['bank', 'Bank account'], ['cash', 'Cash'], ['upi', 'UPI wallet (Paytm, Amazon Pay…)']];
+
+  function mainWalletName() {
+    return state.settings.mainWallet || tr('Main bank account');
+  }
+
+  function walletName(id) {
+    if (!id || id === 'main') return mainWalletName();
+    const w = (state.wallets || []).find((x) => x.id === id);
+    return w ? w.name : mainWalletName();
+  }
+
+  // The bank wallet an SMS came from, by the account's last digits (a/c XX1234).
+  function walletForAcct(acct) {
+    if (!acct) return null;
+    return (state.wallets || []).find((w) => w.kind === 'bank' && w.last4 && acct.slice(-w.last4.length) === w.last4) || null;
+  }
+
+  function cashWallet() {
+    return (state.wallets || []).find((w) => w.kind === 'cash') || null;
+  }
+
+  // "Paid from" choices: the main account, each wallet, then each credit card.
+  function fromOptions(x) {
+    const cur = x && x.paidFrom && x.paidFrom !== 'account' ? x.paidFrom : x && x.wallet ? 'w:' + x.wallet : 'account';
+    return '<option value="account"' + (cur === 'account' ? ' selected' : '') + '>' + esc(mainWalletName()) + '</option>' +
+      (state.wallets || []).map((w) => '<option value="w:' + esc(w.id) + '"' + (cur === 'w:' + w.id ? ' selected' : '') + '>' + esc(w.name) + '</option>').join('') +
+      (state.cards || []).map((c) => '<option value="' + esc(c.id) + '"' + (cur === c.id ? ' selected' : '') + '>' + cardLabel(c) + ' ' +
+        tr('(credit card: free only if the whole bill is paid on time)') + '</option>').join('');
+  }
+
+  function intoOptions(x) {
+    const cur = x && x.wallet ? x.wallet : '';
+    return '<option value="account"' + (!cur ? ' selected' : '') + '>' + esc(mainWalletName()) + '</option>' +
+      (state.wallets || []).map((w) => '<option value="w:' + esc(w.id) + '"' + (cur === w.id ? ' selected' : '') + '>' + esc(w.name) + '</option>').join('');
+  }
+
+  // Applies a "paid from" or "into" choice to a payment.
+  function setFrom(x, v) {
+    delete x.paidFrom;
+    delete x.wallet;
+    if (!v || v === 'account') return;
+    if (v.indexOf('w:') === 0) x.wallet = v.slice(2);
+    else x.paidFrom = v;
+  }
+
+  function walletsCard() {
+    const t = today();
+    const r = Core.projectRunway(state, t);
+    const wb = Core.walletBalances(state, t, r.balanceToday);
+    const morning = Core.walletBalances(state, t, r.limit.money, true);
+    const ws = state.wallets || [];
+    const row = (id, name, kind, last4, bal) => '<div class="tx-row"><span class="cat-icon c-' + (kind === 'cash' ? 'grey' : kind === 'upi' ? 'violet' : 'blue') + '">' +
+      '<svg viewBox="0 0 24 24" fill-rule="evenodd" aria-hidden="true">' + CAT_GLYPHS[kind === 'cash' ? 'cash' : kind === 'upi' ? 'card' : 'bank'] + '</svg></span>' +
+      '<div class="tx-main"><div class="tx-title">' + esc(name) + '</div><div class="tx-sub">' + tr(kind === 'cash' ? 'Cash' : kind === 'upi' ? 'UPI wallet' : 'Bank account') + (last4 ? ' · a/c …' + esc(last4) : '') + '</div></div>' +
+      '<div class="tx-side"><span class="tx-amt' + (bal < 0 ? ' bad-text' : '') + '">' + inr(bal) + '</span>' +
+      (id !== 'main' ? '<button class="icon tx-del" data-action="wallet-remove" data-id="' + esc(id) + '" aria-label="' + tr('Remove') + '">✕</button>' : '') + '</div></div>';
+    const f = ui.walletForm;
+    const m = ui.moveForm;
+    const b = ui.walletBalances;
+    return '<section class="card wallets-card"><div class="card-head">' + titled('Wallets', 'wallets') + '<span class="hint">' + tr('Total {amount}', { amount: inr(r.balanceToday) }) + '</span></div>' +
+      '<div class="tx-list">' + row('main', mainWalletName(), 'bank', state.settings.mainLast4 || '', wb.main) +
+      wb.wallets.map((w) => row(w.id, w.name, w.kind, w.last4, w.balance)).join('') + '</div>' +
+      (cashWallet() ? '<p class="hint">' + tr('Cash is tracked: an ATM withdrawal moves money into Cash, and what you note as spent in cash comes out of it.') + '</p>'
+        : '<p class="hint">' + tr('No Cash wallet, so an ATM withdrawal counts as spent. Add a Cash wallet if you note what you spend in cash.') + '</p>') +
+      // Balances this morning, one per wallet: they add up to the total the runway starts from.
+      (b
+        ? '<form id="wallet-balance-form" class="callout" autocomplete="off"><b>' + tr('Balances this morning') + '</b><span class="hint">' + tr('From your bank app and your purse, as they were at the start of today.') + '</span>' +
+          '<div class="form-grid">' + '<label class="field" for="wb-main"><span>' + esc(mainWalletName()) + '</span><input id="wb-main" type="number" inputmode="numeric" min="0" step="1" value="' + Math.max(0, morning.main) + '"></label>' +
+          morning.wallets.map((w) => '<label class="field" for="wb-' + esc(w.id) + '"><span>' + esc(w.name) + '</span><input id="wb-' + esc(w.id) + '" data-wb="' + esc(w.id) + '" type="number" inputmode="numeric" min="0" step="1" value="' + Math.max(0, w.balance) + '"></label>').join('') +
+          '</div><div class="row"><button class="primary" type="submit">' + tr('Save balances') + '</button><button type="button" class="ghost" data-action="wallet-balance-cancel">' + tr('Cancel') + '</button></div></form>'
+        : '') +
+      (f
+        ? '<form id="wallet-form" class="callout" autocomplete="off"><b>' + tr('Add a wallet') + '</b><div class="form-grid">' +
+          '<label class="field" for="wf-kind"><span>' + tr('Type') + '</span><select id="wf-kind">' + WALLET_KINDS.map((k) => '<option value="' + k[0] + '">' + tr(k[1]) + '</option>').join('') + '</select></label>' +
+          '<label class="field" for="wf-name"><span>' + tr('Name') + '</span><input id="wf-name" type="text" required placeholder="' + tr('HDFC, Cash, Paytm') + '"></label>' +
+          '<label class="field" for="wf-last4"><span>' + tr('Last 4 digits of the account (for bank SMS)') + '</span><input id="wf-last4" type="text" inputmode="numeric" maxlength="4" pattern="[0-9]{3,4}" placeholder="1234"></label>' +
+          '<label class="field" for="wf-amount"><span>' + tr('Money in it this morning (₹)') + '</span><input id="wf-amount" type="number" inputmode="numeric" min="0" step="1" placeholder="0"></label>' +
+          '</div>' + (f.error ? '<p class="bad" role="alert">' + f.error + '</p>' : '') +
+          '<div class="row"><button class="primary" type="submit">' + tr('Add wallet') + '</button><button type="button" class="ghost" data-action="wallet-form-cancel">' + tr('Cancel') + '</button></div></form>'
+        : '') +
+      (m
+        ? '<form id="move-form" class="callout" autocomplete="off"><b>' + tr('Move money between wallets') + '</b><div class="form-grid">' +
+          '<label class="field" for="mv-from"><span>' + tr('From') + '</span><select id="mv-from">' + intoOptions(null) + '</select></label>' +
+          '<label class="field" for="mv-to"><span>' + tr('To') + '</span><select id="mv-to">' + intoOptions({ wallet: (cashWallet() || ws[0] || {}).id }) + '</select></label>' +
+          '<label class="field" for="mv-amount"><span>' + tr('Amount (₹)') + '</span><input id="mv-amount" type="number" inputmode="numeric" min="1" step="1" required></label>' +
+          '<label class="field" for="mv-date"><span>' + tr('Date') + '</span><input id="mv-date" type="date" max="' + t + '" value="' + t + '"></label>' +
+          '</div>' + (m.error ? '<p class="bad" role="alert">' + m.error + '</p>' : '') +
+          '<div class="row"><button class="primary" type="submit">' + tr('Move money') + '</button><button type="button" class="ghost" data-action="move-form-cancel">' + tr('Cancel') + '</button></div></form>'
+        : '') +
+      (b || f || m ? '' : '<div class="row"><button class="primary" data-action="wallet-add">' + tr('Add a wallet') + '</button>' +
+        (ws.length ? '<button data-action="move-open">' + tr('Move money') + '</button><button data-action="wallet-balance-open">' + tr('Update balances') + '</button>' : '') + '</div>') +
+      '</section>';
+  }
+
+  function addWallet(ev) {
+    ev.preventDefault();
+    const kind = document.getElementById('wf-kind').value;
+    const name = document.getElementById('wf-name').value.trim().slice(0, 30);
+    const last4 = (document.getElementById('wf-last4').value || '').replace(/\D/g, '').slice(-4);
+    const amount = Math.max(0, Math.round(Number(document.getElementById('wf-amount').value) || 0));
+    if (!name) { ui.walletForm = { error: tr('Give it a name.') }; render(); return; }
+    if (kind === 'cash' && cashWallet()) { ui.walletForm = { error: tr('There’s already a Cash wallet.') }; render(); return; }
+    const before = JSON.stringify(state);
+    const t = today();
+    state.wallets = (state.wallets || []).concat({ id: uid(), name, kind, last4: kind === 'bank' ? last4 : '', created: t, check: { date: t, amount } });
+    // Money that was already in it is part of the total too.
+    if (amount > 0) {
+      const r = Core.projectRunway(state, t);
+      state.balanceCheck = { date: t, amount: Math.round(r.limit.money + amount) };
+    }
+    ui.walletForm = null;
+    save();
+    rerenderKeepScroll();
+    offerUndo(tr('{name} added', { name }), before);
+  }
+
+  function moveMoney(ev) {
+    ev.preventDefault();
+    const from = document.getElementById('mv-from').value;
+    const to = document.getElementById('mv-to').value;
+    const amount = Math.round(Number(document.getElementById('mv-amount').value) || 0);
+    const date = document.getElementById('mv-date').value || today();
+    if (from === to) { ui.moveForm = { error: tr('Pick two different wallets.') }; render(); return; }
+    if (!(amount > 0)) { ui.moveForm = { error: tr('Enter an amount above ₹0.') }; render(); return; }
+    const id = (v) => (v === 'account' ? 'main' : v.slice(2));
+    const before = JSON.stringify(state);
+    state.transactions.push({ id: uid(), kind: 'transfer', date, amount, from: id(from), to: id(to), note: tr('Moved money'), source: 'manual' });
+    ui.moveForm = null;
+    save();
+    rerenderKeepScroll();
+    offerUndo(tr('{amount} moved', { amount: inr(amount) }), before);
+  }
+
+  // Balances this morning for every wallet; together they are the total the runway starts from.
+  function saveWalletBalances(ev) {
+    ev.preventDefault();
+    const t = today();
+    const main = Math.max(0, Math.round(Number(document.getElementById('wb-main').value) || 0));
+    let total = main;
+    (state.wallets || []).forEach((w) => {
+      const el = document.getElementById('wb-' + w.id);
+      const v = Math.max(0, Math.round(Number(el && el.value) || 0));
+      w.check = { date: t, amount: v };
+      total += v;
+    });
+    state.balanceCheck = { date: t, amount: total };
+    ui.walletBalances = false;
+    save();
+    toast(tr('Balances saved'));
+    rerenderKeepScroll();
+  }
+
+  // ---------- split one payment into parts ----------
+
+  function splitEditor(x) {
+    const s = ui.split;
+    const parts = s.parts;
+    const used = parts.reduce((a, p) => a + (Number(p.amount) || 0), 0);
+    const left = x.amount - used;
+    return '<div class="split-box"><b>' + tr('Split {amount} into parts', { amount: inr(x.amount) }) + '</b>' +
+      parts.map((p, i) => '<div class="split-row"><select data-split-cat="' + i + '" aria-label="' + tr('Category') + '">' + categoryOptions(p.category) + '</select>' +
+        '<input data-split-amt="' + i + '" type="number" inputmode="numeric" min="0" step="1" value="' + esc(p.amount) + '" aria-label="' + tr('Amount (₹)') + '">' +
+        (parts.length > 2 ? '<button class="icon tx-del" data-action="split-remove" data-i="' + i + '" aria-label="' + tr('Remove') + '">✕</button>' : '') + '</div>').join('') +
+      '<div class="row"><button class="ghost" data-action="split-add">' + tr('Add a part') + '</button>' +
+      '<span class="hint ' + (left === 0 ? 'good' : 'bad') + '">' + (left === 0 ? tr('Adds up ✓') : left > 0 ? tr('{amount} still to share out', { amount: inr(left) }) : tr('{amount} too much', { amount: inr(-left) })) + '</span></div>' +
+      '<div class="row"><button class="primary" data-action="split-save"' + (left === 0 ? '' : ' disabled') + '>' + tr('Save the split') + '</button><button class="ghost" data-action="split-cancel">' + tr('Cancel') + '</button></div></div>';
+  }
+
+  // Each part becomes its own payment, linked by splitOf, so every budget, chart and leak counts it as it is.
+  function saveSplit() {
+    const x = state.transactions.find((t) => t.id === ui.editTx);
+    if (!x) return;
+    const parts = ui.split.parts.filter((p) => Number(p.amount) > 0);
+    if (parts.reduce((a, p) => a + Number(p.amount), 0) !== x.amount || parts.length < 2) return;
+    const before = JSON.stringify(state);
+    const group = x.splitOf || x.id;
+    x.splitOf = group;
+    x.amount = Math.round(Number(parts[0].amount));
+    x.category = parts[0].category;
+    parts.slice(1).forEach((p) => {
+      const part = { id: uid(), date: x.date, amount: Math.round(Number(p.amount)), category: p.category, note: x.note, source: x.source || 'manual', splitOf: group };
+      if (x.paidFrom) part.paidFrom = x.paidFrom;
+      if (x.wallet) part.wallet = x.wallet;
+      state.transactions.push(part);
+    });
+    x.needsReview = false;
+    ui.split = null; ui.editTx = null;
+    save();
+    rerenderKeepScroll();
+    offerUndo(tr('Split into {n} parts', { n: parts.length }), before);
+  }
+
   // ---------- edit a payment, and undo ----------
 
   // Bill and card payments are tied to the bill's learned amount or the card's statement: only their note can change.
@@ -2644,18 +2856,21 @@
     const isIn = Core.isIncome(x);
     const saved = Core.isMove(x);
     const locked = txLocked(x);
-    const flex = !isIn && !saved && !locked;
+    const flex = !isIn && !saved && !locked && !Core.isTransfer(x);
     const field = (id, labelText, input) => '<label class="field" for="' + id + '"><span>' + tr(labelText) + '</span>' + input + '</label>';
     return '<div class="reset-modal-overlay edit-overlay" role="presentation"><div class="reset-modal-card edit-card" role="dialog" aria-modal="true" aria-labelledby="edit-title" id="edit-card" tabindex="-1">' +
-      '<div class="edit-head">' + catIcon(x) + '<h2 id="edit-title">' + tr(isIn ? 'Edit money received' : saved ? 'Edit money saved' : 'Edit payment') + '</h2></div>' +
+      '<div class="edit-head">' + catIcon(x) + '<h2 id="edit-title">' + tr(isIn ? 'Edit money received' : saved ? 'Edit money saved' : Core.isTransfer(x) ? 'Edit money moved' : 'Edit payment') + '</h2></div>' +
+      (Core.isTransfer(x) ? '<p class="hint">' + esc(walletName(x.from)) + ' → ' + esc(walletName(x.to)) + '</p>' : '') +
       (locked ? '<p class="hint">' + tr('This is a bill or card payment, so its amount and date are tied to the bill. To change them, delete it and record it again.') + '</p>' : '') +
       '<div class="form-grid">' +
       (locked ? '' : field('edit-amount', 'Amount (₹)', '<input id="edit-amount" type="number" inputmode="decimal" min="1" step="1" value="' + esc(x.amount) + '">') +
         field('edit-date', 'Date', '<input id="edit-date" type="date" max="' + t + '" value="' + esc(x.date) + '">')) +
       field('edit-note', isIn ? 'From' : 'Where / what', '<input id="edit-note" type="text" value="' + esc(x.note || '') + '">') +
       (flex || isIn ? field('edit-cat', 'Category', '<select id="edit-cat">' + (isIn ? incomeCategoryOptions(x.category) : categoryOptions(x.category)) + '</select>') : '') +
-      (flex && (state.cards || []).length ? '<label class="field wide" for="edit-from"><span>' + tr('Paid from') + '</span><select id="edit-from">' + paidFromOptions(x.paidFrom || 'account') + '</select></label>' : '') +
+      (flex && ((state.cards || []).length || (state.wallets || []).length) ? '<label class="field wide" for="edit-from"><span>' + tr('Paid from') + '</span><select id="edit-from">' + fromOptions(x) + '</select></label>' : '') +
+      ((isIn || saved) && (state.wallets || []).length ? '<label class="field wide" for="edit-from"><span>' + tr(isIn ? 'Into' : 'From') + '</span><select id="edit-from">' + intoOptions(x) + '</select></label>' : '') +
       '</div>' +
+      (flex && ui.split && ui.split.id === x.id ? splitEditor(x) : flex ? '<button class="link" data-action="split-open">' + tr('Split this payment into categories') + '</button>' : '') +
       (ui.editError ? '<p class="bad" role="alert">' + ui.editError + '</p>' : '') +
       '<div class="row"><button class="primary" data-action="edit-save">' + tr('Save changes') + '</button><button class="ghost" data-action="edit-cancel">' + tr('Cancel') + '</button></div>' +
       '</div></div>';
@@ -2703,7 +2918,7 @@
       }
     }
     const from = val('edit-from');
-    if (from !== null) { if (from === 'account') delete x.paidFrom; else x.paidFrom = from; }
+    if (from !== null) setFrom(x, from);
     x.needsReview = Core.isMove(x) && !x.useFor;
     ui.editTx = null; ui.editError = '';
     save();
@@ -2753,6 +2968,8 @@
     cash: '<path d="M2 6h20v12H2zm10 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/>',
     alert: '<path d="M12 2.5l10 18H2zm-1 6.5v5h2V9zm0 7v2h2v-2z"/>',
     in: '<path d="M10.9 3h2.2v9.3l3.4-3.4 1.5 1.5-6 6-6-6 1.5-1.5 3.4 3.4zM4 18.5h16V21H4z"/>',
+    bank: '<path d="M12 2l10 5v2H2V7zM5 11h2.5v7H5zm5.75 0h2.5v7h-2.5zm5.75 0H19v7h-2.5zM2 20h20v2H2z"/>',
+    move: '<path d="M16 3l5 4.5L16 12V8.6H4V6.4h12zM8 12v3.4h12v2.2H8V21l-5-4.5z"/>',
     card: '<path d="M2 6a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v2H2zm0 4h20v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2zm3 5v1.6h5V15z"/>',
     tag: '<path d="M3 3h8.6l9.4 9.4-8.6 8.6L3 11.6zm4.5 6a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3z"/>',
   };
@@ -2764,7 +2981,8 @@
 
   function catIcon(x) {
     let look = CAT_LOOK[x.category] || ['tag', 'grey'];
-    if (Core.isIncome(x)) look = ['in', 'green'];
+    if (Core.isTransfer(x)) look = ['move', 'grey'];
+    else if (Core.isIncome(x)) look = ['in', 'green'];
     else if (Core.isMove(x)) look = ['save', 'green'];
     else if (Core.isCardTransfer(x)) look = ['card', 'teal'];
     else if (Core.isBillPayment(x)) look = ['bolt', 'teal'];
@@ -2780,12 +2998,15 @@
     const isIn = Core.isIncome(x);
     const saved = Core.isMove(x);
     const onCard = x.paidFrom && x.paidFrom !== 'account' ? (state.cards || []).find((c) => c.id === x.paidFrom) : null;
-    const cat = edit && !saved && !Core.isBillPayment(x) && !Core.isCardTransfer(x)
+    const cat = Core.isTransfer(x) ? esc(walletName(x.from)) + ' → ' + esc(walletName(x.to))
+      : edit && !saved && !Core.isBillPayment(x) && !Core.isCardTransfer(x)
       ? '<select data-tx-cat="' + esc(x.id) + '" aria-label="' + tr('Category') + '">' + (isIn ? incomeCategoryOptions(x.category) : categoryOptions(x.category)) + '</select>'
       : esc(label(saved ? 'Saved' : Core.isCardTransfer(x) ? 'Card' : Core.isBillPayment(x) ? 'Bills' : x.category || ''));
     const sub = cat + ' · ' + fmtDate(x.date) +
       (x.source === 'sms' ? ' · ' + tr('from SMS') : x.source === 'widget' ? ' · ' + tr('from widget') : '') +
-      (onCard ? ' · <span class="warn">' + tr('on {card}', { card: cardLabel(onCard) }) + '</span>' : '');
+      (onCard ? ' · <span class="warn">' + tr('on {card}', { card: cardLabel(onCard) }) + '</span>' : '') +
+      (x.wallet && !Core.isTransfer(x) ? ' · ' + esc(walletName(x.wallet)) : '') +
+      (x.splitOf ? ' · <span class="chip">' + tr('Split') + '</span>' : '');
     const extra = edit && isIn
       ? ' <button class="link" data-action="income-change" data-id="' + esc(x.id) + '">' + tr(x.useFor ? INCOME_USE_LABELS[x.useFor] : 'Choose what it does') + '</button>'
       : edit && saved && x.useFor ? ' <button class="link" data-action="saved-change" data-id="' + esc(x.id) + '">' + tr('Change') + '</button>' : '';
@@ -2793,7 +3014,7 @@
       '<div class="tx-main"><button class="tx-title" data-action="tx-edit" data-id="' + esc(x.id) + '" aria-label="' + esc(tr('Edit {name}', { name: txTitle(x) })) + '">' + txTitle(x) +
       (x.needsReview ? ' <span class="chip chip-check">' + tr('Check') + '</span>' : '') + '<svg class="tx-pen" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4l10.5-10.5-4-4L4 16z"/></svg></button>' +
       '<div class="tx-sub">' + sub + extra + '</div></div>' +
-      '<div class="tx-side"><span class="tx-amt' + (isIn || saved ? ' good' : '') + '">' + (isIn ? '+' : '') + inr(x.amount) + '</span>' +
+      '<div class="tx-side"><span class="tx-amt' + (isIn || saved ? ' good' : Core.isTransfer(x) ? ' muted' : '') + '">' + (isIn ? '+' : '') + inr(x.amount) + '</span>' +
       (edit ? '<button class="icon tx-del" data-action="tx-delete" data-id="' + esc(x.id) + '" aria-label="' + tr('Delete') + '">✕</button>' : '') + '</div></div>';
   }
 
@@ -4075,6 +4296,22 @@
     if (el) el.focus();
   }
 
+  document.addEventListener('input', (ev) => {
+    const i = ev.target.dataset && ev.target.dataset.splitAmt;
+    if (i === undefined || !ui.split) return;
+    ui.split.parts[Number(i)].amount = Math.max(0, Math.round(Number(ev.target.value) || 0));
+    const x = state.transactions.find((t) => t.id === ui.editTx);
+    const box = document.querySelector('.split-box');
+    if (x && box) {
+      // Only the "adds up" line and the save button change while typing.
+      const left = x.amount - ui.split.parts.reduce((a, p) => a + (Number(p.amount) || 0), 0);
+      const hint = box.querySelector('.row .hint');
+      hint.className = 'hint ' + (left === 0 ? 'good' : 'bad');
+      hint.textContent = left === 0 ? tr('Adds up ✓') : left > 0 ? tr('{amount} still to share out', { amount: inr(left) }) : tr('{amount} too much', { amount: inr(-left) });
+      box.querySelector('[data-action=split-save]').disabled = left !== 0;
+    }
+  });
+
   let searchTimer;
   document.addEventListener('input', (ev) => {
     if (ev.target.id !== 'tx-search') return;
@@ -4107,11 +4344,40 @@
         openPage(btn.dataset.tab || tab, btn.dataset.key);
         return;
       case 'tx-show': ui.txShow = btn.dataset.show; break;
+      case 'wallet-add': ui.walletForm = {}; ui.moveForm = null; ui.walletBalances = false; break;
+      case 'wallet-form-cancel': ui.walletForm = null; break;
+      case 'move-open': ui.moveForm = {}; ui.walletForm = null; ui.walletBalances = false; break;
+      case 'move-form-cancel': ui.moveForm = null; break;
+      case 'wallet-balance-open': ui.walletBalances = true; ui.walletForm = null; ui.moveForm = null; break;
+      case 'wallet-balance-cancel': ui.walletBalances = false; break;
+      case 'wallet-remove': {
+        // A wallet's payments go back to the main account, so nothing is lost.
+        const before = JSON.stringify(state);
+        const id = btn.dataset.id;
+        const w = (state.wallets || []).find((x) => x.id === id);
+        state.wallets = (state.wallets || []).filter((x) => x.id !== id);
+        state.transactions.forEach((x) => { if (x.wallet === id) delete x.wallet; });
+        state.transactions.forEach((x) => { if (Core.isTransfer(x)) { if (x.from === id) x.from = 'main'; if (x.to === id) x.to = 'main'; } });
+        state.transactions = state.transactions.filter((x) => !(Core.isTransfer(x) && x.from === x.to));
+        save();
+        rerenderKeepScroll();
+        offerUndo(tr('{name} removed', { name: w ? w.name : '' }), before);
+        return;
+      }
+      case 'split-open': {
+        const x = state.transactions.find((t) => t.id === ui.editTx);
+        if (x) ui.split = { id: x.id, parts: [{ category: x.category, amount: x.amount }, { category: 'Misc', amount: 0 }] };
+        break;
+      }
+      case 'split-add': if (ui.split) ui.split.parts.push({ category: 'Misc', amount: 0 }); break;
+      case 'split-remove': if (ui.split) ui.split.parts.splice(Number(btn.dataset.i), 1); break;
+      case 'split-cancel': ui.split = null; break;
+      case 'split-save': saveSplit(); return;
       case 'cal-day': ui.calDay = btn.dataset.day; break;
       case 'cal-month': ui.calMonth = btn.dataset.month; ui.calDay = null; break;
       case 'tx-edit': ui.editTx = btn.dataset.id; ui.editError = ''; ui.editFocus = true; break;
       case 'edit-save': saveEdit(); return;
-      case 'edit-cancel': ui.editTx = null; ui.editError = ''; break;
+      case 'edit-cancel': ui.editTx = null; ui.editError = ''; ui.split = null; break;
       case 'undo': undoLast(); return;
       case 'page-back':
         if (history.state && history.state.page) history.back(); else closePage();
@@ -4766,6 +5032,7 @@
       }
       save(); refreshAfterEdit(); return;
     }
+    if (el.dataset.splitCat !== undefined && ui.split) { ui.split.parts[Number(el.dataset.splitCat)].category = el.value; return; }
     if (el.id === 'lock-after' || el.id === 'lock-hide' || el.id === 'lock-secure') {
       const cfg = lockCfg();
       if (!cfg.on) return;
@@ -4788,7 +5055,8 @@
     }
     if (el.id === 'tx-from') {
       const warn = document.getElementById('tx-from-warn');
-      if (warn) { warn.textContent = borrowWarning(el.value); warn.hidden = el.value === 'account'; }
+      const onCard = el.value !== 'account' && el.value.indexOf('w:') !== 0;
+      if (warn) { warn.textContent = onCard ? borrowWarning(el.value) : ''; warn.hidden = !onCard; }
       return;
     }
     if (el.dataset.txFrom) {
@@ -4910,6 +5178,9 @@
       rerenderKeepScroll();
       return;
     }
+    if (ev.target.id === 'wallet-form') { addWallet(ev); return; }
+    if (ev.target.id === 'move-form') { moveMoney(ev); return; }
+    if (ev.target.id === 'wallet-balance-form') { saveWalletBalances(ev); return; }
     if (ev.target.id === 'balance-form') {
       ev.preventDefault();
       setBalance(document.getElementById('balance-amount').value);
@@ -4937,8 +5208,8 @@
       // Borrowed money is for what it was borrowed for: no "what should this do?".
       if (category === LOAN_CATEGORY) { tx.borrowed = true; tx.useFor = 'spend'; }
     }
-    const from = document.getElementById('tx-from');
-    if (ui.txKind !== 'in' && from && from.value !== 'account') tx.paidFrom = from.value;
+    const from = document.getElementById(ui.txKind === 'in' ? 'tx-into' : 'tx-from');
+    if (from) setFrom(tx, from.value);
     const wasOver = Core.projectRunway(state, today()).overToday > 0;
     state.transactions.push(tx);
     save();

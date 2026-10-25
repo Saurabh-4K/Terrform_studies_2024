@@ -1244,3 +1244,45 @@ test('backup file: locked with the password, opens only with it; old plain backu
   assert.equal(Core.backupInfo('hello'), null);
   await assert.rejects(Core.openBackup('{"a":1}', 'x'), /format/);
 });
+
+test('wallets: moving money between them is never spending; each wallet has its own balance', () => {
+  const s = baseState({ wallets: [{ id: 'cash', name: 'Cash', kind: 'cash', created: '2026-10-01' }] });
+  const before = Core.projectRunway(s, '2026-10-20');
+  // ATM: ₹2,000 from the bank into cash, then ₹500 spent in cash
+  s.transactions.push({ id: 't1', kind: 'transfer', date: '2026-10-10', amount: 2000, from: 'main', to: 'cash', note: 'ATM' });
+  const afterMove = Core.projectRunway(s, '2026-10-20');
+  assert.equal(afterMove.balanceToday, before.balanceToday);
+  assert.equal(afterMove.dailyAllowance, before.dailyAllowance);
+  assert.equal(Core.daySpending(s, '2026-10-10'), 0);
+  s.transactions.push({ id: 't2', date: '2026-10-12', amount: 500, category: 'Food', note: 'Chai', wallet: 'cash' });
+  const r = Core.projectRunway(s, '2026-10-20');
+  assert.equal(r.balanceToday, before.balanceToday - 500); // the total drops only by what was spent
+  let w = Core.walletBalances(s, '2026-10-20', r.balanceToday);
+  assert.equal(w.wallets[0].balance, 1500);
+  assert.equal(w.main + w.wallets[0].balance, r.balanceToday); // the parts add up
+  // A count of the cash ("this morning") is the new starting point
+  s.wallets[0].check = { date: '2026-10-15', amount: 1200 };
+  s.transactions.push({ id: 't3', date: '2026-10-16', amount: 200, category: 'Food', wallet: 'cash' });
+  w = Core.walletBalances(s, '2026-10-20', 10000);
+  assert.equal(w.wallets[0].balance, 1000);
+  assert.equal(w.main, 9000);
+  // This morning's balances leave out today's entries
+  s.transactions.push({ id: 't4', date: '2026-10-20', amount: 100, category: 'Food', wallet: 'cash' });
+  assert.equal(Core.walletBalances(s, '2026-10-20', 0, true).wallets[0].balance, 1000);
+  assert.equal(Core.walletBalances(s, '2026-10-20', 0).wallets[0].balance, 900);
+  // Card spending isn't the wallet's money
+  s.transactions.push({ id: 't5', date: '2026-10-20', amount: 999, category: 'Shopping', wallet: 'cash', paidFrom: 'c1' });
+  assert.equal(Core.walletBalances(s, '2026-10-20', 0).wallets[0].balance, 900);
+});
+
+test('bank SMS: an ATM withdrawal and the account it came from', () => {
+  const atm = Core.parseSms('Rs.2000.00 withdrawn at ATM from A/c XX4321 on 20-10-26. Avl Bal Rs 5,000', {}, '2026-10-25');
+  assert.equal(atm.atm, true);
+  assert.equal(atm.acct, '4321');
+  assert.equal(atm.category, 'Cash');
+  const upi = Core.parseSms('INR 1,500 debited from a/c no. XXXXXX7788 on 21-Oct-26 towards UPI/swiggy@icici', {}, '2026-10-25');
+  assert.equal(upi.atm, false);
+  assert.equal(upi.acct, '7788');
+  const credit = Core.parseSms('Your A/c XX4321 is credited with Rs.5,000 on 22-10-26 by NEFT', {}, '2026-10-25');
+  assert.equal(credit.acct, '4321');
+});

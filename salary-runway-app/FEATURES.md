@@ -48,6 +48,18 @@ Everything the app can do today, screen by screen, with the rules it follows. Fo
   - A new category for a shop is remembered for its next payments.
 - **Undo:** after a delete or an edit, *Deleted · UNDO* (or *Saved · UNDO*) shows for six seconds. Undo brings back exactly what was there, including anything the payment had changed. If something else was changed since, it says it's too late, rather than undoing that too.
 
+## Wallets and split payments
+- **Wallets (Plan → Wallets):** where the money sits, as well as how much there is.
+  - Types: the main bank account, other bank accounts, Cash, and UPI wallets such as Paytm.
+  - Each has its own balance. The runway, today's limit and the zones still use all of it together, so nothing about the daily number changes.
+  - **Move money** between wallets (an ATM withdrawal, topping up Paytm). A move is never spending and never changes the total.
+  - **Update balances:** enter each wallet's balance from the start of today; together they set the total the runway starts from. With wallets, the balance fields in Plan and on Runway → Balance ask for all the money together.
+  - Removing a wallet moves its payments and its money back to the main account, with undo.
+- **Cash:** with a Cash wallet, an ATM withdrawal (by SMS too) moves money into Cash, and what you note as paid in cash comes out of it. Without one, an ATM withdrawal still counts as spent, as before, so nobody who doesn't note cash spends loses track of it.
+- **Bank SMS to the right wallet:** add a bank account's last 4 digits and its SMS (*a/c XX1234*) are put in that wallet by themselves.
+- **Paid from / Into:** the add form and the edit sheet offer each wallet as well as credit cards. Rows show the wallet, and moves show *Main bank account → Cash*.
+- **Split a payment:** in the edit sheet, *Split this payment into categories*. For example, ₹530 at Blinkit becomes ₹380 groceries and ₹150 household. It saves only when the parts add up. Each part becomes its own payment, marked *Split*, so budgets, charts and leaks count each part in its own category. Undo puts it back as one payment.
+
 ## Profile, tour and app lock
 
 ### Profile (the round button at the top right)

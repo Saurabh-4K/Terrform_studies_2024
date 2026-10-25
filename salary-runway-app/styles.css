@@ -1050,3 +1050,14 @@ button.tx-title { display: flex; align-items: center; gap: 6px; background: none
 /* A toast with an Undo button. */
 .toast.with-action { display: flex; align-items: center; gap: 14px; }
 .toast.with-action button { background: none; border: 0; box-shadow: none; min-height: 0; padding: 4px 6px; font: inherit; font-weight: 800; color: var(--mint); text-transform: uppercase; letter-spacing: 0.04em; }
+
+/* Wallets and split */
+.bad-text { color: var(--bad); }
+.tx-amt.muted { color: var(--muted); font-weight: 600; }
+.wallets-card .tx-list { display: grid; gap: 8px; }
+.wallets-card .card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.split-box { display: grid; gap: 8px; padding: 12px; border-radius: 14px; background: var(--bg); margin-top: 4px; }
+.split-row { display: grid; grid-template-columns: minmax(0, 1fr) 96px auto; gap: 8px; align-items: center; }
+.split-row select, .split-row input { min-width: 0; width: 100%; }
+.split-box .row { align-items: center; flex-wrap: wrap; }
+
