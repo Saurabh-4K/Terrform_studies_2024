@@ -358,6 +358,7 @@ button.link { border: 0; background: none; padding: 0; color: var(--accent); fon
 .grow-field { flex: 1; }
 .choices { display: grid; gap: 8px; }
 .choice { text-align: left; display: grid; gap: 3px; padding: 12px 14px; border-radius: 12px; font-weight: 400; background: var(--bg); }
+.choice.tight .choice-detail { color: var(--warn); }
 .choice.suggested { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
 .choice-title { font-weight: 650; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .choice-detail { font-size: 0.85rem; color: var(--muted); }

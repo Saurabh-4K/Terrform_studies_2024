@@ -902,7 +902,7 @@
       '</section>' +
       cardHomeNotes(cyc) +
       savedCard() +
-      incomeCard() +
+      passCard() + incomeCard() +
       weekCard() +
       bal +
       (needsCheck().length
@@ -2039,8 +2039,40 @@
 
   // Money received that still needs a decision, newest first.
   function pendingIncome() {
-    return state.transactions.filter((x) => Core.isIncome(x) && !x.useFor)
+    return state.transactions.filter((x) => Core.isIncome(x) && !x.useFor && !x.passedOn)
       .sort((a, b) => (a.date < b.date ? 1 : -1));
+  }
+
+  /*
+   * Money in and the same amount out, close together: passed on? Then neither
+   * counts. Borrowed money passed on is still owed, so it can become a loan.
+   */
+  function passCard() {
+    const t = today();
+    const ask = state.passAsk;
+    if (ask) {
+      const i = state.transactions.find((x) => x.id === ask.inId);
+      if (!i) return '';
+      const free = Core.nextPaydayPreview(state, t).freeAfter;
+      const opt = (months) => {
+        const monthly = Math.ceil(i.amount / months / 100) * 100;
+        return '<button class="choice' + (monthly <= free ? '' : ' tight') + '" data-action="pass-owe" data-months="' + months + '">' +
+          '<span class="choice-title">' + tr('Pay back in {months}', { months: plural(months, 'month') }) + '</span>' +
+          '<span class="choice-detail">' + tr('{amount} a month from payday', { amount: inr(monthly) }) + ' · ' +
+          (monthly <= free ? tr('fits in what’s free') : tr('more than the {free} a month free', { free: inr(Math.max(0, free)) })) + '</span></button>';
+      };
+      return '<section class="card income-card pass-card"><div class="card-head"><h2>' + tr('Do you have to pay {name} back?', { name: esc(i.note || tr('them')) }) + '</h2></div>' +
+        '<p class="hint">' + tr('Borrowed money is a loan even when it went to someone else. Add it, and the app keeps money for it each payday.') + '</p>' +
+        '<div class="choices">' + [1, 3, 6, 12].map(opt).join('') + '</div>' +
+        '<div class="row"><button data-action="pass-owe-no">' + tr('No, it wasn’t borrowed') + '</button></div></section>';
+    }
+    const pair = Core.passThroughPair(state, t);
+    if (!pair) return '';
+    return '<section class="card income-card pass-card"><div class="card-head"><h2>' + tr('Money passing through?') + '</h2></div>' +
+      '<p class="hint">' + tr('{amount} came from {from} on {date1}, and {amount} went to {to} on {date2}. If you passed it on, it’s neither your income nor your spending.',
+        { amount: inr(pair.in.amount), from: esc(pair.in.note || tr('someone')), to: esc(pair.out.note || tr('someone')), date1: fmtDate(pair.in.date), date2: fmtDate(pair.out.date) }) + '</p>' +
+      '<div class="row"><button class="primary" data-action="pass-yes" data-in="' + esc(pair.in.id) + '" data-out="' + esc(pair.out.id) + '">' + tr('Yes, I passed it on') + '</button>' +
+      '<button data-action="pass-no" data-in="' + esc(pair.in.id) + '" data-out="' + esc(pair.out.id) + '">' + tr('No, they’re separate') + '</button></div></section>';
   }
 
   function incomeCard() {
@@ -2515,7 +2547,7 @@
       sortCard() +
       importCard() +
       needsCheckCard() +
-      incomeCard() +
+      passCard() + incomeCard() +
       addCard, [
         { key: 'viz-where', group: 'Your spending', icon: 'where', label: 'Where it went', tone: 'mint', viz: 'where', badge: null, html: () => vizCard() },
         { key: 'viz-when', group: 'Your spending', icon: 'when', label: 'When', tone: 'mint', viz: 'when', badge: null, html: () => vizCard() },
@@ -3265,6 +3297,8 @@
       (flex && ui.split && ui.split.id === x.id ? splitEditor(x) : flex ? '<button class="link" data-action="split-open">' + tr('Split this payment into categories') + '</button>' : '') +
       (ui.editError ? '<p class="bad" role="alert">' + ui.editError + '</p>' : '') +
       '<div class="row"><button class="primary" data-action="edit-save">' + tr('Save changes') + '</button><button class="ghost" data-action="edit-cancel">' + tr('Cancel') + '</button></div>' +
+      (x.passedOn ? '<div class="callout"><span class="hint">' + tr('Passed on with {other}: not counted as income or spending.', { other: esc(txTitle(state.transactions.find((y) => y.id === x.passedOn) || {})) }) + '</span>' +
+        '<div><button class="ghost small" data-action="pass-undo">' + tr('It wasn’t passed on') + '</button></div></div>' : '') +
       notPaymentBox(x, flex || isIn || saved) +
       '</div></div>';
   }
@@ -3405,6 +3439,7 @@
       (onCard ? ' · <span class="warn">' + tr('on {card}', { card: cardLabel(onCard) }) + '</span>' : '') +
       (x.wallet && !Core.isTransfer(x) ? ' · ' + esc(walletName(x.wallet)) : '') +
       (x.splitOf ? ' · <span class="chip">' + tr('Split') + '</span>' : '') +
+      (x.passedOn ? ' · <span class="chip">' + tr('Passed on') + '</span>' : '') +
       (x.matched ? ' · <span class="chip">' + tr('Bank SMS ✓') + '</span>' : '');
     const extra = edit && isIn
       ? ' <button class="link" data-action="income-change" data-id="' + esc(x.id) + '">' + tr(x.useFor ? INCOME_USE_LABELS[x.useFor] : 'Choose what it does') + '</button>'
@@ -5310,6 +5345,34 @@
         if (state.smsSkipNames) delete state.smsSkipNames[btn.dataset.shop];
         save(); toast(tr('SMS from {shop} count again', { shop: name })); break;
       }
+      case 'pass-yes': {
+        const before = JSON.stringify(state);
+        if (!Core.passOn(state, btn.dataset.in, btn.dataset.out)) return;
+        state.passAsk = { inId: btn.dataset.in };
+        save(); rerenderKeepScroll();
+        offerUndo(tr('Passed on: not counted as income or spending'), before);
+        return;
+      }
+      case 'pass-undo': {
+        const x = state.transactions.find((y) => y.id === ui.editTx);
+        if (!x) return;
+        const other = state.transactions.find((y) => y.id === x.passedOn);
+        [x, other].forEach((y) => { if (y) { delete y.passedOn; state.passNo = (state.passNo || []).concat(y.id).slice(-200); } });
+        save(); toast(tr('Counted again as income and spending')); break;
+      }
+      case 'pass-no':
+        state.passNo = (state.passNo || []).concat(btn.dataset.in, btn.dataset.out).slice(-200);
+        save(); toast(tr('Kept as they are')); break;
+      case 'pass-owe': {
+        const i = state.transactions.find((x) => x.id === (state.passAsk || {}).inId);
+        if (!i) { state.passAsk = null; break; }
+        const d = Core.addOwed(state, tr('Owed to {name}', { name: i.note || tr('a friend') }), i.amount, Number(btn.dataset.months), t);
+        i.borrowed = true; i.debtId = d.id;
+        state.passAsk = null; save();
+        toast(tr('{name} added to your loans: {amount} a month, no interest', { name: d.name, amount: inr(d.minPayment) }));
+        break;
+      }
+      case 'pass-owe-no': state.passAsk = null; save(); toast(tr('Nothing owed. It stays out of your money.')); break;
       case 'report-save': makeReport('save'); return;
       case 'report-share': makeReport('share'); return;
       case 'report-clear':

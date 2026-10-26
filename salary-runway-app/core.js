@@ -235,13 +235,19 @@
   }
 
   // The month's money, line by line, with any emergency adjustments applied.
+  // Loans paid this round: one whose first payment is next round (just borrowed, or a card EMI starting with the next bill) waits.
+  function debtsThisRound(state, todayIso) {
+    const next = todayIso ? cycleFor(todayIso, Number(state.settings.payday) || 1).next : null;
+    return state.debts.filter((d) => d.balance > 0 && !(next && d.starts && d.starts >= next));
+  }
+
   function monthlyPlan(state, todayIso) {
     const adj = activeAdjustment(state, todayIso);
     const alloc = allocate(state, todayIso);
     const sv = alloc.savings;
     const salary = salaryFor(state, todayIso);
     const fixedTotal = sum(state.fixed, (f) => Number(f.amount) || 0);
-    const debtMin = sum(state.debts.filter((d) => d.balance > 0), (d) => Number(d.minPayment) || 0);
+    const debtMin = sum(debtsThisRound(state, todayIso), (d) => Number(d.minPayment) || 0);
     const emergency = sv.emergencyMonthly;
     const invest = adj && adj.pauseInvest ? 0 : sv.investMonthly;
     const debtExtra = adj && adj.pauseDebtExtra ? 0 : sv.debtExtra;
@@ -320,14 +326,62 @@
   function isCardTransfer(t) { return t.kind === 'cardpay' || t.kind === 'cardconvert'; }
   // Money moved between your own wallets (bank to cash at an ATM, bank to Paytm): neither spending nor income.
   function isTransfer(t) { return t.kind === 'transfer'; }
-  function isFlexible(t) { return !isIncome(t) && !isMove(t) && !isBillPayment(t) && !isCardTransfer(t) && !isTransfer(t); }
+  // Money passed on (₹26,000 from a friend straight to a brother): neither income nor spending.
+  function isPassedOn(t) { return !!t.passedOn; }
+  function isFlexible(t) { return !isIncome(t) && !isMove(t) && !isBillPayment(t) && !isCardTransfer(t) && !isTransfer(t) && !isPassedOn(t); }
 
   function spendInRange(transactions, cycle) {
     return transactions.filter((t) => isFlexible(t) && inCycle(t.date, cycle));
   }
 
   function incomeInRange(transactions, cycle) {
-    return transactions.filter((t) => isIncome(t) && inCycle(t.date, cycle));
+    return transactions.filter((t) => isIncome(t) && !isPassedOn(t) && inCycle(t.date, cycle));
+  }
+
+  /*
+   * Money in and the same amount out within 3 days (₹26,000 from a friend,
+   * ₹26,000 to a brother): probably passed on. Returns the newest such pair
+   * not yet answered, or null. Salary and small amounts aren't asked about.
+   */
+  function passThroughPair(state, todayIso) {
+    const no = state.passNo || [];
+    const from = addDays(todayIso, -10);
+    const ins = state.transactions.filter((t) => isIncome(t) && !isPassedOn(t) && t.date >= from && t.date <= todayIso &&
+      t.amount >= 1000 && !t.salary && t.category !== 'Salary' && no.indexOf(t.id) === -1)
+      .sort((a, b) => (a.date < b.date ? 1 : -1));
+    for (const i of ins) {
+      const outs = state.transactions.filter((t) => isFlexible(t) && !t.splitOf && no.indexOf(t.id) === -1 &&
+        Math.abs(t.amount - i.amount) <= Math.max(1, i.amount * 0.01) && Math.abs(daysBetween(i.date, t.date)) <= 3)
+        .sort((a, b) => Math.abs(daysBetween(i.date, a.date)) - Math.abs(daysBetween(i.date, b.date)));
+      if (outs.length) return { in: i, out: outs[0] };
+    }
+    return null;
+  }
+
+  // Marks the pair as passed on; undone by clearing passedOn on both.
+  function passOn(state, inId, outId) {
+    const i = state.transactions.find((t) => t.id === inId);
+    const o = state.transactions.find((t) => t.id === outId);
+    if (!i || !o) return false;
+    i.passedOn = o.id; o.passedOn = i.id;
+    i.useFor = i.useFor || 'spend';
+    i.needsReview = false; o.needsReview = false;
+    return true;
+  }
+
+  /*
+   * Borrowed money to pay back (a friend's ₹26,000): a loan with no interest,
+   * paid back over `months` from payday.
+   */
+  function addOwed(state, name, amount, months, todayIso) {
+    const n = Math.max(1, Math.round(Number(months) || 1));
+    const payday = Number(state.settings.payday) || 1;
+    const d = { id: newId('d'), name, balance: Math.round(amount), startBalance: Math.round(amount), rate: 0,
+      minPayment: Math.ceil(amount / n / 100) * 100, dueDay: payday, emisLeft: n, emiThrough: lastDueOn(todayIso, payday), personal: true,
+      // The first payment is next payday; nothing comes out of this round.
+      starts: cycleFor(todayIso, payday).next };
+    state.debts.push(d);
+    return d;
   }
 
   /*
@@ -970,7 +1024,7 @@
   function autoSavings(state, todayIso) {
     const salary = salaryFor(state, todayIso);
     const fixed = sum(state.fixed, (f) => Number(f.amount) || 0);
-    const mins = sum(state.debts.filter((d) => d.balance > 0), (d) => Number(d.minPayment) || 0);
+    const mins = sum(debtsThisRound(state, todayIso), (d) => Number(d.minPayment) || 0);
     const sinking = sum(state.sinking, sinkingMonthly) + billsMonthly(state) + goalsMonthly(state, todayIso);
     const available = salary - fixed - mins - sinking;
     const notes = [];
@@ -1054,7 +1108,7 @@
     }
     const salary = salaryFor(state, todayIso);
     const fixed = sum(state.fixed, (f) => Number(f.amount) || 0);
-    const mins = sum(state.debts.filter((d) => d.balance > 0), (d) => Number(d.minPayment) || 0);
+    const mins = sum(debtsThisRound(state, todayIso), (d) => Number(d.minPayment) || 0);
     const sinking = sum(state.sinking, sinkingMonthly) + billsMonthly(state) + goalsMonthly(state, todayIso);
     const pool = salary - fixed - mins - sinking - savings.emergencyMonthly - savings.investMonthly - savings.debtExtra;
     const customTotal = sum(state.budgets.filter((b) => !b.auto), (b) => Number(b.amount) || 0);
@@ -2250,6 +2304,7 @@
           return;
         }
         if (t.wallet !== w.id) return;
+        if (isPassedOn(t)) { bal += isIncome(t) ? t.amount : -t.amount; return; }
         if (isIncome(t)) bal += incomeKept(t);
         else if (isFlexible(t) && !(t.paidFrom && t.paidFrom !== 'account')) bal -= t.amount;
         else if (isMove(t) || isBillPayment(t) || t.kind === 'cardpay') bal -= t.amount;
@@ -2898,7 +2953,7 @@
     salaryFor, salaryHistory, paydayReset, suggestUse, freedomDays, interestLeak, nextPaydayPreview,
     billShare, billPot, billsMonthly, billPaidIn, billDue, payBill, undoBillPayment, zoneStatus, ESSENTIAL_CATEGORIES,
     isCardTransfer, statementOn, dueAfter, cardOwedAt, cardReserve, cardStatus, emiQuote, revolveQuote, cardBillPlan,
-    recordCardPayment, addCardEmi, cardEmiFromBooking, looksLikeCardBill, spendToCardPayment, convertCardBalance, answerCardDue, cardLateFee, cardRate, CARD_RATE, undoCardConvert, cardFreeDays, byCategory, DEFAULT_SPLIT,
+    recordCardPayment, addCardEmi, isPassedOn, passThroughPair, passOn, addOwed, cardEmiFromBooking, looksLikeCardBill, spendToCardPayment, convertCardBalance, answerCardDue, cardLateFee, cardRate, CARD_RATE, undoCardConvert, cardFreeDays, byCategory, DEFAULT_SPLIT,
     isLoanCredit, borrowedThisCycle, borrowCheck, rolloverOptions, setTranslator,
     payoffOrder, tickDebts, debtJourney, lenderTasks, lastBorrowed,
     encryptBackup, openBackup, backupInfo, toB64, fromB64, isTransfer, walletBalances, goalStatus, goalsMonthly, budgetEnvelopes, netWorth, reportRange, budgetHistory, aiFacts, planFacts, fraudSignals, investReady, goalResult, weekStart,

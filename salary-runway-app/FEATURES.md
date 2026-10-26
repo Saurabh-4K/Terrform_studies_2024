@@ -420,6 +420,7 @@ Spend tab → Bank SMS → **Import past payments**. Only for someone with time 
 ## 7. Money received
 
 For a refund, money from home, money returned, cashback, side income or extra pay.
+- **Money passing through:** when the same amount comes in and goes out within 3 days (₹26,000 from a friend, ₹26,000 to a brother), the app asks *Money passing through?* **Yes, I passed it on** counts neither as income nor spending, so today's limit stays where it was (with Undo, and *It wasn't passed on* on either entry). Then *Do you have to pay {friend} back?*: pay back in 1, 3, 6 or 12 months, each with its monthly amount and whether it fits in what's free; it becomes a loan with no interest, starting next payday, that ends with its last payment. *No, they're separate* leaves both as they are.
 - It raises the balance on the day it arrives.
 - **"What should this ₹X do?"** offers four choices, each with its effect in rupees:
   - **Keep it for this month:** raises today's amount, and shows the new run-out date if it changes

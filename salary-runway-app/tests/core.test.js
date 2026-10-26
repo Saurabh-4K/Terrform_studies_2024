@@ -1642,3 +1642,31 @@ test('bank SMS with an amount that is not money moving are skipped', () => {
   assert.equal(read('Rs.50.00 cashback credited to your A/c XX4321 on 25-10-26 from PhonePe').type, 'credit');
   assert.equal(read('Rs.6010.00 debited from A/c XX4321 on 03-11-26 towards EMI. Avl bal Rs.1200').amount, 6010);
 });
+
+test('money passed on (from a friend straight to a brother) is neither income nor spending', () => {
+  const t = '2026-10-26';
+  const s = baseState({
+    settings: { salary: 50000, payday: 1 },
+    balanceCheck: { date: '2026-10-23', amount: 1000 },
+    transactions: [
+      { id: 'in', kind: 'in', date: t, amount: 26000, category: 'Money received', note: 'Friend', source: 'sms', useFor: null },
+      { id: 'out', date: t, amount: 26000, category: 'Misc', note: 'Brother', source: 'sms' },
+    ],
+  });
+  const before = Core.projectRunway(s, t);
+  assert.ok(before.overToday > 0, 'before: shown as over by ' + before.overToday);
+  const pair = Core.passThroughPair(s, t);
+  assert.deepEqual([pair.in.id, pair.out.id], ['in', 'out']);
+  Core.passOn(s, 'in', 'out');
+  const r = Core.projectRunway(s, t);
+  const plain = Core.projectRunway(baseState({ settings: { salary: 50000, payday: 1 }, balanceCheck: { date: '2026-10-23', amount: 1000 } }), t);
+  assert.equal(Math.round(r.dailyAllowance), Math.round(plain.dailyAllowance));
+  assert.equal(r.spentToday, 0);
+  assert.equal(r.overToday, 0);
+  assert.equal(r.balanceToday, plain.balanceToday);
+  assert.equal(Core.passThroughPair(s, t), null);
+  // Borrowed from the friend: a loan with no interest, cleared after its last payment
+  const d = Core.addOwed(s, 'Owed to Friend', 26000, 3, t);
+  assert.deepEqual([d.rate, d.minPayment, d.emisLeft], [0, 8700, 3]);
+  assert.equal(Core.simulateDebts([d], 0, 'avalanche').months, 3);
+});
