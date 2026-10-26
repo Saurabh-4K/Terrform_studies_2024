@@ -1503,3 +1503,43 @@ test('set-asides never take the money daily life needs', () => {
   s.debts[1].minPayment = 14777;
   assert.ok(Core.autoSavings(s, '2026-10-26').emergencyMonthly > 0);
 });
+
+test('an EMI billed on a credit card is counted once, not again in the card bill', () => {
+  // Card added 25 Oct; the 14 Oct statement (due 3 Nov) is just the ₹6,010 card EMI.
+  const make = (via) => baseState({
+    settings: { salary: 98000, payday: 28 },
+    fixed: [],
+    budgets: [],
+    debts: [Object.assign({ id: 'emi', name: 'Credit card emi', balance: 24705, rate: 22.44, minPayment: 6010, dueDay: 3, emiThrough: '2026-10-03' }, via ? { viaCard: 'c1' } : {})],
+    cards: [{ id: 'c1', name: 'HDFC card', last4: '6645', limit: 90000, statementDay: 14, dueDay: 3, created: '2026-10-25',
+      setupStatement: 6010, setupDueDate: '2026-11-03', setupUnbilled: 0 }],
+    transactions: [{ id: 'old', kind: 'cardpay', cardId: 'c1', date: '2026-10-03', amount: 6000 }],
+  });
+  const cyc = Core.cycleFor('2026-10-29', 28);
+  const outOn3 = (s) => Core.cycleEvents(s, cyc, '2026-10-29').filter((e) => e.date === '2026-11-03').reduce((t, e) => t + e.amount, 0);
+  // Before: the EMI and the card bill holding it both came off
+  assert.equal(outOn3(make(false)), 12020);
+  // Paid through the card: once
+  const s = make(true);
+  assert.equal(outOn3(s), 6010);
+  const st = Core.cardStatus(s, s.cards[0], '2026-10-29');
+  assert.equal(st.total, 6010);
+  assert.equal(st.remaining, 6010);
+  assert.equal(st.due, '2026-11-03');
+  // Paying the bill on 3 Nov, then ₹1,000 on the card on 5 Nov: that ₹1,000 is still owed, not cancelled by the EMI payment
+  Core.answerCardDue(s, 'c1', 'full', 0, '2026-11-03', '2026-11-03');
+  s.transactions.push({ id: 'sp', date: '2026-11-05', amount: 1000, category: 'Shopping', paidFrom: 'c1' });
+  assert.equal(Core.cardStatus(s, s.cards[0], '2026-11-04').remaining, 0);
+  assert.equal(Core.cardReserve(s, '2026-11-10'), 1000);
+  // The 14 Nov statement: the ₹1,000 plus the next EMI
+  const nov = Core.cardStatus(s, s.cards[0], '2026-11-20');
+  assert.equal(nov.statementDate, '2026-11-14');
+  assert.equal(nov.total, 7010);
+  assert.equal(nov.due, '2026-12-03');
+  // Next round only the EMI leaves on 3 Dec; the ₹1,000 was counted when it was spent
+  const dec = Core.cycleEvents(s, Core.cycleFor('2026-11-29', 28), '2026-11-29').filter((e) => e.date === '2026-12-03');
+  assert.deepEqual(dec.map((e) => [e.name, e.amount]), [['Credit card emi', 6010]]);
+  // And the loan goes down after each EMI
+  Core.tickDebts(s, '2026-11-04');
+  assert.ok(s.debts[0].balance < 24705 && s.debts[0].balance > 18000, 'balance ' + s.debts[0].balance);
+});

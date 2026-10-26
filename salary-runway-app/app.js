@@ -2839,6 +2839,22 @@
       ' data-list="' + list + '" data-id="' + esc(item.id) + '" data-field="' + field + '" value="' + esc(value) + '"' + (extra || '') + '></label>';
   }
 
+  /*
+   * A loan whose EMI is billed on a credit card: picking the card makes it
+   * leave on the card's due day and counts it once, not again in the card bill.
+   */
+  function loanViaCard(d) {
+    const cards = state.cards || [];
+    if (!cards.length || d.fromCard) return '';
+    const id = 'via-' + d.id;
+    const ask = !d.viaCard && Core.looksLikeCardBill(d.name);
+    return '<div class="loan-via"><label class="field" for="' + id + '"><span>' + tr('Paid through') + '</span><select id="' + id + '" data-via-card="' + esc(d.id) + '">' +
+      '<option value="">' + tr('Bank account (its own EMI)') + '</option>' +
+      cards.map((c) => '<option value="' + esc(c.id) + '"' + (d.viaCard === c.id ? ' selected' : '') + '>' + esc(tr('{name} bill (EMI on the card)', { name: c.name })) + '</option>').join('') +
+      '</select></label>' +
+      (ask ? '<span class="hint warn">' + tr('Is this EMI billed on your credit card? Pick the card, so it’s counted once, not again in the card bill.') + '</span>' : '') + '</div>';
+  }
+
   function removeButton(list, item) {
     return '<button class="icon" data-action="list-remove" data-list="' + list + '" data-id="' + esc(item.id) + '" aria-label="' + esc(tr('Remove {name}', { name: item.name ? label(item.name) : tr('row') })) + '">✕</button>';
   }
@@ -4141,7 +4157,14 @@
       (st.paidSince ? '<div class="line"><span>' + tr('Paid so far') + '</span><span class="good">' + inr(st.paidSince) + '</span></div>' : '') +
       '<div class="line total"><span>' + (st.remaining ? tr('To pay by {date}', { date: fmtDate(st.due) }) : tr('Bill paid')) + '</span><span' + (st.overdue ? ' class="bad"' : '') + '>' + inr(st.remaining) + '</span></div>' +
       '<div class="line"><span>' + tr('Spent since (next bill)') + '</span><span>' + inr(st.unbilled) + '</span></div></div>';
-    if (st.remaining && st.daysToDue <= 0 && c.answered !== st.due) {
+    // Added with the bill before last: ask for the latest one, or it's missed.
+    const lastSt = Core.statementOn(c, c.created || t);
+    if (!st.statementDate && c.setupDueDate && c.setupDueDate <= lastSt && !c.statement) {
+      html += '<div class="callout warn"><b>' + tr('What’s due on your {date} statement?', { date: fmtDate(lastSt) }) + '</b>' +
+        '<span class="hint">' + tr('The bill above is the one before it. Enter the {date} bill, due {due}, so it isn’t missed. Include any EMI billed on the card.', { date: fmtDate(lastSt), due: fmtDate(Core.dueAfter(c, lastSt)) }) + '</span>' +
+        '<div class="row"><label class="field" for="card-latest-' + esc(c.id) + '"><span>' + tr('Amount due (₹)') + '</span><input id="card-latest-' + esc(c.id) + '" type="number" inputmode="numeric" min="0"></label>' +
+        '<button class="primary" data-action="card-latest" data-id="' + esc(c.id) + '">' + tr('Save') + '</button></div></div>';
+    } else if (st.remaining && st.daysToDue <= 0 && c.answered !== st.due) {
       html += cardDueQuestion(c, st);
     } else if (st.remaining) {
       html += '<div class="row"><button class="primary" data-action="card-plan" data-id="' + esc(c.id) + '">' + tr(ui.cardPlan && ui.cardPlan.cardId === c.id ? 'Hide payment plan' : 'Plan this payment') + '</button></div>';
@@ -4660,7 +4683,7 @@
       '<div class="edit-rows">' + state.debts.map((d) =>
         '<div class="edit-row cols-debt">' + listField('debts', d, 'name', 'Name', 'text') + listField('debts', d, 'balance', 'Balance (₹)', 'number') +
         listField('debts', d, 'rate', 'Interest %/yr', 'number') + listField('debts', d, 'minPayment', 'Monthly min (₹)', 'number') +
-        listField('debts', d, 'dueDay', 'Due day', 'number', ' max="31"') + removeButton('debts', d) + '</div>').join('') + '</div>' +
+        listField('debts', d, 'dueDay', 'Due day', 'number', ' max="31"') + removeButton('debts', d) + '</div>' + loanViaCard(d)).join('') + '</div>' +
       '<div><button data-action="list-add" data-list="debts">' + tr('Add loan') + '</button></div>' +
       (debts.length ? '<div class="list">' + debts.map((d) => {
         const i = (d.balance * d.rate) / 1200;
@@ -5119,6 +5142,17 @@
         removed.forEach((x) => { if (Core.isIncome(x)) undoIncomeUse(x); });
         state.transactions = state.transactions.filter((x) => !(x.source === 'sms' && x.date < date));
         ui.smsClean = null; save(); toast(tr('{entries} removed', { entries: plural(removed.length, 'entry', 'entries') })); break;
+      }
+      case 'card-latest': {
+        const c = (state.cards || []).find((x) => x.id === btn.dataset.id);
+        const el = document.getElementById('card-latest-' + btn.dataset.id);
+        if (!c || !el || el.value === '') { toast(tr('Enter the amount due, or 0 if nothing is due.')); return; }
+        const lastSt = Core.statementOn(c, c.created || t);
+        c.setupStatement = Math.max(0, Math.round(Number(el.value) || 0));
+        c.setupDueDate = Core.dueAfter(c, lastSt);
+        save();
+        toast(tr('{amount} due {date} on {name}', { amount: inr(c.setupStatement), date: fmtDate(c.setupDueDate), name: c.name }));
+        break;
       }
       case 'report-save': makeReport('save'); return;
       case 'report-share': makeReport('share'); return;
@@ -5673,6 +5707,16 @@
 
   function onChange(ev) {
     const el = ev.target;
+    if (el.dataset.viaCard !== undefined) {
+      const d = state.debts.find((x) => x.id === el.dataset.viaCard);
+      const c = (state.cards || []).find((x) => x.id === el.value);
+      if (!d) return;
+      // The loan keeps its own due day; while linked, the card's due day is used.
+      if (c) d.viaCard = c.id; else delete d.viaCard;
+      save(); rerenderKeepScroll();
+      if (c) toast(tr('{name} is now paid through the {card} bill, counted once.', { name: d.name, card: c.name }));
+      return;
+    }
     if (el.dataset.leakPayee !== undefined) {
       const rules = Object.assign({}, state.leakRules);
       if (el.value) rules[el.dataset.leakPayee] = el.value; else delete rules[el.dataset.leakPayee];

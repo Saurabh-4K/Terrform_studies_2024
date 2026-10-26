@@ -471,6 +471,10 @@ For a refund, money from home, money returned, cashback, side income or extra pa
   - **Part:** pay what you can.
   - **Convert to EMI:** enter the bank's amount, rate (22% default), months (3, 6, 9, 12, 18 or 24) and processing fee. The app compares it with carrying the same amount on the card ("EMI saves ₹1,563"). **Suggested only when you can't pay in full and it's clearly cheaper**, always with "An EMI is still a loan". After converting, it moves to Debts and every month's plan, **starting with the next bill**; the fee is charged on the card.
 - Spending recorded before a card is added (from SMS) links to it automatically once you add it.
+- **A loan whose EMI is billed on a card** (Debts → Loans → *Paid through: HDFC card bill*): its EMI leaves once, on the card's due day, and isn't counted again inside the card bill. The card still shows it in each bill and the amount owed, paying the bill doesn't cancel other card spending, and the loan goes down after each EMI. A loan named like a card EMI ("Credit card EMI") asks whether it's billed on the card.
+- **Adding a card with the bill before last** (a due date before the last statement) is refused with the right dates; a card already added that way asks *What's due on your 14 Oct statement?* on the card.
+- **A card bill noted as spending** (Bills, "Credit card") is offered in Bills to pay as *HDFC card bill → Link*: it becomes a card payment, or moves the one already recorded to its real date, so it counts once.
+- Payments made before the bill the card was added with paid older bills, so they don't count toward that bill or cancel new spending.
 
 ## 11. Debts tab: loans and payoff plans
 

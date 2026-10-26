@@ -298,7 +298,9 @@
       if (date) events.push({ date, name: f.name, amount: Number(f.amount) || 0, kind: 'fixed' });
     });
     state.debts.filter((d) => d.balance > 0).forEach((d) => {
-      const date = occurrenceInCycle(Number(d.dueDay) || 1, cycle);
+      // Paid through a card bill: it leaves on the card's due day.
+      const card = d.viaCard && (state.cards || []).find((c) => c.id === d.viaCard);
+      const date = occurrenceInCycle(Number(card ? card.dueDay : d.dueDay) || 1, cycle);
       // A card EMI starts with the card's next bill.
       if (date && (!d.starts || date >= d.starts)) events.push({ date, name: d.name, amount: Number(d.minPayment) || 0, kind: 'debt' });
     });
@@ -596,18 +598,37 @@
    * on 3 Oct, is paid, not overdue.
    */
   function setupFrom(card) {
-    const created = card.created || '9999-12-31';
-    if (!card.setupDueDate) return created;
+    // A card saved before cards had an added date: every payment counts.
+    const created = card.created || '';
+    if (!card.setupDueDate || !created) return created;
     const st = statementOn(card, addDays(card.setupDueDate, -1));
     return st < created ? st : created;
   }
 
+  /*
+   * A loan paid through a card bill (debt.viaCard): its EMI is billed on each
+   * statement. Its money leaves on the card's due date as the loan's EMI, so
+   * it's owed on the card without being card spending. The bill already on
+   * the card when it was added is in setupStatement, so this counts the
+   * statements after that, until iso.
+   */
+  function cardEmis(state, card) {
+    return (state.debts || []).filter((d) => d.viaCard === card.id && Number(d.balance) > 0 && Number(d.minPayment) > 0);
+  }
+  function cardEmiCharges(state, card, iso) {
+    const emi = sum(cardEmis(state, card), (d) => Number(d.minPayment));
+    if (!emi) return 0;
+    let n = 0;
+    for (let st = nextStatementAfter(card, card.created || iso); st <= iso; st = nextStatementAfter(card, st)) n++;
+    return n * emi;
+  }
+
   // What the card owes the bank at the end of a date.
   function cardOwedAt(state, card, iso) {
-    return setupOwed(card) +
+    return setupOwed(card) + cardEmiCharges(state, card, iso) +
       sum(cardSpends(state, card).filter((t) => t.date <= iso), (t) => t.amount) -
       sum(cardRefunds(state, card).filter((t) => t.date <= iso), (t) => t.amount) -
-      sum(cardPayments(state, card).filter((t) => t.date <= iso), (t) => t.amount);
+      sum(cardPayments(state, card).filter((t) => t.date >= setupFrom(card) && t.date <= iso), (t) => t.amount);
   }
 
   /*
@@ -619,8 +640,10 @@
     return sum(state.cards || [], (c) => {
       const spent = sum(cardSpends(state, c).filter((t) => t.date < iso), (t) => t.amount) -
         sum(cardRefunds(state, c).filter((t) => t.date < iso), (t) => t.amount);
-      const paid = sum(cardPayments(state, c).filter((t) => t.date < iso), (t) => t.amount);
-      return Math.max(0, spent - Math.max(0, paid - setupOwed(c)));
+      // Payments before the bill the card was added with paid older bills.
+      const paid = sum(cardPayments(state, c).filter((t) => t.date >= setupFrom(c) && t.date < iso), (t) => t.amount);
+      // Payments clear what isn't card spending first: the bill from before the card was added, and EMIs billed on it.
+      return Math.max(0, spent - Math.max(0, paid - setupOwed(c) - cardEmiCharges(state, c, addDays(iso, -1))));
     });
   }
 
@@ -628,8 +651,10 @@
   function cardLegacyEvents(state, card, todayIso) {
     const from = setupFrom(card);
     const paid = sum(cardPayments(state, card).filter((t) => t.date >= from && t.date <= todayIso), (t) => t.amount);
-    const statementLeft = Math.max(0, (Number(card.setupStatement) || 0) - paid);
-    const unbilledLeft = Math.max(0, setupOwed(card) - paid) - statementLeft;
+    const billLeft = Math.max(0, (Number(card.setupStatement) || 0) - paid);
+    // The EMIs on that bill leave as the loans' own EMIs, so only the rest is a bill to pay here.
+    const statementLeft = Math.min(billLeft, Math.max(0, (Number(card.setupStatement) || 0) - sum(cardEmis(state, card), (d) => Number(d.minPayment))));
+    const unbilledLeft = Math.max(0, setupOwed(card) - paid) - billLeft;
     const out = [];
     if (statementLeft > 0 && card.setupDueDate) {
       out.push({ date: card.setupDueDate, name: card.name + ' bill', amount: statementLeft, kind: 'card', cardId: card.id });
@@ -1278,7 +1303,8 @@
     state.debts.forEach((d) => {
       const bal = Number(d.balance) || 0;
       if (bal > (Number(d.startBalance) || 0)) d.startBalance = bal;
-      const day = Number(d.dueDay);
+      const card = d.viaCard && (state.cards || []).find((c) => c.id === d.viaCard);
+      const day = Number(card ? card.dueDay : d.dueDay);
       const emi = Number(d.minPayment) || 0;
       if (d.fromCard || !day || !(emi > 0) || !(bal > 0)) return;
       if (!d.emiThrough) { d.emiThrough = lastDueOn(todayIso, day); return; }

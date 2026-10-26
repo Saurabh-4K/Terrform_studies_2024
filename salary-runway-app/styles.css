@@ -235,6 +235,9 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
 .form-grid .wide { grid-column: 1 / -1; }
 
 .edit-rows { display: grid; gap: 8px; }
+.loan-via { display: grid; gap: 4px; margin: -2px 0 8px; }
+.loan-via .field { max-width: 360px; }
+.loan-via .hint.warn { color: var(--warn); }
 .edit-row { display: grid; gap: 8px; align-items: end; grid-template-columns: minmax(0, 1.7fr) minmax(0, 1.2fr) minmax(68px, 0.9fr) 36px; }
 .edit-row.cols-2 { grid-template-columns: minmax(0, 2fr) minmax(0, 1.3fr) 36px; }
 .edit-row.cols-debt { grid-template-columns: minmax(0, 1.6fr) minmax(0, 1.3fr) minmax(0, 0.8fr) minmax(0, 1.1fr) minmax(0, 0.8fr) 36px; }
