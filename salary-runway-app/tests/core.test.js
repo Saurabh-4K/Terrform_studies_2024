@@ -1574,3 +1574,22 @@ test('a card EMI with 4 left ends after the 4th, and stops being billed on the c
   const mar = Core.cycleEvents(s, Core.cycleFor('2027-03-01', 28), '2027-03-01');
   assert.equal(mar.filter((e) => e.kind === 'debt').length, 0);
 });
+
+test('a card-billed EMI paid from the account counts once: in the plan, next payday and net worth', () => {
+  const s = baseState({
+    settings: { salary: 98000, payday: 28 },
+    fixed: [], budgets: [],
+    debts: [{ id: 'emi', name: 'Credit card emi', balance: 24705, rate: 22.44, minPayment: 6010, dueDay: 3, viaCard: 'c1', emisLeft: 4 }],
+    cards: [{ id: 'c1', name: 'HDFC card', last4: '6645', limit: 90000, statementDay: 14, dueDay: 3, created: '2026-10-25',
+      setupStatement: 6010, setupDueDate: '2026-11-03' }],
+  });
+  const t = '2026-10-26';
+  assert.equal(Core.monthlyPlan(s, t).debtMin, 6010);
+  const next = Core.nextPaydayPreview(s, t);
+  assert.equal(next.fromBefore, 0);
+  assert.equal(next.committed, 6010);
+  // Owed once, as the loan, not again as card debt
+  const w = Core.netWorth(s, t);
+  assert.equal(w.cards, 0);
+  assert.equal(w.loans, 24705);
+});

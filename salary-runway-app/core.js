@@ -2029,7 +2029,9 @@
     const funds = (Number(sv.emergencyBalance) || 0) + (Number(sv.investSaved) || 0);
     const loans = sum((state.debts || []).filter((d) => d.balance > 0), (d) => Number(d.balance) || 0);
     // Card spending this cycle already came off the money; what was owed before the card was added did not.
-    const cards = sum(state.cards || [], (c) => Math.max(0, setupOwed(c) - sum(cardPayments(state, c).filter((t) => t.date <= todayIso), (t) => t.amount)));
+    // EMIs on a card bill are counted once, with the loans.
+    const cards = sum(state.cards || [], (c) => Math.max(0, setupOwed(c) - sum(cardEmis(state, c), (d) => Number(d.minPayment)) -
+      sum(cardPayments(state, c).filter((t) => t.date >= setupFrom(c) && t.date <= todayIso), (t) => t.amount)));
     return { money, funds, loans, cards, owe: loans + cards, own: money + funds, value: Math.round(money + funds - loans - cards) };
   }
 

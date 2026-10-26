@@ -2848,12 +2848,13 @@
     if (!cards.length || d.fromCard) return '';
     const id = 'via-' + d.id;
     const ask = !d.viaCard && Core.looksLikeCardBill(d.name);
-    return '<div class="loan-via"><label class="field" for="' + id + '"><span>' + tr('Paid through') + '</span><select id="' + id + '" data-via-card="' + esc(d.id) + '">' +
-      '<option value="">' + tr('Bank account (its own EMI)') + '</option>' +
-      cards.map((c) => '<option value="' + esc(c.id) + '"' + (d.viaCard === c.id ? ' selected' : '') + '>' + esc(tr('{name} bill (EMI on the card)', { name: c.name })) + '</option>').join('') +
+    return '<div class="loan-via"><label class="field" for="' + id + '"><span>' + tr('Billed on a credit card?') + '</span><select id="' + id + '" data-via-card="' + esc(d.id) + '">' +
+      '<option value="">' + tr('No, a bank EMI') + '</option>' +
+      cards.map((c) => '<option value="' + esc(c.id) + '"' + (d.viaCard === c.id ? ' selected' : '') + '>' + esc(tr('Yes, on the {name} bill', { name: c.name })) + '</option>').join('') +
       '</select></label>' +
-      (d.viaCard ? listField('debts', d, 'emisLeft', 'EMIs left (if you know)', 'number', ' max="120" placeholder="4"') : '') +
-      (ask ? '<span class="hint warn">' + tr('Is this EMI billed on your credit card? Pick the card, so it’s counted once, not again in the card bill.') + '</span>' : '') + '</div>';
+      (d.viaCard ? listField('debts', d, 'emisLeft', 'EMIs left (if you know)', 'number', ' max="120" placeholder="4"') +
+        '<span class="hint">' + tr('You pay it from your account with the card bill. It comes off once a month on the card’s due date. It isn’t card spending, so it isn’t added again next month.') + '</span>' : '') +
+      (ask ? '<span class="hint warn">' + tr('Does this EMI show on your credit card bill? Pick the card, so it’s counted once, not again inside the card bill.') + '</span>' : '') + '</div>';
   }
 
   function removeButton(list, item) {
@@ -5746,7 +5747,7 @@
       // The loan keeps its own due day; while linked, the card's due day is used.
       if (c) d.viaCard = c.id; else delete d.viaCard;
       save(); rerenderKeepScroll();
-      if (c) toast(tr('{name} is now paid through the {card} bill, counted once.', { name: d.name, card: c.name }));
+      if (c) toast(tr('{name} is on the {card} bill now: counted once a month, from your account.', { name: d.name, card: c.name }));
       return;
     }
     if (el.dataset.leakPayee !== undefined) {
