@@ -4,7 +4,7 @@
   "private": true,
   "description": "See the date your salary runs out. Budgets, debt payoff and emergency planning, with all data kept on the device.",
   "scripts": {
-    "test": "node --test",
+    "test": "node --test tests/*.test.js",
     "start": "python3 -m http.server 8080",
     "build": "node scripts/build-www.js",
     "android:sync": "npm run build && npx cap sync android",

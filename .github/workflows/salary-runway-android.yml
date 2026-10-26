@@ -66,6 +66,11 @@ jobs:
         if: steps.changes.outputs.build == 'true'
         run: npm test
 
+      - name: Test the weekly plan server
+        if: steps.changes.outputs.build == 'true'
+        working-directory: salary-runway-app/server
+        run: npm ci && npm test
+
       - name: Copy the web app into the Android project
         if: steps.changes.outputs.build == 'true'
         run: npm run android:sync
