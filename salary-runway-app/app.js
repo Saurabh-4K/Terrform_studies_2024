@@ -561,6 +561,11 @@
       'First an easy call: moving a due date or asking for a late fee back. After 60 days of logged spending, Hisab Se writes a request for a lower rate, backed by your real numbers.',
       'Making the call is the win, whatever the answer. The next day the app asks how it went and updates your loan if something changed.',
     ]],
+    people: ['People', [
+      'Money between you and friends or family. No EMI and no fixed dates: paid back all at once or in parts, by a date only if one was promised.',
+      'It moves your balance like any money, but it’s never counted as income or spending, so your budgets stay right.',
+      'Money you promised to pay back before payday is kept aside, unless money someone promised to return to you first covers it. Money owed to you counts only once it comes back.',
+    ]],
     loans: ['Loans', [
       'Add personal loans, EMIs or other debts to see what they cost. Update balances from each statement.',
       'Credit cards usually charge 36–45% a year on unpaid balances. Paying only the minimum keeps most of that cost running.',
@@ -739,6 +744,7 @@
     data: '<path d="M12 2c4.4 0 8 1.6 8 3.5S16.4 9 12 9 4 7.4 4 5.5 7.6 2 12 2zM4 8.4c1.6 1.4 4.6 2.1 8 2.1s6.4-.7 8-2.1V12c0 1.9-3.6 3.5-8 3.5S4 13.9 4 12zm0 6.6c1.6 1.4 4.6 2.1 8 2.1s6.4-.7 8-2.1v3.5c0 1.9-3.6 3.5-8 3.5s-8-1.6-8-3.5z"/>',
     broom: '<path d="M14.6 2l1.8.9-3.6 7.1H17l2 12H5l2-12h3.4z"/>',
     flag: '<path d="M5 2h2v20H5zM8.5 3H20l-3 4.5 3 4.5H8.5z"/>',
+    people: '<path d="M8.5 4a3.5 3.5 0 1 1 0 7 3.5 3.5 0 0 1 0-7zm8 1a3 3 0 1 1 0 6 3 3 0 0 1 0-6zM2 20c0-3.6 2.9-6.5 6.5-6.5S15 16.4 15 20zm14-6.4c3.3.1 6 2.8 6 6.4h-5.2c0-2.5-.3-4.6-.8-6.4z"/>',
     info: '<path d="M12 2a10 10 0 1 1 0 20 10 10 0 0 1 0-20zm-1.1 8v7.5h2.2V10zm0-3.6V8.6h2.2V6.4z"/>',
     add: '<path d="M12 2a10 10 0 1 1 0 20 10 10 0 0 1 0-20zm-1.1 5v3.9H7v2.2h3.9V17h2.2v-3.9H17v-2.2h-3.9V7z"/>',
   };
@@ -902,7 +908,7 @@
       '</section>' +
       cardHomeNotes(cyc) +
       savedCard() +
-      passCard() + incomeCard() +
+      iouDueCard() + passCard() + incomeCard() +
       weekCard() +
       bal +
       (needsCheck().length
@@ -939,7 +945,7 @@
           (upcoming.length
             ? '<div class="list">' + upcoming.map((e) =>
               '<div class="list-item"><div class="date-badge"><b>' + Core.parseISO(e.date).getDate() + '</b>' + monthName(Core.parseISO(e.date).getMonth()) + '</div>' +
-              '<div class="grow"><div class="title">' + esc(e.name) + '</div><div class="meta">' + tr(e.kind === 'debt' ? 'Minimum payment' : e.kind === 'bill' ? 'Estimate · amount varies' : 'Fixed payment') + '</div></div>' +
+              '<div class="grow"><div class="title">' + esc(e.name) + '</div><div class="meta">' + tr(e.kind === 'debt' ? 'Minimum payment' : e.kind === 'bill' ? 'Estimate · amount varies' : e.kind === 'iou' ? 'Promised back' : 'Fixed payment') + '</div></div>' +
               '<div class="amt">' + inr(e.amount) + '</div></div>').join('') + '</div>'
             : '<p class="hint">' + tr('No more fixed payments this cycle.') + '</p>') + '</section>' },
       { key: 'payday', group: 'This month', icon: 'payday', label: 'Next payday', tone: 'mint', badge: { text: fmtDate(cyc.next) }, html: () => paydayPreviewCard() },
@@ -1807,7 +1813,9 @@
       '<p class="hint">' + (n.value < 0 ? tr('You owe more than you own. Every loan payment and every rupee saved moves this up.') : tr('What you own minus what you owe.')) +
       (change !== null ? ' ' + tr(change >= 0 ? 'Up {amount} since last round.' : 'Down {amount} since last round.', { amount: inr(Math.abs(change)) }) : '') + '</p>' +
       '<div class="summary">' + line('Money in your account and wallets', inr(n.money)) + line('Emergency fund and Grow savings', inr(n.funds)) +
+      (n.lentPeople ? line('Owed to you by people', inr(n.lentPeople)) : '') +
       (n.loans ? line('Loans', '−' + inr(n.loans)) : '') + (n.cards ? line('Card dues from before', '−' + inr(n.cards)) : '') +
+      (n.owedPeople ? line('Owed to people', '−' + inr(n.owedPeople)) : '') +
       line('Net worth', signed(n.value), n.value < 0 ? 'bad' : '') + '</div>' +
       (keys.length > 1
         ? '<div class="nw-grid">' + bars + '</div><p class="viz-tip" aria-live="polite">' + tr('Tap a round to see its number.') + '</p>' +
@@ -2049,30 +2057,142 @@
    */
   function passCard() {
     const t = today();
-    const ask = state.passAsk;
-    if (ask) {
-      const i = state.transactions.find((x) => x.id === ask.inId);
-      if (!i) return '';
-      const free = Core.nextPaydayPreview(state, t).freeAfter;
-      const opt = (months) => {
-        const monthly = Math.ceil(i.amount / months / 100) * 100;
-        return '<button class="choice' + (monthly <= free ? '' : ' tight') + '" data-action="pass-owe" data-months="' + months + '">' +
-          '<span class="choice-title">' + tr('Pay back in {months}', { months: plural(months, 'month') }) + '</span>' +
-          '<span class="choice-detail">' + tr('{amount} a month from payday', { amount: inr(monthly) }) + ' · ' +
-          (monthly <= free ? tr('fits in what’s free') : tr('more than the {free} a month free', { free: inr(Math.max(0, free)) })) + '</span></button>';
-      };
-      return '<section class="card income-card pass-card"><div class="card-head"><h2>' + tr('Do you have to pay {name} back?', { name: esc(i.note || tr('them')) }) + '</h2></div>' +
-        '<p class="hint">' + tr('Borrowed money is a loan even when it went to someone else. Add it, and the app keeps money for it each payday.') + '</p>' +
-        '<div class="choices">' + [1, 3, 6, 12].map(opt).join('') + '</div>' +
-        '<div class="row"><button data-action="pass-owe-no">' + tr('No, it wasn’t borrowed') + '</button></div></section>';
+    const f = ui.passForm;
+    const pair = f ? { in: state.transactions.find((x) => x.id === f.inId), out: state.transactions.find((x) => x.id === f.outId) } : Core.passThroughPair(state, t);
+    if (!pair || !pair.in || !pair.out) return '';
+    const from = pair.in.note || tr('someone');
+    const to = pair.out.note || tr('someone');
+    const ids = ' data-in="' + esc(pair.in.id) + '" data-out="' + esc(pair.out.id) + '"';
+    if (f) {
+      const date = (id, label) => '<label class="field" for="' + id + '"><span>' + label + '</span><input id="' + id + '" type="date" min="' + t + '"></label>';
+      return '<section class="card income-card pass-card"><div class="card-head"><h2>' + tr('Borrowed from {from}, lent to {to}', { from: esc(from), to: esc(to) }) + '</h2></div>' +
+        '<p class="hint">' + tr('Any dates promised? Leave them empty if there are none. Paying back can be all at once or in parts.') + '</p>' +
+        '<div class="form-grid">' + date('pf-to', tr('{to} gives it back by', { to: esc(to) })) + date('pf-from', tr('You pay {from} back by', { from: esc(from) })) + '</div>' +
+        '<div class="row"><button class="primary" data-action="pass-iou"' + ids + '>' + tr('Save') + '</button><button class="ghost" data-action="pass-form-cancel">' + tr('Cancel') + '</button></div></section>';
     }
-    const pair = Core.passThroughPair(state, t);
-    if (!pair) return '';
     return '<section class="card income-card pass-card"><div class="card-head"><h2>' + tr('Money passing through?') + '</h2></div>' +
       '<p class="hint">' + tr('{amount} came from {from} on {date1}, and {amount} went to {to} on {date2}. If you passed it on, it’s neither your income nor your spending.',
-        { amount: inr(pair.in.amount), from: esc(pair.in.note || tr('someone')), to: esc(pair.out.note || tr('someone')), date1: fmtDate(pair.in.date), date2: fmtDate(pair.out.date) }) + '</p>' +
-      '<div class="row"><button class="primary" data-action="pass-yes" data-in="' + esc(pair.in.id) + '" data-out="' + esc(pair.out.id) + '">' + tr('Yes, I passed it on') + '</button>' +
-      '<button data-action="pass-no" data-in="' + esc(pair.in.id) + '" data-out="' + esc(pair.out.id) + '">' + tr('No, they’re separate') + '</button></div></section>';
+        { amount: inr(pair.in.amount), from: esc(from), to: esc(to), date1: fmtDate(pair.in.date), date2: fmtDate(pair.out.date) }) + '</p>' +
+      '<div class="choices">' +
+      '<button class="choice suggested" data-action="pass-borrow"' + ids + '><span class="choice-title">' + tr('Borrowed from {from}, lent to {to}', { from: esc(from), to: esc(to) }) + '</span>' +
+        '<span class="choice-detail">' + tr('You owe {from}, {to} owes you. Kept in People, with any promised dates.', { from: esc(from), to: esc(to) }) + '</span></button>' +
+      '<button class="choice" data-action="pass-yes"' + ids + '><span class="choice-title">' + tr('Just passed it on') + '</span>' +
+        '<span class="choice-detail">' + tr('Nobody owes anybody: you only delivered it.') + '</span></button></div>' +
+      '<div class="row"><button data-action="pass-no"' + ids + '>' + tr('No, they’re separate') + '</button></div></section>';
+  }
+
+  // ---------- people: money between you and friends or family ----------
+
+  // Buttons on an entry: start an IOU with it, or record it as a repayment.
+  function iouActions(x) {
+    if (x.iouId || x.iouPay || x.passedOn) return '';
+    const isIn = Core.isIncome(x);
+    if (!isIn && !Core.isFlexible(x)) return '';
+    const shop = Core.normalizeMerchant(x.note);
+    // Repayments: money in pays back what someone owes you; money out pays back what you owe.
+    const open = Core.openIous(state, isIn ? 'lent' : 'owe')
+      .sort((a, b) => (Core.normalizeMerchant(b.name) === shop) - (Core.normalizeMerchant(a.name) === shop));
+    return '<div class="iou-actions">' +
+      open.slice(0, 3).map((i) => '<button class="ghost small" data-action="iou-pay-tx" data-id="' + esc(x.id) + '" data-iou="' + esc(i.id) + '">' +
+        tr(isIn ? '{name} paying back ({left} left)' : 'Paying {name} back ({left} left)', { name: esc(i.name), left: inr(Core.iouLeft(i)) }) + '</button>').join('') +
+      '<button class="ghost small" data-action="iou-start" data-id="' + esc(x.id) + '">' + tr(isIn ? 'Borrowed: I’ll pay it back' : 'I lent this') + '</button></div>';
+  }
+
+  function iouStartForm() {
+    const f = ui.iouStart;
+    const x = f && state.transactions.find((y) => y.id === f.txId);
+    if (!x) return '';
+    const isIn = Core.isIncome(x);
+    return '<div class="callout iou-form"><b>' + tr(isIn ? 'Borrowed {amount}' : 'Lent {amount}', { amount: inr(x.amount) }) + '</b>' +
+      '<div class="form-grid"><label class="field" for="is-name"><span>' + tr(isIn ? 'From' : 'To') + '</span><input id="is-name" type="text" value="' + esc(x.note || '') + '"></label>' +
+      '<label class="field" for="is-date"><span>' + tr(isIn ? 'You pay it back by (if promised)' : 'They give it back by (if promised)') + '</span><input id="is-date" type="date" min="' + today() + '"></label></div>' +
+      '<div class="row"><button class="primary" data-action="iou-start-save">' + tr('Save') + '</button><button class="ghost" data-action="iou-start-cancel">' + tr('Cancel') + '</button></div></div>';
+  }
+
+  // Promised dates that came: did the money move?
+  function iouDueCard() {
+    const t = today();
+    const due = (state.iou || []).filter((i) => Core.iouLeft(i) > 0 && i.promised && i.promised <= t && (state.iouAsked || {})[i.id] !== t)
+      .sort((a, b) => (a.promised < b.promised ? -1 : a.promised > b.promised ? 1 : a.dir === 'lent' ? -1 : 1));
+    if (!due.length) return '';
+    const i = due[0];
+    const left = Core.iouLeft(i);
+    return '<section class="card income-card iou-due"><div class="card-head"><h2>' + tr(i.dir === 'lent'
+      ? '{name} promised {amount} by {date}. Did it come back?' : 'You promised {name} {amount} by {date}. Did you pay?',
+      { name: esc(i.name), amount: inr(left), date: fmtDate(i.promised) }) + '</h2></div>' +
+      (ui.iouPay === i.id ? iouPayForm(i) :
+        '<div class="row"><button class="primary" data-action="iou-all" data-iou="' + esc(i.id) + '">' + tr('Yes, all of it') + '</button>' +
+        '<button data-action="iou-pay-open" data-iou="' + esc(i.id) + '">' + tr('Part of it') + '</button>' +
+        '<button class="ghost" data-action="iou-later" data-iou="' + esc(i.id) + '">' + tr('Not yet') + '</button></div>') + '</section>';
+  }
+
+  function iouPayForm(i) {
+    return '<div class="form-grid"><label class="field" for="ip-amt"><span>' + tr('Amount (₹)') + '</span><input id="ip-amt" type="number" inputmode="numeric" min="1" max="' + Core.iouLeft(i) + '"></label>' +
+      '<label class="field" for="ip-date"><span>' + tr('Date') + '</span><input id="ip-date" type="date" max="' + today() + '" value="' + today() + '"></label></div>' +
+      '<div class="row"><button class="primary" data-action="iou-pay-save" data-iou="' + esc(i.id) + '">' + tr('Save') + '</button><button class="ghost" data-action="iou-pay-cancel">' + tr('Cancel') + '</button></div>';
+  }
+
+  /*
+   * A repayment: tied to an entry already there (the bank SMS) when one
+   * matches, otherwise recorded as money in or out, so the balance follows.
+   */
+  function recordIouPayment(i, amount, date) {
+    const isIn = i.dir === 'lent';
+    const shop = Core.normalizeMerchant(i.name);
+    const match = state.transactions.find((x) => !x.iouId && !x.iouPay && !x.passedOn && Math.round(x.amount) === amount &&
+      Math.abs(Core.daysBetween(x.date, date)) <= 5 && (isIn ? Core.isIncome(x) : Core.isFlexible(x)) &&
+      (!shop || !Core.normalizeMerchant(x.note) || Core.normalizeMerchant(x.note) === shop || Math.round(x.amount) === Core.iouLeft(i)));
+    let tx = match;
+    if (!tx) {
+      tx = isIn ? { id: uid(), kind: 'in', date, amount, category: 'Money returned', note: i.name, source: 'manual', useFor: 'spend' }
+        : { id: uid(), date, amount, category: 'Misc', note: i.name, source: 'manual' };
+      state.transactions.push(tx);
+    }
+    Core.payIou(state, i.id, amount, date, tx.id);
+  }
+
+  function peopleCard() {
+    const t = today();
+    const sm = Core.iouSummary(state, t);
+    const all = (state.iou || []).slice().sort((a, b) => (Core.iouLeft(b) > 0) - (Core.iouLeft(a) > 0) || (a.promised || '9') < (b.promised || '9') ? -1 : 1);
+    const row = (i) => {
+      const left = Core.iouLeft(i);
+      const late = left > 0 && i.promised && i.promised < t;
+      let html = '<div class="list-item iou-item"><div class="grow"><div class="title">' + esc(i.name) + '</div>' +
+        '<div class="meta' + (late ? ' bad' : '') + '">' + (left === 0 ? tr('Settled') : tr(i.dir === 'lent' ? 'Owes you {amount}' : 'You owe {amount}', { amount: inr(left) }) +
+          (i.promised ? ' · ' + tr(late ? 'was promised by {date}' : 'promised by {date}', { date: fmtDate(i.promised) }) : ' · ' + tr('no date'))) +
+        ((i.payments || []).length ? ' · ' + tr('{n} paid back so far', { n: inr(Number(i.paid) || 0) }) : '') + '</div></div>' +
+        '<div class="amt ' + (i.dir === 'lent' ? 'good' : 'bad') + '">' + (left ? (i.dir === 'lent' ? '+' : '−') + inr(left) : '✓') + '</div></div>';
+      if (left > 0) {
+        if (ui.iouPay === i.id) html += iouPayForm(i);
+        else if (ui.iouEdit === i.id) {
+          html += '<div class="form-grid"><label class="field" for="ie-date"><span>' + tr('Promised by') + '</span><input id="ie-date" type="date" value="' + esc(i.promised || '') + '"></label>' +
+            '<label class="field" for="ie-int"><span>' + tr('Interest agreed (₹, added to it)') + '</span><input id="ie-int" type="number" inputmode="numeric" min="0" placeholder="0"></label></div>' +
+            '<div class="row"><button class="primary" data-action="iou-edit-save" data-iou="' + esc(i.id) + '">' + tr('Save') + '</button><button class="ghost" data-action="iou-edit-cancel">' + tr('Cancel') + '</button>' +
+            '<span class="spacer"></span><button class="danger" data-action="iou-remove" data-iou="' + esc(i.id) + '">' + tr('Remove') + '</button></div>';
+        } else {
+          html += '<div class="row"><button class="small" data-action="iou-pay-open" data-iou="' + esc(i.id) + '">' + tr(i.dir === 'lent' ? 'Got some back' : 'Paid some back') + '</button>' +
+            '<button class="ghost small" data-action="iou-edit" data-iou="' + esc(i.id) + '">' + tr('Date or interest') + '</button></div>';
+        }
+      }
+      return html;
+    };
+    const form = ui.iouAdd
+      ? '<div class="callout iou-form"><div class="form-grid">' +
+        '<label class="field" for="ia-name"><span>' + tr('Who') + '</span><input id="ia-name" type="text"></label>' +
+        '<label class="field" for="ia-dir"><span>' + tr('Which way') + '</span><select id="ia-dir"><option value="owe">' + tr('I owe them') + '</option><option value="lent">' + tr('They owe me') + '</option></select></label>' +
+        '<label class="field" for="ia-amt"><span>' + tr('Amount (₹)') + '</span><input id="ia-amt" type="number" inputmode="numeric" min="1"></label>' +
+        '<label class="field" for="ia-date"><span>' + tr('Promised by (if any)') + '</span><input id="ia-date" type="date"></label></div>' +
+        '<p class="hint">' + tr('For money that moved before you used the app. New money from SMS can be marked as borrowed or lent from its entry.') + '</p>' +
+        (ui.iouError ? '<p class="bad" role="alert">' + esc(ui.iouError) + '</p>' : '') +
+        '<div class="row"><button class="primary" data-action="iou-add-save">' + tr('Add') + '</button><button class="ghost" data-action="iou-add-cancel">' + tr('Cancel') + '</button></div></div>'
+      : '<div><button data-action="iou-add">' + tr('Add someone') + '</button></div>';
+    return '<section class="card people-card"><div class="card-head">' + titled('People', 'people') + '</div>' +
+      '<p class="hint">' + tr('Money between you and friends or family: no EMI, paid back all at once or in parts, by a date only if one was promised.') + '</p>' +
+      (all.length ? '<div class="summary">' + '<div class="line"><span>' + tr('You owe') + '</span><span class="bad">' + inr(sm.oweTotal) + '</span></div>' +
+        '<div class="line"><span>' + tr('Owed to you') + '</span><span class="good">' + inr(sm.lentTotal) + '</span></div>' +
+        '<div class="line total"><span>' + tr('Balance') + '</span><span>' + (sm.net === 0 ? tr('Even') : sm.net > 0 ? tr('{amount} to you', { amount: inr(sm.net) }) : tr('{amount} you owe', { amount: inr(-sm.net) })) + '</span></div></div>' +
+        '<div class="list">' + all.map(row).join('') + '</div>' : '') + form + '</section>';
   }
 
   function incomeCard() {
@@ -2088,7 +2208,8 @@
         '<span class="choice-title">' + esc(opt.title) + (opt.use === o.recommended ? ' <span class="chip chip-auto">' + tr('Suggested') + '</span>' : '') + '</span>' +
         '<span class="choice-detail">' + esc(opt.detail) + '</span>' +
         (opt.badge ? '<span class="choice-badge">' + esc(opt.badge) + '</span>' : '') + '</button>').join('') + '</div>' +
-      '<p class="hint"><b>' + tr('Why the suggestion:') + '</b> ' + esc(o.reason) + ' ' + tr('The choice is yours.') + '</p></section>';
+      '<p class="hint"><b>' + tr('Why the suggestion:') + '</b> ' + esc(o.reason) + ' ' + tr('The choice is yours.') + '</p>' +
+      (ui.iouStart && ui.iouStart.txId === tx.id ? iouStartForm() : iouActions(tx)) + '</section>';
   }
 
   // Applies a choice for money received: moves it to a fund or a loan.
@@ -2547,7 +2668,7 @@
       sortCard() +
       importCard() +
       needsCheckCard() +
-      passCard() + incomeCard() +
+      iouDueCard() + passCard() + incomeCard() +
       addCard, [
         { key: 'viz-where', group: 'Your spending', icon: 'where', label: 'Where it went', tone: 'mint', viz: 'where', badge: null, html: () => vizCard() },
         { key: 'viz-when', group: 'Your spending', icon: 'when', label: 'When', tone: 'mint', viz: 'when', badge: null, html: () => vizCard() },
@@ -2676,7 +2797,7 @@
     const shop = Core.normalizeMerchant(p.merchant);
     const hits = state.transactions.filter((x) => !x.smsKey && x.source !== 'sms' && x.source !== 'import' && x.source !== 'reconcile' &&
       Number(x.amount) === p.amount && Math.abs(Core.daysBetween(x.date, p.date)) <= 3 &&
-      (p.type === 'credit' ? Core.isIncome(x) : Core.isFlexible(x)));
+      (p.type === 'credit' ? Core.isIncome(x) : Core.isFlexible(x) || ((x.iouId || x.iouPay) && !Core.isIncome(x))));
     if (!hits.length) return null;
     // Same place: the closest one. Otherwise only one clear candidate, and not a small everyday amount (two ₹100 teas are two payments).
     const named = hits.filter((x) => shop && Core.normalizeMerchant(x.note) === shop);
@@ -3299,6 +3420,8 @@
       '<div class="row"><button class="primary" data-action="edit-save">' + tr('Save changes') + '</button><button class="ghost" data-action="edit-cancel">' + tr('Cancel') + '</button></div>' +
       (x.passedOn ? '<div class="callout"><span class="hint">' + tr('Passed on with {other}: not counted as income or spending.', { other: esc(txTitle(state.transactions.find((y) => y.id === x.passedOn) || {})) }) + '</span>' +
         '<div><button class="ghost small" data-action="pass-undo">' + tr('It wasn’t passed on') + '</button></div></div>' : '') +
+      (x.iouId || x.iouPay ? '<div class="callout"><span class="hint">' + tr('Money with {name} (People): not counted as income or spending.', { name: esc(((state.iou || []).find((i) => i.id === (x.iouId || x.iouPay)) || {}).name || '') }) + '</span></div>' : '') +
+      (ui.iouStart && ui.iouStart.txId === x.id ? iouStartForm() : iouActions(x)) +
       notPaymentBox(x, flex || isIn || saved) +
       '</div></div>';
   }
@@ -3440,6 +3563,7 @@
       (x.wallet && !Core.isTransfer(x) ? ' · ' + esc(walletName(x.wallet)) : '') +
       (x.splitOf ? ' · <span class="chip">' + tr('Split') + '</span>' : '') +
       (x.passedOn ? ' · <span class="chip">' + tr('Passed on') + '</span>' : '') +
+      (x.iouId || x.iouPay ? ' · <span class="chip">' + tr('People') + '</span>' : '') +
       (x.matched ? ' · <span class="chip">' + tr('Bank SMS ✓') + '</span>' : '');
     const extra = edit && isIn
       ? ' <button class="link" data-action="income-change" data-id="' + esc(x.id) + '">' + tr(x.useFor ? INCOME_USE_LABELS[x.useFor] : 'Choose what it does') + '</button>'
@@ -4857,6 +4981,9 @@
           badge: j && j.bosses ? { text: shortInr(j.bosses.reduce((a, b) => a + b.balance, 0)) } : null, html: () => bossCard() },
         { key: 'loans', group: 'Your loans', icon: 'loan', label: 'Loans', tone: 'coral',
           badge: state.debts.length ? { text: String(state.debts.filter((d) => d.balance > 0).length) } : { text: tr('Add'), tone: '' }, html: () => loansCard },
+        { key: 'people', group: 'Your loans', icon: 'people', label: 'People', tone: 'coral',
+          badge: (() => { const p = Core.iouSummary(state, t); return p.late.length ? { text: tr('{n} late', { n: p.late.length }), tone: 'bad' } : p.owe.length || p.lent.length ? { text: p.net === 0 ? tr('Even') : (p.net > 0 ? '+' : '−') + shortInr(Math.abs(p.net)) } : null; })(),
+          html: () => peopleCard() },
         { key: 'plans', group: 'Your loans', icon: 'plans', label: 'Debt-free plans', tone: 'coral', hide: !compare, badge: null, html: () => compare },
         { key: 'cards', group: 'Cards & calls', icon: 'card', label: 'Credit cards', tone: 'teal',
           badge: cardsDue ? { text: tr('{n} due', { n: cardsDue }), tone: 'bad' } : (state.cards || []).length ? { text: String(state.cards.length) } : null, html: () => cardsSection() },
@@ -5348,11 +5475,29 @@
       case 'pass-yes': {
         const before = JSON.stringify(state);
         if (!Core.passOn(state, btn.dataset.in, btn.dataset.out)) return;
-        state.passAsk = { inId: btn.dataset.in };
+        ui.passForm = null;
         save(); rerenderKeepScroll();
         offerUndo(tr('Passed on: not counted as income or spending'), before);
         return;
       }
+      case 'pass-borrow': ui.passForm = { inId: btn.dataset.in, outId: btn.dataset.out }; break;
+      case 'pass-form-cancel': ui.passForm = null; break;
+      case 'pass-iou': {
+        const i = state.transactions.find((x) => x.id === btn.dataset.in);
+        const o = state.transactions.find((x) => x.id === btn.dataset.out);
+        if (!i || !o) return;
+        const v = (id) => (document.getElementById(id) || {}).value || null;
+        const before = JSON.stringify(state);
+        Core.addIou(state, { name: i.note, dir: 'owe', amount: i.amount, promised: v('pf-from'), txId: i.id }, t);
+        Core.addIou(state, { name: o.note, dir: 'lent', amount: o.amount, promised: v('pf-to'), txId: o.id }, t);
+        ui.passForm = null;
+        save(); rerenderKeepScroll();
+        offerUndo(tr('In People: you owe {from}, {to} owes you', { from: i.note || tr('someone'), to: o.note || tr('someone') }), before);
+        return;
+      }
+      case 'pass-no':
+        state.passNo = (state.passNo || []).concat(btn.dataset.in, btn.dataset.out).slice(-200);
+        save(); toast(tr('Kept as they are')); break;
       case 'pass-undo': {
         const x = state.transactions.find((y) => y.id === ui.editTx);
         if (!x) return;
@@ -5360,19 +5505,82 @@
         [x, other].forEach((y) => { if (y) { delete y.passedOn; state.passNo = (state.passNo || []).concat(y.id).slice(-200); } });
         save(); toast(tr('Counted again as income and spending')); break;
       }
-      case 'pass-no':
-        state.passNo = (state.passNo || []).concat(btn.dataset.in, btn.dataset.out).slice(-200);
-        save(); toast(tr('Kept as they are')); break;
-      case 'pass-owe': {
-        const i = state.transactions.find((x) => x.id === (state.passAsk || {}).inId);
-        if (!i) { state.passAsk = null; break; }
-        const d = Core.addOwed(state, tr('Owed to {name}', { name: i.note || tr('a friend') }), i.amount, Number(btn.dataset.months), t);
-        i.borrowed = true; i.debtId = d.id;
-        state.passAsk = null; save();
-        toast(tr('{name} added to your loans: {amount} a month, no interest', { name: d.name, amount: inr(d.minPayment) }));
-        break;
+      case 'iou-start': ui.iouStart = { txId: btn.dataset.id }; break;
+      case 'iou-start-cancel': ui.iouStart = null; break;
+      case 'iou-start-save': {
+        const x = state.transactions.find((y) => y.id === (ui.iouStart || {}).txId);
+        if (!x) return;
+        const name = ((document.getElementById('is-name') || {}).value || '').trim() || x.note;
+        const promised = (document.getElementById('is-date') || {}).value || null;
+        const before = JSON.stringify(state);
+        const i = Core.addIou(state, { name, dir: Core.isIncome(x) ? 'owe' : 'lent', amount: x.amount, promised, txId: x.id }, t);
+        if (Core.isIncome(x)) x.useFor = x.useFor || 'spend';
+        ui.iouStart = null;
+        save(); rerenderKeepScroll();
+        offerUndo(tr(i.dir === 'owe' ? 'In People: you owe {name} {amount}' : 'In People: {name} owes you {amount}', { name: i.name, amount: inr(i.amount) }), before);
+        return;
       }
-      case 'pass-owe-no': state.passAsk = null; save(); toast(tr('Nothing owed. It stays out of your money.')); break;
+      case 'iou-pay-tx': {
+        const x = state.transactions.find((y) => y.id === btn.dataset.id);
+        const i = (state.iou || []).find((y) => y.id === btn.dataset.iou);
+        if (!x || !i) return;
+        const before = JSON.stringify(state);
+        Core.payIou(state, i.id, Math.min(x.amount, Core.iouLeft(i)), x.date, x.id);
+        if (Core.isIncome(x)) x.useFor = x.useFor || 'spend';
+        ui.editTx = null;
+        save(); rerenderKeepScroll();
+        offerUndo(Core.iouLeft(i) ? tr('{left} still to go with {name}', { left: inr(Core.iouLeft(i)), name: i.name }) : tr('Settled with {name}', { name: i.name }), before);
+        return;
+      }
+      case 'iou-all': {
+        const i = (state.iou || []).find((y) => y.id === btn.dataset.iou);
+        if (!i) return;
+        const before = JSON.stringify(state);
+        recordIouPayment(i, Core.iouLeft(i), t);
+        save(); rerenderKeepScroll(); offerUndo(tr('Settled with {name}', { name: i.name }), before);
+        return;
+      }
+      case 'iou-pay-open': ui.iouPay = btn.dataset.iou; break;
+      case 'iou-pay-cancel': ui.iouPay = null; break;
+      case 'iou-pay-save': {
+        const i = (state.iou || []).find((y) => y.id === btn.dataset.iou);
+        const amount = Math.min(Core.iouLeft(i || {}), Math.round(Number((document.getElementById('ip-amt') || {}).value) || 0));
+        if (!i || !(amount > 0)) { toast(tr('Enter the amount paid back')); return; }
+        const date = (document.getElementById('ip-date') || {}).value || t;
+        const before = JSON.stringify(state);
+        recordIouPayment(i, amount, date > t ? t : date);
+        ui.iouPay = null;
+        save(); rerenderKeepScroll();
+        offerUndo(Core.iouLeft(i) ? tr('{left} still to go with {name}', { left: inr(Core.iouLeft(i)), name: i.name }) : tr('Settled with {name}', { name: i.name }), before);
+        return;
+      }
+      case 'iou-later': state.iouAsked = Object.assign({}, state.iouAsked, { [btn.dataset.iou]: t }); ui.iouEdit = btn.dataset.iou; save(); openPage('debts', 'people'); return;
+      case 'iou-edit': ui.iouEdit = btn.dataset.iou; break;
+      case 'iou-edit-cancel': ui.iouEdit = null; break;
+      case 'iou-edit-save': {
+        const i = (state.iou || []).find((y) => y.id === btn.dataset.iou);
+        if (!i) return;
+        i.promised = (document.getElementById('ie-date') || {}).value || null;
+        const extra = Math.round(Number((document.getElementById('ie-int') || {}).value) || 0);
+        if (extra > 0) i.amount += extra;
+        ui.iouEdit = null; save(); toast(tr('Saved')); break;
+      }
+      case 'iou-remove': {
+        const before = JSON.stringify(state);
+        state.iou = (state.iou || []).filter((y) => y.id !== btn.dataset.iou);
+        state.transactions.forEach((x) => { if (x.iouId === btn.dataset.iou) delete x.iouId; if (x.iouPay === btn.dataset.iou) delete x.iouPay; });
+        ui.iouEdit = null; save(); rerenderKeepScroll(); offerUndo(tr('Removed'), before); return;
+      }
+      case 'iou-add': ui.iouAdd = true; ui.iouError = ''; break;
+      case 'iou-add-cancel': ui.iouAdd = false; break;
+      case 'iou-add-save': {
+        const v = (id) => (document.getElementById(id) || {}).value || '';
+        const name = v('ia-name').trim();
+        if (!name) { ui.iouError = tr('Who is it with?'); break; }
+        const i = Core.addIou(state, { name, dir: v('ia-dir'), amount: v('ia-amt'), promised: v('ia-date') || null }, t);
+        if (!i) { ui.iouError = tr('Enter an amount above ₹0.'); break; }
+        ui.iouAdd = false; save(); toast(tr('{name} added', { name })); break;
+      }
       case 'report-save': makeReport('save'); return;
       case 'report-share': makeReport('share'); return;
       case 'report-clear':
@@ -5533,6 +5741,7 @@
         if (tx && Core.isBillPayment(tx)) Core.undoBillPayment(state, tx);
         if (tx && tx.fromFund) state.savings.emergencyBalance = (Number(state.savings.emergencyBalance) || 0) + tx.amount;
         if (tx && tx.kind === 'cardconvert') Core.undoCardConvert(state, tx);
+        if (tx && (tx.iouId || tx.iouPay)) Core.undoIouTx(state, tx);
         // A deleted SMS entry stays deleted: the next scan doesn't bring it back.
         if (tx && tx.smsKey) state.smsIgnored = (state.smsIgnored || []).concat(tx.smsKey).slice(-500);
         state.transactions = state.transactions.filter((x) => x.id !== btn.dataset.id); save();

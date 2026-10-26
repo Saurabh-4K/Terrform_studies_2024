@@ -420,7 +420,13 @@ Spend tab → Bank SMS → **Import past payments**. Only for someone with time 
 ## 7. Money received
 
 For a refund, money from home, money returned, cashback, side income or extra pay.
-- **Money passing through:** when the same amount comes in and goes out within 3 days (₹26,000 from a friend, ₹26,000 to a brother), the app asks *Money passing through?* **Yes, I passed it on** counts neither as income nor spending, so today's limit stays where it was (with Undo, and *It wasn't passed on* on either entry). Then *Do you have to pay {friend} back?*: pay back in 1, 3, 6 or 12 months, each with its monthly amount and whether it fits in what's free; it becomes a loan with no interest, starting next payday, that ends with its last payment. *No, they're separate* leaves both as they are.
+- **Money passing through:** when the same amount comes in and goes out within 3 days (₹26,000 from a friend, ₹26,000 to a brother), the app asks *Money passing through?*: **Borrowed from Rahul, lent to Amit** (both go to People, with any promised dates), **Just passed it on** (nobody owes anybody), or **No, they're separate**. Either of the first two keeps today's limit where it was.
+- **People** (Debts → People): money between you and friends or family, with no EMI and no fixed schedule.
+  - Each entry: *You owe Rahul ₹26,000* or *Amit owes you ₹26,000*, with a promised date only if there is one, and the balance (*You owe ₹26,000 · Owed to you ₹26,000 · Even*).
+  - Paid back all at once or in parts of any size: *Got some back* / *Paid some back*, or from the money's own entry (*Amit paying back (₹26,000 left)*). A matching bank SMS is linked rather than counted twice. Interest, when agreed, is added as rupees.
+  - Any money in can be marked *Borrowed: I'll pay it back*, and any payment *I lent this*.
+  - It moves the balance like any money but is never income or spending, so budgets stay right. Money you promised to pay back before payday is kept aside, unless money promised back to you first covers it; money owed to you counts only once it's back. Net worth counts both sides.
+  - On a promised date: *Amit promised ₹26,000 by 27 Oct. Did it come back?* **Yes, all of it** · **Part of it** · **Not yet** (then a new date). Money coming back is asked about before money going out.
 - It raises the balance on the day it arrives.
 - **"What should this ₹X do?"** offers four choices, each with its effect in rupees:
   - **Keep it for this month:** raises today's amount, and shows the new run-out date if it changes

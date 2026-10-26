@@ -1665,8 +1665,79 @@ test('money passed on (from a friend straight to a brother) is neither income no
   assert.equal(r.overToday, 0);
   assert.equal(r.balanceToday, plain.balanceToday);
   assert.equal(Core.passThroughPair(s, t), null);
-  // Borrowed from the friend: a loan with no interest, cleared after its last payment
-  const d = Core.addOwed(s, 'Owed to Friend', 26000, 3, t);
-  assert.deepEqual([d.rate, d.minPayment, d.emisLeft], [0, 8700, 3]);
-  assert.equal(Core.simulateDebts([d], 0, 'avalanche').months, 3);
+});
+
+test('money with friends moves the balance: paid ₹26,000 back but got only ₹20,000, so ₹6,000 short', () => {
+  const s = baseState({ settings: { salary: 50000, payday: 1 }, balanceCheck: { date: '2026-10-23', amount: 1000 },
+    transactions: [
+      { id: 'in', kind: 'in', date: '2026-10-26', amount: 26000, category: 'Money received', note: 'Rahul', useFor: null },
+      { id: 'out', date: '2026-10-26', amount: 26000, category: 'Misc', note: 'Amit' },
+    ] });
+  const owe = Core.addIou(s, { name: 'Rahul', dir: 'owe', amount: 26000, promised: '2026-10-27', txId: 'in' }, '2026-10-26');
+  const lent = Core.addIou(s, { name: 'Amit', dir: 'lent', amount: 26000, promised: '2026-10-27', txId: 'out' }, '2026-10-26');
+  const before = Core.projectRunway(s, '2026-10-27');
+  s.transactions.push({ id: 'p1', date: '2026-10-27', amount: 26000, category: 'Misc', note: 'Rahul' });
+  Core.payIou(s, owe.id, 26000, '2026-10-27', 'p1');
+  s.transactions.push({ id: 'p2', kind: 'in', date: '2026-10-27', amount: 20000, category: 'Money returned', note: 'Amit', useFor: 'spend' });
+  Core.payIou(s, lent.id, 20000, '2026-10-27', 'p2');
+  const r = Core.projectRunway(s, '2026-10-27');
+  assert.equal(r.balanceToday, before.balanceToday - 6000);
+  assert.ok(r.dailyAllowance < before.dailyAllowance);
+  // Still not spending, and Amit owes ₹6,000
+  assert.equal(r.spentToDate, 0);
+  assert.equal(Core.iouLeft(lent), 6000);
+});
+
+test('money between friends and family: no EMI, promised dates, chunks of any size', () => {
+  const t = '2026-10-26';
+  const plain = () => baseState({ settings: { salary: 50000, payday: 1 }, balanceCheck: { date: '2026-10-23', amount: 1000 },
+    transactions: [
+      { id: 'in', kind: 'in', date: t, amount: 26000, category: 'Money received', note: 'Rahul', source: 'sms', useFor: null },
+      { id: 'out', date: t, amount: 26000, category: 'Misc', note: 'Amit', source: 'sms' },
+    ] });
+  const free = Core.projectRunway(baseState({ settings: { salary: 50000, payday: 1 }, balanceCheck: { date: '2026-10-23', amount: 1000 } }), t);
+  // Borrowed from Rahul, lent to Amit; Amit promised it back tomorrow, Rahul gets it then
+  const s = plain();
+  const owe = Core.addIou(s, { name: 'Rahul', dir: 'owe', amount: 26000, promised: '2026-10-27', txId: 'in' }, t);
+  const lent = Core.addIou(s, { name: 'Amit', dir: 'lent', amount: 26000, promised: '2026-10-27', txId: 'out' }, t);
+  let r = Core.projectRunway(s, t);
+  // Neither the ₹26,000 in nor out is income or spending, and the two promises cancel: today is as before
+  assert.equal(Math.round(r.dailyAllowance), Math.round(free.dailyAllowance));
+  assert.equal(r.spentToday, 0);
+  assert.equal(Core.cycleEvents(s, r.cycle, t).filter((e) => e.kind === 'iou').length, 0);
+  let sum = Core.iouSummary(s, t);
+  assert.deepEqual([sum.oweTotal, sum.lentTotal, sum.net], [26000, 26000, 0]);
+  // Without Amit's promise, the ₹26,000 promised to Rahul tomorrow is a payment to come
+  const alone = plain();
+  Core.addIou(alone, { name: 'Rahul', dir: 'owe', amount: 26000, promised: '2026-10-27', txId: 'in' }, t);
+  const ev = Core.cycleEvents(alone, Core.cycleFor(t, 1), t).filter((e) => e.kind === 'iou');
+  assert.deepEqual(ev.map((e) => [e.date, e.amount]), [['2026-10-27', 26000]]);
+  // No date: nothing comes out before payday, it's just owed
+  const later = plain();
+  Core.addIou(later, { name: 'Rahul', dir: 'owe', amount: 26000, promised: null, txId: 'in' }, t);
+  assert.equal(Core.cycleEvents(later, Core.cycleFor(t, 1), t).filter((e) => e.kind === 'iou').length, 0);
+  // Amit pays back ₹10,000 now and ₹16,000 later: money in, not income
+  s.transactions.push({ id: 'back1', kind: 'in', date: '2026-10-27', amount: 10000, category: 'Money returned', note: 'Amit', useFor: 'spend' });
+  Core.payIou(s, lent.id, 10000, '2026-10-27', 'back1');
+  assert.equal(Core.iouLeft(lent), 16000);
+  // The ₹10,000 back is kept for Rahul, due today (Amit's other ₹16,000 covers the rest)
+  r = Core.projectRunway(s, '2026-10-27');
+  assert.equal(r.balanceToday, free.balanceToday);
+  assert.equal(r.spentToDate, 0);
+  // With no date promised to Rahul, it's simply ₹10,000 more in the account
+  owe.promised = null;
+  assert.equal(Core.projectRunway(s, '2026-10-27').balanceToday, free.balanceToday + 10000);
+  owe.promised = '2026-10-27';
+  // Interest agreed with Rahul: ₹500 more owed
+  owe.amount += 500;
+  sum = Core.iouSummary(s, '2026-10-27');
+  assert.deepEqual([sum.oweTotal, sum.lentTotal], [26500, 16000]);
+  // Net worth counts both sides
+  const w = Core.netWorth(s, '2026-10-27');
+  assert.deepEqual([w.owedPeople, w.lentPeople], [26500, 16000]);
+  // Deleting the repayment entry puts it back on what Amit owes
+  Core.undoIouTx(s, s.transactions.find((x) => x.id === 'back1'));
+  assert.equal(Core.iouLeft(lent), 26000);
+  // A promise that passed is late
+  assert.deepEqual(Core.iouSummary(s, '2026-10-29').late.map((i) => i.name).sort(), ['Amit', 'Rahul']);
 });

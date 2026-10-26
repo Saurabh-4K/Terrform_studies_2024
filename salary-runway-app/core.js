@@ -310,6 +310,8 @@
       // A card EMI starts with the card's next bill.
       if (date && (!d.starts || date >= d.starts)) events.push({ date, name: d.name, amount: Number(d.minPayment) || 0, kind: 'debt' });
     });
+    // Money promised back to a friend before payday, unless what's promised to you covers it.
+    if (todayIso) iouEvents(state, cycle, todayIso).forEach((e) => events.push(e));
     return events.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
   }
 
@@ -327,7 +329,7 @@
   // Money moved between your own wallets (bank to cash at an ATM, bank to Paytm): neither spending nor income.
   function isTransfer(t) { return t.kind === 'transfer'; }
   // Money passed on (₹26,000 from a friend straight to a brother): neither income nor spending.
-  function isPassedOn(t) { return !!t.passedOn; }
+  function isPassedOn(t) { return !!t.passedOn || !!t.iouId || !!t.iouPay; }
   function isFlexible(t) { return !isIncome(t) && !isMove(t) && !isBillPayment(t) && !isCardTransfer(t) && !isTransfer(t) && !isPassedOn(t); }
 
   function spendInRange(transactions, cycle) {
@@ -369,19 +371,88 @@
     return true;
   }
 
+  // ---------- money between you and people you know ----------
+
   /*
-   * Borrowed money to pay back (a friend's ₹26,000): a loan with no interest,
-   * paid back over `months` from payday.
+   * An IOU: money borrowed from or lent to a friend or family member. No EMI,
+   * no fixed schedule: paid back all at once or in chunks of any size, maybe
+   * by a promised date, rarely with interest (added as a rupee amount).
+   *   { id, name, dir: 'owe' (you owe them) | 'lent' (they owe you), amount,
+   *     paid, promised: iso | null, created, payments: [{ date, amount, txId }] }
+   * The money itself moves in ordinary entries tagged with iouId, which are
+   * neither income nor spending.
    */
-  function addOwed(state, name, amount, months, todayIso) {
-    const n = Math.max(1, Math.round(Number(months) || 1));
-    const payday = Number(state.settings.payday) || 1;
-    const d = { id: newId('d'), name, balance: Math.round(amount), startBalance: Math.round(amount), rate: 0,
-      minPayment: Math.ceil(amount / n / 100) * 100, dueDay: payday, emisLeft: n, emiThrough: lastDueOn(todayIso, payday), personal: true,
-      // The first payment is next payday; nothing comes out of this round.
-      starts: cycleFor(todayIso, payday).next };
-    state.debts.push(d);
-    return d;
+  function iouLeft(i) { return Math.max(0, Math.round((Number(i.amount) || 0) - (Number(i.paid) || 0))); }
+  function openIous(state, dir) {
+    return (state.iou || []).filter((i) => iouLeft(i) > 0 && (!dir || i.dir === dir));
+  }
+
+  function addIou(state, o, todayIso) {
+    const i = { id: newId('iou'), name: String(o.name || '').trim() || 'Someone', dir: o.dir === 'lent' ? 'lent' : 'owe',
+      amount: Math.round(Number(o.amount) || 0), paid: 0, promised: o.promised || null, created: todayIso, payments: [] };
+    if (!(i.amount > 0)) return null;
+    state.iou = (state.iou || []).concat(i);
+    if (o.txId) {
+      const tx = state.transactions.find((t) => t.id === o.txId);
+      if (tx) { tx.iouId = i.id; tx.needsReview = false; }
+    }
+    return i;
+  }
+
+  // A repayment, of any size: ties the entry that moved the money (if any) to the IOU.
+  function payIou(state, iouId, amount, dateIso, txId) {
+    const i = (state.iou || []).find((x) => x.id === iouId);
+    const a = Math.round(Number(amount) || 0);
+    if (!i || !(a > 0)) return null;
+    i.paid = (Number(i.paid) || 0) + a;
+    i.payments = (i.payments || []).concat({ date: dateIso, amount: a, txId: txId || null });
+    if (txId) {
+      const tx = state.transactions.find((t) => t.id === txId);
+      if (tx) { tx.iouPay = i.id; tx.needsReview = false; }
+    }
+    return i;
+  }
+
+  // Undoes what a deleted entry did to an IOU: a repayment comes off; the entry that started one ends it.
+  function undoIouTx(state, tx) {
+    if (tx.iouPay) {
+      const i = (state.iou || []).find((x) => x.id === tx.iouPay);
+      if (i) {
+        i.paid = Math.max(0, (Number(i.paid) || 0) - (Number(tx.amount) || 0));
+        i.payments = (i.payments || []).filter((p) => p.txId !== tx.id);
+      }
+    }
+    if (tx.iouId) state.iou = (state.iou || []).filter((x) => x.id !== tx.iouId);
+  }
+
+  /*
+   * What you owe people and what they owe you. Money you owe with a promised
+   * date before payday is a payment to come, unless what someone promised to
+   * give back first covers it (the brother returns ₹26,000 tomorrow, the
+   * friend gets it the same day). What they owe you is never counted until
+   * it comes back.
+   */
+  function iouSummary(state, todayIso) {
+    const owe = openIous(state, 'owe');
+    const lent = openIous(state, 'lent');
+    const oweTotal = sum(owe, iouLeft);
+    const lentTotal = sum(lent, iouLeft);
+    return { owe, lent, oweTotal, lentTotal, net: lentTotal - oweTotal,
+      late: (state.iou || []).filter((i) => iouLeft(i) > 0 && i.promised && i.promised < todayIso) };
+  }
+  function iouEvents(state, cycle, todayIso) {
+    const lentBy = (date) => sum(openIous(state, 'lent').filter((i) => i.promised && i.promised <= date && i.promised >= todayIso), iouLeft);
+    let covered = 0;
+    return openIous(state, 'owe').filter((i) => i.promised && i.promised < cycle.next)
+      .sort((a, b) => (a.promised < b.promised ? -1 : 1))
+      .map((i) => {
+        // Covered first by what's promised back by then.
+        const cover = Math.max(0, Math.min(iouLeft(i), lentBy(i.promised) - covered));
+        covered += cover;
+        const date = i.promised < todayIso ? todayIso : i.promised;
+        return { date, name: i.name, amount: iouLeft(i) - cover, kind: 'iou', iouId: i.id };
+      })
+      .filter((e) => e.amount > 0);
   }
 
   /*
@@ -445,7 +516,16 @@
     txns.forEach((t) => { spendByDate[t.date] = (spendByDate[t.date] || 0) + t.amount; });
     const incomes = incomeInRange(state.transactions, cycle).filter((t) => t.date <= todayIso);
     incomes.forEach((t) => { spendByDate[t.date] = (spendByDate[t.date] || 0) - incomeKept(t); });
-    const extraIn = sum(incomes.filter((t) => !anchor || t.date >= anchor.date), incomeKept);
+    /*
+     * Money with friends and family (borrowed, lent, paid back) and money
+     * passed on: not income or spending, but it moves the balance, so it
+     * counts with money received (out as less). Passed on, in and out cancel.
+     */
+    const flows = state.transactions.filter((t) => isPassedOn(t) && inCycle(t.date, cycle) && t.date <= todayIso);
+    const flowOf = (t) => (isIncome(t) ? t.amount : -t.amount);
+    flows.forEach((t) => { spendByDate[t.date] = (spendByDate[t.date] || 0) - flowOf(t); });
+    const extraIn = sum(incomes.filter((t) => !anchor || t.date >= anchor.date), incomeKept) +
+      sum(flows.filter((t) => !anchor || t.date >= anchor.date), flowOf);
     // Bill payments leave the account (less what the pot covers); moves to savings leave too.
     // Set-aside moves (t.setAside) record money already taken out on payday, so they're skipped here.
     const others = state.transactions.filter((t) => (isBillPayment(t) || (isMove(t) && !t.setAside)) && inCycle(t.date, cycle) && t.date <= todayIso);
@@ -2098,7 +2178,11 @@
     // EMIs on a card bill are counted once, with the loans.
     const cards = sum(state.cards || [], (c) => Math.max(0, setupOwed(c) - sum(cardEmis(state, c), (d) => Number(d.minPayment)) -
       sum(cardPayments(state, c).filter((t) => t.date >= setupFrom(c) && t.date <= todayIso), (t) => t.amount)));
-    return { money, funds, loans, cards, owe: loans + cards, own: money + funds, value: Math.round(money + funds - loans - cards) };
+    // Friends and family: what you owe them, and what they owe you.
+    const people = iouSummary(state, todayIso);
+    return { money, funds, loans, cards, owedPeople: people.oweTotal, lentPeople: people.lentTotal,
+      owe: loans + cards + people.oweTotal, own: money + funds + people.lentTotal,
+      value: Math.round(money + funds + people.lentTotal - loans - cards - people.oweTotal) };
   }
 
   // ---------- weekly plan: fraud checks, readiness, goals ----------
@@ -2953,7 +3037,7 @@
     salaryFor, salaryHistory, paydayReset, suggestUse, freedomDays, interestLeak, nextPaydayPreview,
     billShare, billPot, billsMonthly, billPaidIn, billDue, payBill, undoBillPayment, zoneStatus, ESSENTIAL_CATEGORIES,
     isCardTransfer, statementOn, dueAfter, cardOwedAt, cardReserve, cardStatus, emiQuote, revolveQuote, cardBillPlan,
-    recordCardPayment, addCardEmi, isPassedOn, passThroughPair, passOn, addOwed, cardEmiFromBooking, looksLikeCardBill, spendToCardPayment, convertCardBalance, answerCardDue, cardLateFee, cardRate, CARD_RATE, undoCardConvert, cardFreeDays, byCategory, DEFAULT_SPLIT,
+    recordCardPayment, addCardEmi, isPassedOn, passThroughPair, passOn, iouLeft, openIous, addIou, payIou, undoIouTx, iouSummary, iouEvents, cardEmiFromBooking, looksLikeCardBill, spendToCardPayment, convertCardBalance, answerCardDue, cardLateFee, cardRate, CARD_RATE, undoCardConvert, cardFreeDays, byCategory, DEFAULT_SPLIT,
     isLoanCredit, borrowedThisCycle, borrowCheck, rolloverOptions, setTranslator,
     payoffOrder, tickDebts, debtJourney, lenderTasks, lastBorrowed,
     encryptBackup, openBackup, backupInfo, toB64, fromB64, isTransfer, walletBalances, goalStatus, goalsMonthly, budgetEnvelopes, netWorth, reportRange, budgetHistory, aiFacts, planFacts, fraudSignals, investReady, goalResult, weekStart,

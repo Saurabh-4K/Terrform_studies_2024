@@ -1117,3 +1117,5 @@ button.tx-title { display: flex; align-items: center; gap: 6px; background: none
 .not-payment { margin-top: 14px; }
 .check-row { display: flex; gap: 8px; align-items: center; font-size: 0.95rem; }
 .check-row input { width: 18px; height: 18px; }
+.iou-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.iou-item + .row, .iou-item + .form-grid { margin: 2px 0 10px; }
