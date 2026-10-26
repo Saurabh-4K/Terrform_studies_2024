@@ -1834,7 +1834,7 @@
   "Interest agreed (₹, added to it)": "तय ब्याज (₹, इसमें जुड़ेगा)",
   "Got some back": "कुछ वापस मिले",
   "Paid some back": "कुछ लौटाए",
-  "Date or interest": "तारीख या ब्याज",
+  "Name, date or interest": "नाम, तारीख या ब्याज",
   "Who": "कौन",
   "Which way": "किसका बकाया",
   "I owe them": "मुझ पर उनका",

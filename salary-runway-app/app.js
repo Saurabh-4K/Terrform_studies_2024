@@ -2227,13 +2227,14 @@
       if (left > 0) {
         if (ui.iouPay === i.id) html += iouPayForm(i);
         else if (ui.iouEdit === i.id) {
-          html += '<div class="form-grid"><label class="field" for="ie-date"><span>' + tr('Promised by') + '</span><input id="ie-date" type="date" value="' + esc(i.promised || '') + '"></label>' +
+          html += '<div class="form-grid"><label class="field" for="ie-name"><span>' + tr('Name') + '</span><input id="ie-name" type="text" maxlength="40" value="' + esc(i.name) + '"></label>' +
+            '<label class="field" for="ie-date"><span>' + tr('Promised by') + '</span><input id="ie-date" type="date" value="' + esc(i.promised || '') + '"></label>' +
             '<label class="field" for="ie-int"><span>' + tr('Interest agreed (₹, added to it)') + '</span><input id="ie-int" type="number" inputmode="numeric" min="0" placeholder="0"></label></div>' +
             '<div class="row"><button class="primary" data-action="iou-edit-save" data-iou="' + esc(i.id) + '">' + tr('Save') + '</button><button class="ghost" data-action="iou-edit-cancel">' + tr('Cancel') + '</button>' +
             '<span class="spacer"></span><button class="danger" data-action="iou-remove" data-iou="' + esc(i.id) + '">' + tr('Remove') + '</button></div>';
         } else {
           html += '<div class="row"><button class="small" data-action="iou-pay-open" data-iou="' + esc(i.id) + '">' + tr(i.dir === 'lent' ? 'Got some back' : 'Paid some back') + '</button>' +
-            '<button class="ghost small" data-action="iou-edit" data-iou="' + esc(i.id) + '">' + tr('Date or interest') + '</button></div>';
+            '<button class="ghost small" data-action="iou-edit" data-iou="' + esc(i.id) + '">' + tr('Name, date or interest') + '</button></div>';
         }
       }
       return html;
@@ -5784,6 +5785,12 @@
       case 'iou-edit-save': {
         const i = (state.iou || []).find((y) => y.id === btn.dataset.iou);
         if (!i) return;
+        // A name from the SMS ("UPI *6127") made right: the entries that moved the money follow.
+        const name = ((document.getElementById('ie-name') || {}).value || '').trim();
+        if (name && name !== i.name) {
+          state.transactions.forEach((x) => { if ((x.iouId === i.id || x.iouPay === i.id) && x.note === i.name) x.note = name; });
+          i.name = name;
+        }
         i.promised = (document.getElementById('ie-date') || {}).value || null;
         const extra = Math.round(Number((document.getElementById('ie-int') || {}).value) || 0);
         if (extra > 0) i.amount += extra;

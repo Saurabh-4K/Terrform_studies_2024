@@ -1834,7 +1834,7 @@
   "Interest agreed (₹, added to it)": "ठरलेले व्याज (₹, त्यात जोडले जाईल)",
   "Got some back": "काही परत मिळाले",
   "Paid some back": "काही परत दिले",
-  "Date or interest": "तारीख किंवा व्याज",
+  "Name, date or interest": "नाव, तारीख किंवा व्याज",
   "Who": "कोण",
   "Which way": "कोणाचे देणे",
   "I owe them": "मी त्यांचे देणे",

@@ -152,6 +152,10 @@ async function edits(browser, B) {
   await c('[data-action=iou-pay-tx]');
   await edit('Rahul back', 1500);
   s = await S(); expect('a repayment, 1000 → 1500', s.iou.map((i) => [i.name, i.amount, i.paid]), [['Rahul', 4000, 1500]]);
+  // A name from the SMS made right in People: the entries follow
+  await c('[data-action=tab][data-tab=debts]'); await c('[data-action=page-open][data-key=people]');
+  await c('[data-action=iou-edit]'); await page.fill('#ie-name', 'Rahul Patil'); await c('[data-action=iou-edit-save]');
+  s = await S(); expect('renamed in People', [s.iou.map((i) => i.name), s.transactions.filter((t) => t.iouId || t.iouPay).map((t) => t.note)], [['Rahul Patil'], ['Rahul Patil', 'Rahul back']]);
   // 3. Kept ₹5,000, used ₹4,700 on a purchase; edit kept → ₹4,000 (refused) and → ₹6,000; purchase → ₹4,000
   await add('in', 5000, 'Father'); await c('[data-action=tab][data-tab=home]'); await c('[data-action=income-use][data-use=keep]'); await page.fill('#keep-name', 'Diwali'); await c('[data-action=keep-save]');
   await add('out', 4700, 'Croma'); await c('[data-action=tab][data-tab=grow]'); await c('[data-action=keep-use-open]'); await page.selectOption('#keep-buy', { index: 0 }); await c('[data-action=keep-use]');

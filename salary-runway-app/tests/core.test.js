@@ -1715,6 +1715,10 @@ test('money between friends and family: no EMI, promised dates, chunks of any si
   Core.addIou(alone, { name: 'Rahul', dir: 'owe', amount: 26000, promised: '2026-10-27', txId: 'in' }, t);
   const ev = Core.cycleEvents(alone, Core.cycleFor(t, 1), t).filter((e) => e.kind === 'iou');
   assert.deepEqual(ev.map((e) => [e.date, e.amount]), [['2026-10-27', 26000]]);
+  // Both promises pass with nothing back: the friend still waits on the brother, so payday isn't ₹26,000 short
+  assert.equal(Core.cycleEvents(s, Core.cycleFor('2026-10-29', 1), '2026-10-29').filter((e) => e.kind === 'iou').length, 0);
+  // Alone, a late ₹26,000 to Rahul is due now
+  assert.deepEqual(Core.cycleEvents(alone, Core.cycleFor('2026-10-29', 1), '2026-10-29').filter((e) => e.kind === 'iou').map((e) => [e.date, e.amount]), [['2026-10-29', 26000]]);
   // No date: nothing comes out before payday, it's just owed
   const later = plain();
   Core.addIou(later, { name: 'Rahul', dir: 'owe', amount: 26000, promised: null, txId: 'in' }, t);
@@ -1727,6 +1731,13 @@ test('money between friends and family: no EMI, promised dates, chunks of any si
   r = Core.projectRunway(s, '2026-10-27');
   assert.equal(r.balanceToday, free.balanceToday);
   assert.equal(r.spentToDate, 0);
+  // Amit's money back doesn't change net worth: it moves from "owed to you" to the account, and Rahul's due today counts once
+  const w0 = Core.netWorth(s, '2026-10-27').value;
+  s.transactions.push({ id: 'back2', kind: 'in', date: '2026-10-27', amount: 16000, category: 'Money returned', note: 'Amit', useFor: 'spend' });
+  Core.payIou(s, lent.id, 16000, '2026-10-27', 'back2');
+  assert.equal(Core.netWorth(s, '2026-10-27').value, w0);
+  Core.undoIouTx(s, s.transactions.find((x) => x.id === 'back2'));
+  s.transactions = s.transactions.filter((x) => x.id !== 'back2');
   // With no date promised to Rahul, it's simply ₹10,000 more in the account
   owe.promised = null;
   assert.equal(Core.projectRunway(s, '2026-10-27').balanceToday, free.balanceToday + 10000);

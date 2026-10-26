@@ -441,7 +441,9 @@
       late: (state.iou || []).filter((i) => iouLeft(i) > 0 && i.promised && i.promised < todayIso) };
   }
   function iouEvents(state, cycle, todayIso) {
-    const lentBy = (date) => sum(openIous(state, 'lent').filter((i) => i.promised && i.promised <= date && i.promised >= todayIso), iouLeft);
+    // A promise back that's late still covers: what you owe waits on it (the brother is late, so the friend waits),
+    // until you record the money or change the date ("Not yet" asks for a new one).
+    const lentBy = (date) => sum(openIous(state, 'lent').filter((i) => i.promised && i.promised <= date), iouLeft);
     let covered = 0;
     return openIous(state, 'owe').filter((i) => i.promised && i.promised < cycle.next)
       .sort((a, b) => (a.promised < b.promised ? -1 : 1))
@@ -2207,7 +2209,9 @@
    */
   function netWorth(state, todayIso) {
     const r = projectRunway(state, todayIso);
-    const money = Math.max(0, Number(r.balanceToday) || 0);
+    // Money owed to a friend that's due today is still in the account until paid: it counts once, as owed.
+    const iouDue = sum(iouEvents(state, r.cycle, todayIso).filter((e) => e.date <= todayIso), (e) => e.amount);
+    const money = Math.max(0, (Number(r.balanceToday) || 0) + iouDue);
     const sv = state.savings || {};
     // Money moved out of the account into a goal (Jar for a bike) is still yours; set-asides for goals stay in the account.
     const funds = (Number(sv.emergencyBalance) || 0) + (Number(sv.investSaved) || 0) +
