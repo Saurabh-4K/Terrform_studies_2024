@@ -1904,4 +1904,7 @@
   "Use at least 3 letters, so real payments aren’t skipped.": "कम से कम 3 अक्षर लिखें, ताकि असली भुगतान न छूटें.",
   "SMS with “{word}” are skipped from now on": "“{word}” वाले SMS अब से छोड़े जाएंगे",
   "SMS with “{word}” count again": "“{word}” वाले SMS फिर से गिने जाएंगे",
+  "Careful: at your usual pace you’d be <span class=\"date warn\">{amount} short</span> by payday": "सावधान: आम तौर की रफ़्तार से सैलरी तक <span class=\"date warn\">{amount} कम</span> पड़ेंगे",
+  "Not because you saved: the {saved} you moved to savings is still yours. It’s your pace, about {pace} a day. Keep to <b>{safe} a day</b> and you won’t need to touch your savings.": "बचत करने की वजह से नहीं: बचत में रखे {saved} अभी भी आपके ही हैं. वजह आपकी खर्च की रफ़्तार है, लगभग {pace} रोज़. रोज़ <b>{safe}</b> में रहें, तो बचत को छूना नहीं पड़ेगा.",
+  "{spent} spent · {saved} saved": "{spent} खर्च · {saved} बचत",
 };

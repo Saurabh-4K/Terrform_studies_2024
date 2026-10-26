@@ -873,10 +873,18 @@
       headline = tr('Red zone: <span class="date bad">{amount} short</span> for bills and basics', { amount: inr(z.shortBy) });
       sub = tr('The money left doesn’t cover the bills still to pay and groceries and health until {date}. Here’s how to stay above ₹0:', { date: fmtDate(cyc.next) });
     } else if (z.zone === 'amber') {
-      headline = tr('Careful: at this pace, money runs out on <span class="date warn">{date}</span>', { date: fmtDate(r.zeroPace || Core.addDays(cyc.next, -1)) });
       // The same number the card shows: today's limit, or tomorrow's once today is over it.
       const keep = r.overToday > 0 && r.savedToday < r.overToday ? r.tomorrowAllowance : r.dailyAllowance;
-      sub = tr('You’re spending about {pace} a day. Keep to <b>{safe} a day</b> until payday and you’ll stay out of the red.', { pace: inr(r.paceRate), safe: inr(keep) });
+      const short = Math.ceil(-r.endPace);
+      if (r.endPace < 0 && r.moved > 0 && short <= r.moved) {
+        // Only what was moved to savings tips it: say so, it isn't a penalty for saving.
+        headline = tr('Careful: at your usual pace you’d be <span class="date warn">{amount} short</span> by payday', { amount: inr(short) });
+        sub = tr('Not because you saved: the {saved} you moved to savings is still yours. It’s your pace, about {pace} a day. Keep to <b>{safe} a day</b> and you won’t need to touch your savings.',
+          { saved: inr(r.moved), pace: inr(r.paceRate), safe: inr(keep) });
+      } else {
+        headline = tr('Careful: at this pace, money runs out on <span class="date warn">{date}</span>', { date: fmtDate(r.zeroPace || Core.addDays(cyc.next, -1)) });
+        sub = tr('You’re spending about {pace} a day. Keep to <b>{safe} a day</b> until payday and you’ll stay out of the red.', { pace: inr(r.paceRate), safe: inr(keep) });
+      }
     } else {
       headline = tr('You’re in the green');
       sub = tr('At this pace you reach payday on {date} with about <b>{amount}</b> left.', { date: fmtDate(cyc.next), amount: inr(r.endPace) });
@@ -1328,7 +1336,9 @@
       '<div class="runway-head"><span class="hero-label">' + tr('Today’s limit') + '</span></div>' +
       '<div class="limit-big"><b data-count="' + Math.round(r.dailyAllowance) + '">' + inr(r.dailyAllowance) + '</b></div>' +
       '<div class="limit-bar' + (over ? ' over' : '') + '" role="img" aria-label="' + esc(todayTileNote(r)) + '"><span id="limit-fill" style="width:' + from.toFixed(1) + '%" data-to="' + used.toFixed(1) + '"></span></div>' +
-      '<div class="limit-line"><span>' + (over ? tr('{amount} over', { amount: inr(r.overToday) }) : tr('{amount} spent', { amount: inr(r.spentToday + r.savedToday) })) + '</span>' +
+      '<div class="limit-line"><span>' + (over ? tr('{amount} over', { amount: inr(r.overToday) })
+        : r.savedToday > 0 ? tr('{spent} spent · {saved} saved', { spent: inr(r.spentToday), saved: inr(r.savedToday) })
+          : tr('{amount} spent', { amount: inr(r.spentToday) })) + '</span>' +
       '<span>' + (over ? tr('Tomorrow: {amount}', { amount: inr(r.tomorrowAllowance) }) : tr('{amount} left', { amount: inr(r.leftToday) })) + '</span></div>' +
       '<h1>' + headline + '</h1><p class="runway-sub">' + sub + '</p>' +
       '<button class="explain-link" data-action="explain" data-explain="limit">' + tr('How is this calculated?') + '</button></div>';
