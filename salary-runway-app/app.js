@@ -64,6 +64,9 @@
   const AI_LANG = { en: 'English', mr: 'Marathi', hi: 'Hindi' };
   // The build number, written by the Android build; absent in the browser preview.
   const BUILD = window.HISAB_BUILD || '';
+  // What the app did lately (taps, messages, errors, each day's numbers), for a problem report. Never sent by itself.
+  const LOG_KEY = 'salary-runway-log';
+  const LOG_MAX = 500;
 
   // A light tap on the phone. Never allowed to break anything.
   function haptic() {
@@ -375,7 +378,47 @@
     return list.map((c) => '<option value="' + esc(c) + '"' + (c === selected ? ' selected' : '') + '>' + esc(label(c)) + '</option>').join('');
   }
 
+  // ---------- problem log ----------
+
+  /*
+   * The last few hundred things the app did, kept on the phone apart from the
+   * money data, so a problem report can show what happened before a bug. With
+   * the app lock on, no text is kept: only taps, errors and their places.
+   */
+  let logList = null;
+  function logRead() {
+    if (logList) return logList;
+    try { logList = JSON.parse(localStorage.getItem(LOG_KEY)) || []; } catch (e) { logList = []; }
+    if (!Array.isArray(logList)) logList = [];
+    return logList;
+  }
+  function logEvent(kind, info) {
+    try {
+      const list = logRead();
+      list.push(Object.assign({ at: new Date().toISOString(), kind, tab: typeof tab === 'string' ? tab : null, page: ui && ui.page ? ui.page.key : null }, info));
+      if (list.length > LOG_MAX) list.splice(0, list.length - LOG_MAX);
+      clearTimeout(logEvent.timer);
+      logEvent.timer = setTimeout(() => { try { localStorage.setItem(LOG_KEY, JSON.stringify(list)); } catch (e) { /* full or private */ } }, 400);
+    } catch (e) { /* the log never breaks the app */ }
+  }
+  function logText(text) { return lockCfg().on ? undefined : String(text || '').slice(0, 300); }
+  let errorSeen = false;
+  function logError(message, where, stack) {
+    logEvent('error', { message: String(message || '').slice(0, 300), where: where || undefined, stack: stack ? String(stack).slice(0, 1500) : undefined });
+    // Once a session: say where to report it.
+    if (!errorSeen) {
+      errorSeen = true;
+      setTimeout(() => { try { toast(tr('Something went wrong. Profile → Report a problem sends the details.'), 'bad'); } catch (e) { /* ignore */ } }, 50);
+    }
+  }
+  window.addEventListener('error', (e) => logError(e.message, (e.filename || '').split('/').pop() + ':' + e.lineno + ':' + e.colno, e.error && e.error.stack));
+  window.addEventListener('unhandledrejection', (e) => {
+    const r = e.reason || {};
+    logError(r.message || String(r), 'promise', r.stack);
+  });
+
   function toast(msg, kind) {
+    logEvent('toast', { text: logText(tr(msg)), tone: kind || undefined });
     const old = document.querySelector('.toast');
     if (old) old.remove();
     const el = document.createElement('div');
@@ -695,6 +738,7 @@
     lock: '<path d="M7 10V7a5 5 0 0 1 10 0v3h1a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2zm2 0h6V7a3 3 0 0 0-6 0zm2 4v3.5h2V14z"/>',
     data: '<path d="M12 2c4.4 0 8 1.6 8 3.5S16.4 9 12 9 4 7.4 4 5.5 7.6 2 12 2zM4 8.4c1.6 1.4 4.6 2.1 8 2.1s6.4-.7 8-2.1V12c0 1.9-3.6 3.5-8 3.5S4 13.9 4 12zm0 6.6c1.6 1.4 4.6 2.1 8 2.1s6.4-.7 8-2.1v3.5c0 1.9-3.6 3.5-8 3.5s-8-1.6-8-3.5z"/>',
     broom: '<path d="M14.6 2l1.8.9-3.6 7.1H17l2 12H5l2-12h3.4z"/>',
+    flag: '<path d="M5 2h2v20H5zM8.5 3H20l-3 4.5 3 4.5H8.5z"/>',
     info: '<path d="M12 2a10 10 0 1 1 0 20 10 10 0 0 1 0-20zm-1.1 8v7.5h2.2V10zm0-3.6V8.6h2.2V6.4z"/>',
     add: '<path d="M12 2a10 10 0 1 1 0 20 10 10 0 0 1 0-20zm-1.1 5v3.9H7v2.2h3.9V17h2.2v-3.9H17v-2.2h-3.9V7z"/>',
   };
@@ -1824,6 +1868,8 @@
     const day = state.days[t] || {};
     const allowance = Math.round(r.dailyAllowance);
     if (day.allowance !== allowance && !day.prompted) {
+      logEvent('limit', { date: t, limit: allowance, byMoney: Math.round(r.limit.byMoney), byBudget: Math.round(r.limit.byBudget), money: Math.round(r.limit.money),
+        bills: Math.round(r.limit.bills), days: r.limit.days, flex: r.plan.flexTotal, setAside: r.plan.savingsTotal });
       state.days[t] = Object.assign(day, { allowance });
       // Keep about two rounds of days, for the round board.
       Object.keys(state.days).filter((d) => d < Core.addDays(t, -70)).forEach((d) => { delete state.days[d]; });
@@ -2562,6 +2608,15 @@
   // without a date of its own gets that date.
   function smsRows(messages) {
     const known = knownSmsKeys();
+    const rows = smsRowsOf(messages, known);
+    // Bank messages the app couldn't read, with every digit hidden: enough to see the wording that needs teaching.
+    const unread = rows.filter((x) => !x.parsed);
+    logEvent('sms', { messages: rows.length, read: rows.length - unread.length, duplicates: rows.filter((x) => x.duplicate).length,
+      unread: lockCfg().on ? undefined : unread.slice(0, 20).map((x) => String(x.text).replace(/\d/g, '9').slice(0, 240)) });
+    return rows;
+  }
+
+  function smsRowsOf(messages, known) {
     return messages.map(({ text, day }) => {
       const parsed = Core.parseSms(text, state.merchantRules, day);
       const key = Core.smsKey(text);
@@ -3386,6 +3441,7 @@
       { key: 'data', group: 'Your data', icon: 'data', label: 'Backup & data', value: state.lastBackup ? fmtDate(state.lastBackup) : tr('No backup yet'), tone: state.lastBackup ? '' : 'bad', html: () => dataCard() },
       { key: 'smsclean', group: 'Your data', icon: 'broom', label: 'Clean up SMS imports', value: '', hide: !smsCleanup(), html: () => smsCleanup() },
       { key: 'tour', group: 'Help', icon: 'sparkle', label: 'See the app tour', value: '', action: 'tour-open', html: () => '' },
+      { key: 'report', group: 'Help', icon: 'flag', label: 'Report a problem', value: '', html: () => reportCard() },
       { key: 'about', group: 'Help', icon: 'info', label: 'About Hisab Se', value: BUILD ? tr('Build {n}', { n: BUILD }) : '', html: aboutCard },
     ]);
   }
@@ -3805,7 +3861,7 @@
     ['good', '<b>No account, no ads, no analytics, no crash reports.</b>'],
     ['good', '<b>Bank SMS</b> are read only when you tap Read bank SMS or turn on alerts. Messages from phone numbers (friends, family) are skipped before the app sees them. Only a payment’s amount, date and shop are saved, never the message.'],
     ['good', '<b>Your data stays on this phone</b>, in the app’s private storage. Android’s cloud backup is off for Hisab Se, so not even Google gets a copy.'],
-    ['good', '<b>Something leaves the phone only when you choose:</b> a backup file you share, or the weekly summary for your AI plan.'],
+    ['good', '<b>Something leaves the phone only when you choose:</b> a backup file you share, a problem report you send, or the weekly summary for your AI plan.'],
     ['warn', '<b>If the phone is lost, reset, or the app is uninstalled, your data goes with it,</b> unless you have a backup file.'],
   ];
 
@@ -3904,6 +3960,71 @@
       setTimeout(() => URL.revokeObjectURL(a.href), 1000);
       done();
     }).catch(() => { ui.backupForm = { error: tr('Couldn’t make the backup. Try again.') }; render(); });
+  }
+
+  // ---------- problem report ----------
+
+  function reportCard() {
+    const f = ui.reportForm || {};
+    const log = logRead();
+    return '<section class="card"><h2>' + tr('Report a problem') + '</h2>' +
+      '<p class="hint">' + tr('Something wrong or confusing? Make a report file and send it to the developer. It shows exactly what your app saw, so the bug can be found and fixed.') + '</p>' +
+      '<label class="field" for="report-note"><span>' + tr('What went wrong, and what did you expect?') + '</span>' +
+      '<textarea id="report-note" rows="4" placeholder="' + esc(tr('Today’s limit shows ₹0, but I have money in my account')) + '">' + esc(f.note || '') + '</textarea></label>' +
+      '<div class="callout warn"><b>' + tr('The report has your money data') + '</b><span class="hint">' +
+      tr('Your amounts, payments, loans and the names you typed, and the app’s log ({n} events). It isn’t locked with a password, so send it only to the developer. Nothing is sent by itself.', { n: log.length }) +
+      '</span></div>' +
+      (f.error ? '<p class="bad" role="alert">' + esc(f.error) + '</p>' : '') +
+      '<div class="row"><button class="primary" data-action="report-save">' + tr('Save report file') + '</button>' +
+      '<button data-action="report-share">' + tr('Share report') + '</button></div>' +
+      (log.length ? '<div class="row"><button class="link" data-action="report-clear">' + tr('Clear the log') + '</button></div>' : '') + '</section>';
+  }
+
+  // Everything needed to see the bug: the note, the numbers the app worked out today, the log and the data.
+  function problemReport(note) {
+    const t = today();
+    let numbers;
+    try {
+      const r = Core.projectRunway(state, t);
+      const z = Core.zoneStatus(state, t, r);
+      numbers = { limit: Math.round(r.dailyAllowance), parts: r.limit, balance: r.balanceToday, zone: z.zone, endPace: Math.round(r.endPace), plan: r.plan };
+    } catch (e) { numbers = { error: String(e && e.message), stack: String(e && e.stack).slice(0, 1500) }; }
+    return JSON.stringify({
+      kind: 'hisab-problem-report', version: 1, made: new Date().toISOString(), today: t,
+      build: BUILD || 'browser', device: navigator.userAgent, screen: window.innerWidth + 'x' + window.innerHeight,
+      lang: I18N.getLang(), theme: themeChoice() || 'phone', lock: !!lockCfg().on, ai: !!aiCfg().on,
+      note, numbers, log: logRead(), state,
+    }, null, 1);
+  }
+
+  function makeReport(how) {
+    const note = ((document.getElementById('report-note') || {}).value || '').trim();
+    ui.reportForm = { note };
+    const t = today();
+    const name = 'HisabSe-report-' + t + '.json';
+    let text;
+    try { text = problemReport(note); } catch (e) { ui.reportForm.error = tr('Couldn’t make the report. Try again.'); render(); return; }
+    const done = (msg) => { ui.reportForm = null; rerenderKeepScroll(); toast(msg); };
+    if (ShareFile && how === 'share') {
+      ShareFile.share({ name, text, title: tr('Send the report'), mime: 'application/json' })
+        .then(() => done(tr('Report ready. Send it to the developer.')), () => { ui.reportForm.error = tr('Couldn’t make the report. Try again.'); render(); });
+      return;
+    }
+    if (ShareFile) {
+      ShareFile.save({ name, text, mime: 'application/json' }).then((r) => {
+        if (r && r.saved) done(tr('Report saved as {name}. Send that file to the developer.', { name: r.name || name }));
+        else { ui.reportForm.error = tr('Not saved yet: pick a folder and tap Save on Android’s screen.'); render(); }
+      }, () => { ui.reportForm.error = tr('Couldn’t make the report. Try again.'); render(); });
+      return;
+    }
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    done(tr('Report saved as {name}. Send that file to the developer.', { name }));
   }
 
   function restoreBackup() {
@@ -4802,6 +4923,7 @@
     if (!btn) return;
     const a = btn.dataset.action;
     const t = today();
+    logEvent('tap', { action: a, key: btn.dataset.key || undefined, to: btn.dataset.tab || undefined, id: btn.dataset.id || undefined });
     switch (a) {
       case 'tab': setTab(btn.dataset.tab); return;
       case 'page-open':
@@ -4998,10 +5120,17 @@
         state.transactions = state.transactions.filter((x) => !(x.source === 'sms' && x.date < date));
         ui.smsClean = null; save(); toast(tr('{entries} removed', { entries: plural(removed.length, 'entry', 'entries') })); break;
       }
+      case 'report-save': makeReport('save'); return;
+      case 'report-share': makeReport('share'); return;
+      case 'report-clear':
+        logList = [];
+        try { localStorage.removeItem(LOG_KEY); } catch (e) { /* private mode */ }
+        toast(tr('Log cleared')); break;
       case 'wipe-cancel': ui.confirmWipe = false; break;
       case 'wipe-confirm':
         // Everything the app keeps: its storage here, and the widget, SMS alerts, notifications and shared files.
-        try { [KEY, LANG_KEY, CHART_KEY, VIZ_KEY, LOCK_KEY, THEME_KEY, TOUR_KEY].forEach((k) => localStorage.removeItem(k)); } catch (e) { /* ignore */ }
+        try { [KEY, LANG_KEY, CHART_KEY, VIZ_KEY, LOCK_KEY, THEME_KEY, TOUR_KEY, LOG_KEY].forEach((k) => localStorage.removeItem(k)); } catch (e) { /* ignore */ }
+        logList = [];
         dataKey = null;
         applyTheme('');
         if (SpendWidget) Promise.resolve().then(() => SpendWidget.eraseAll()).catch(() => {});

@@ -134,6 +134,19 @@ The app is limited to **budgeting and debt planning**:
 
 English, Marathi (मराठी) and Hindi (हिंदी), switched at the top of the Plan tab. The English text is the key: `tr('You saved {amount} today', { amount })` looks it up in `i18n-mr.js` or `i18n-hi.js`, and anything not translated stays in English. Any new text needs a Marathi and a Hindi entry; `tests/i18n.test.js` fails when one is missing or loses a `{value}`. The Android widget, notification and pop-ups use `values-mr/` and `values-hi/` strings, in the language chosen in the app (`Lang.java`).
 
+## Problem reports (testing phase)
+
+Testers tap **Profile → Report a problem**, describe the bug and save or share the report file. It holds their note, the day's numbers, the app's on-phone log (taps, messages, errors with file and line, daily limits, unread bank SMS with digits hidden) and their data, unencrypted. Nothing is sent by itself.
+
+To see what their app saw:
+
+```
+npm run build
+node scripts/replay-report.js HisabSe-report-2026-10-26.json
+```
+
+It opens the report in the real app on the report's date, visits every page, and prints errors, odd values (NaN, undefined, ₹-) and the last 40 events; page text, the log and screenshots go to `reports/replay/`. Reports hold real money data: `.gitignore` keeps `reports/` and report or backup files out of the repo.
+
 ## Files
 
 ```
@@ -143,6 +156,7 @@ core.js           all calculations: cycles, runway, zones, pay, bills, cards, de
 i18n.js           language switch and translate function; i18n-mr.js, i18n-hi.js hold the Marathi and Hindi text
 demo.js           example data
 app.js            user interface
+scripts/replay-report.js  opens a tester's problem report in the app to find the bug
 tests/            unit tests for core.js
 scripts/build-www.js              prepares the web files for the Android app
 capacitor.config.json             Android app settings

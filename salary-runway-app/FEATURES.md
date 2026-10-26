@@ -189,7 +189,7 @@ Every tab keeps what always matters open, and shows its other cards as small ico
 
 Plan → **Your privacy** lists what the app does and never does, and each line is true of the app as built:
 - **Offline by default.** The app connects to the internet only for the optional **AI weekly plan**, which is off until you turn it on; with it off, nothing is ever sent. Airplane mode changes nothing else. A unit test checks that the weekly plan is the only network call in the code. Every build is installed on an emulator with Wi-Fi and data off; the download is only updated if it opens and works normally.
-- **Nothing from outside:** a content security policy stops the app's screens loading any outside script, font, image or request, and the fonts are bundled. No account, no ads, no analytics, no crash reports, no Google services.
+- **Nothing from outside:** a content security policy stops the app's screens loading any outside script, font, image or request, and the fonts are bundled. No account, no ads, no analytics, no crash reports sent by themselves, no Google services.
 - **Bank SMS** are read only when you tap *Read bank SMS* or turn on alerts. Messages from phone numbers (friends, family) are skipped in the native code, before the app sees them. Only a payment's amount, date and shop are saved, never the message.
 - **Android's cloud backup and device-to-device transfer are turned off** for the app's data, so not even Google gets a copy.
 - Something leaves the phone only when you share it (the AI report or a backup file), to the app you pick.
@@ -564,6 +564,12 @@ Small habits that quietly cost a lot: cigarettes, liquor, tea and snacks, food d
   - **Salary SMS:** *Payday! ₹57,500 credited · Tap to review your monthly plan*.
   - **Card statement:** "HDFC card bill: ₹12,500 · Tap to plan the payment".
   - Card bill payments are recorded quietly.
+- **Report a problem** (Profile → Help), for the testing phase:
+  - The app keeps a log on the phone of its last 500 events: taps (which button, which page), messages it showed, errors with where in the code they happened, each day's limit and how it was worked out, and for bank SMS it couldn't read, the wording with every digit hidden. With the app lock on, no text is kept, only taps and errors.
+  - When something breaks, a message says once: *Something went wrong. Profile → Report a problem sends the details.*
+  - **Report a problem**: write what went wrong, then **Save report file** or **Share report**. The file has the note, today's numbers, the log and the data. It isn't password-locked, so the page says to send it only to the developer. Nothing is ever sent by itself.
+  - **Clear the log** empties it; **Erase everything** removes it too.
+  - For the developer: `node scripts/replay-report.js HisabSe-report-….json` opens the report in the real app on its own date, goes through every page, and prints errors, odd values and the last 40 events.
 - **Updates:** a new APK every **Sunday morning** (India time), only if something changed. It installs over the old one and keeps your data.
 
 ## 15. Design and behaviour principles
