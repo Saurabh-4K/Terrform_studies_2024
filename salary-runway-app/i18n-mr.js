@@ -1769,4 +1769,11 @@
   "SMS skipped from": "यांचे SMS वगळले जातात",
   "Stop skipping {shop}": "{shop} वगळणे थांबवा",
   "SMS from {shop} count again": "{shop} चे SMS पुन्हा मोजले जातील",
+  "{months} EMIs, offered on the card to add": "{months} हप्ते, कार्डवर जोडण्यासाठी सुचवले",
+  "An EMI booked on {date}: {amount} in {months} EMIs": "{date} रोजी बुक केलेला हप्ता: {amount}, {months} हप्त्यांत",
+  "From your bank’s SMS. If it went through, add it so its EMIs count once a month: about {emi}, {left} left.": "तुमच्या बँकेच्या SMS मधून. तो पूर्ण झाला असल्यास जोडा, म्हणजे हप्ते दरमहा एकदा मोजले जातील: सुमारे {emi}, {left} बाकी.",
+  "Check and add": "तपासा आणि जोडा",
+  "It didn’t go through": "तो पूर्ण झाला नाही",
+  "Filled in from the SMS. Check the EMI on your card statement: banks work it out a little differently.": "SMS मधून भरले आहे. तुमच्या कार्ड स्टेटमेंटवरचा हप्ता तपासा: बँका तो थोडा वेगळा काढतात.",
+  "Card EMI booked": "कार्डवर हप्ता बुक झाला",
 };

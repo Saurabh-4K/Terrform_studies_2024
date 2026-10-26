@@ -30,10 +30,14 @@ final class SmsParser {
     private static final Pattern AMOUNT = Pattern.compile("(?:rs\\.?|inr|₹)\\s*([\\d,]+(?:\\.\\d{1,2})?)", CI);
     private static final Pattern DEBIT = Pattern.compile("\\b(debited|spent|paid|sent|withdrawn|purchase|debit|payment of)\\b", CI);
     private static final Pattern CREDIT = Pattern.compile("\\b(credited|received|deposited|refund(?:ed)?)\\b", CI);
+    // "Txn Rs.68.26 On HDFC Bank Card 6645 At …": HDFC's card and UPI payments.
+    private static final Pattern TXN = Pattern.compile("\\btxn\\s+(?:of\\s+)?(?:rs\\.?|inr|₹)", CI);
+    // The shop in a UPI ID, as in core.js: payment gateways and QR codes aren't the shop.
+    private static final Pattern GATEWAYS = Pattern.compile("^(payu|razorpay|rzp|rzpy|cashfree|ccavenue|billdesk|paygate|pg|upi|pay|payments?|merchant|mer)$", CI);
     private static final Pattern REFUND = Pattern.compile("refund|reversal|reversed|cashback", CI);
     private static final Pattern SALARY = Pattern.compile("\\bsal(ary)?\\b|payroll", CI);
     private static final Pattern NOT_A_NAME = Pattern.compile("^(a/?c|your|ac|account|card)\\b", CI);
-    private static final Pattern VPA = Pattern.compile("\\b([a-z0-9._-]+@[a-z]+)\\b", CI);
+    private static final Pattern VPA = Pattern.compile("(?:^|[^a-z0-9._*-])(\\*?[a-z0-9._-]+@[a-z]+)\\b", CI);
 
     // Credit cards, as in core.js.
     private static final Pattern CARD_HINT = Pattern.compile("credit card|\\bcc\\b|card\\s*(?:no\\.?|number|ending|xx|\\*{2})|avl\\.?\\s*limit|available\\s*limit|avail\\.?\\s*lmt", CI);
@@ -51,7 +55,7 @@ final class SmsParser {
     };
     private static final Pattern[] DEBIT_TO = {
         Pattern.compile("\\binfo[:\\s]+(\\S.*?)(?=\\.\\s|\\.$|$|\\s+avl)", CI),
-        Pattern.compile("\\b(?:to|at|towards)\\s+(?:vpa\\s+)?([A-Za-z0-9@._&'/ -]{2,50}?)(?=\\s+(?:on|via|ref|upi|txn|for|avl|avbl|from|using|dt|date|received)\\b|\\s*[.,;(]\\s|\\s*[.,;]?$)", CI),
+        Pattern.compile("\\b(?:to|at|towards)\\s+(?:vpa\\s+)?([A-Za-z0-9@._&'/ -]{2,50}?)(?=\\s+(?:on|via|ref|upi|txn|for|avl|avbl|from|using|by|dt|date|received)\\b|\\s*[.,;(]\\s|\\s*[.,;]?$)", CI),
         Pattern.compile("\\bon\\s+([A-Z][A-Z0-9 &'-]{2,30})(?=\\s*[.,]|\\s+avl)"),
         VPA,
     };
@@ -113,8 +117,8 @@ final class SmsParser {
             return r;
         }
 
-        boolean debit = DEBIT.matcher(t).find();
         boolean credit = CREDIT.matcher(t).find();
+        boolean debit = DEBIT.matcher(t).find() || (!credit && TXN.matcher(t).find());
         if (!debit && !credit) return null;
 
         Result r = new Result();
@@ -151,6 +155,19 @@ final class SmsParser {
         return "";
     }
 
+    private static String vpaName(String vpa) {
+        String user = vpa.split("@", -1)[0];
+        String lower = user.toLowerCase(Locale.ROOT);
+        if (user.startsWith("*")) return "UPI " + user;
+        if (lower.startsWith("paytmqr")) return "Paytm QR";
+        if (lower.matches("q\\d{6,}.*") || lower.startsWith("bharatpe")) return "QR payment";
+        List<String> words = new ArrayList<>();
+        for (String w : user.split("[._-]+")) {
+            if (!w.isEmpty() && !GATEWAYS.matcher(w).matches() && !w.matches("\\d+")) words.add(w);
+        }
+        return words.isEmpty() ? user : String.join(" ", words);
+    }
+
     private static String cleanMerchant(String raw) {
         String s = raw == null ? "" : raw.trim();
         if (NOT_A_NAME.matcher(s).find()) return "";
@@ -162,14 +179,15 @@ final class SmsParser {
             }
             if (!parts.isEmpty()) s = parts.get(parts.size() - 1);
         }
-        if (s.contains("@")) s = s.split("@", -1)[0].replaceAll("[._-]+", " ");
+        if (s.contains("@")) s = vpaName(s);
         s = s.replaceAll("\\s+", " ").replaceAll("[.,;:]+$", "").trim();
         if (s.isEmpty() || NOT_A_NAME.matcher(s).find()) return "";
         Matcher words = Pattern.compile("\\b[a-z]").matcher(s.toLowerCase(Locale.ROOT));
         StringBuffer out = new StringBuffer();
         while (words.find()) words.appendReplacement(out, words.group().toUpperCase(Locale.ROOT));
         words.appendTail(out);
-        return out.length() > 40 ? out.substring(0, 40) : out.toString();
+        String name = out.toString().replaceAll("\\bUpi\\b", "UPI").replaceAll("\\bQr\\b", "QR");
+        return name.length() > 40 ? name.substring(0, 40) : name;
     }
 
     static String normalizeMerchant(String s) {

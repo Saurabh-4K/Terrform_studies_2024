@@ -2581,12 +2581,12 @@
         }
         const p = r.parsed;
         const isIn = p.type === 'credit';
-        const cardRow = p.type === 'statement' || p.type === 'cardpayment';
+        const cardRow = p.type === 'statement' || p.type === 'cardpayment' || p.type === 'cardemi';
         const note = r.duplicate ? tr('Already added') : r.match ? tr('Matches your entry: {note}, {date}', { note: esc(r.match.note || label(r.match.category || '')), date: fmtDate(r.match.date) }) : isIn && p.salary ? tr('Looks like your salary, which is already counted') : smsNote(p) || (isIn ? tr('Money in') : '');
         const check = '<td><input type="checkbox" data-sms-check="' + i + '" aria-label="' + tr('Add this') + '"' + (r.checked ? ' checked' : '') + '></td>';
         if (cardRow) {
           return '<tr' + (r.duplicate ? ' class="muted"' : '') + '>' + check +
-            '<td><div class="cell-title">' + tr(p.type === 'statement' ? 'Card statement' : 'Card bill payment') + '</div><div class="cell-sub">' + fmtDate(p.date) + ' · ' + note + '</div></td>' +
+            '<td><div class="cell-title">' + tr(p.type === 'statement' ? 'Card statement' : p.type === 'cardemi' ? 'Card EMI booked' : 'Card bill payment') + '</div><div class="cell-sub">' + fmtDate(p.date) + ' · ' + note + '</div></td>' +
             '<td>—</td><td class="amt">' + inr(p.amount) + '</td></tr>';
         }
         return '<tr' + (r.duplicate || (isIn && p.salary) ? ' class="muted"' : '') + '>' + check +
@@ -2695,7 +2695,7 @@
   function knownSmsKeys() {
     return new Set(state.transactions.map((x) => x.smsKey)
       .concat((state.cards || []).map((c) => c.statement && c.statement.smsKey))
-      .concat(state.smsIgnored || []).filter(Boolean));
+      .concat(state.smsIgnored || []).concat(...(state.emiOffers || []).map((x) => [x.key].concat(x.keys || []))).filter(Boolean));
   }
 
   /*
@@ -2712,6 +2712,16 @@
     if (p.type === 'statement') {
       if (!card) return false;
       card.statement = { date: p.date, total: p.amount, min: p.min, due: p.due, smsKey: o.key };
+      return true;
+    }
+    // An EMI booked on a card: kept to offer on the card, never as a payment.
+    if (p.type === 'cardemi') {
+      if ((state.emiOffers || []).some((x) => x.key === o.key)) return false;
+      // The OTP and the "processed" SMS are the same EMI: one offer, kept from the first.
+      const same = (state.emiOffers || []).find((x) => x.last4 === p.last4 && x.months === p.months && Math.abs(x.amount - p.amount) <= 2 &&
+        Math.abs(Core.daysBetween(x.date, p.date)) <= 7);
+      if (same) { same.keys = (same.keys || []).concat(o.key); if (p.booked) same.booked = true; return true; }
+      state.emiOffers = (state.emiOffers || []).concat({ key: o.key, date: p.date, amount: p.amount, months: p.months, rate: p.rate, last4: p.last4, booked: !!p.booked }).slice(-20);
       return true;
     }
     if (p.type === 'credit' && p.salary) {
@@ -2850,6 +2860,7 @@
   }
 
   function smsNote(p) {
+    if (p.type === 'cardemi') return tr('{months} EMIs, offered on the card to add', { months: p.months });
     if (p.type === 'statement') {
       const c = findCard(p.last4);
       if (!c) return tr('Card statement for a card not added yet (••{last4})', { last4: esc(p.last4 || '?') });
@@ -4190,6 +4201,26 @@
     return tr('Borrowed until you pay the bill due {date}. Counted as spent today. Pay that whole bill and it’s free; pay less, even the minimum, and interest of about 3.5% a month plus GST starts.', { date: fmtDate(due) });
   }
 
+  /*
+   * An EMI booking read from SMS for this card: offered once, pre-filled,
+   * unless it's finished or an EMI like it is already in Debts.
+   */
+  function emiOfferFor(c) {
+    const t = today();
+    return (state.emiOffers || []).filter((x) => !x.done && x.last4 === c.last4).map((x) => ({ offer: x, plan: Core.cardEmiFromBooking(c, x, t) }))
+      // Already in Debts (linked to the card, or named like a card EMI) with about this EMI: not offered again.
+      .filter((x) => x.plan.left > 0 && !state.debts.some((d) => (d.viaCard === c.id || (!d.viaCard && Core.looksLikeCardBill(d.name))) && d.balance > 0 &&
+        Math.abs((Number(d.minPayment) || 0) - x.plan.emi) <= x.plan.emi * 0.1))[0] || null;
+  }
+  function emiOfferBox(c) {
+    const o = emiOfferFor(c);
+    if (!o || ui.cardEmi === c.id) return '';
+    return '<div class="callout"><b>' + tr('An EMI booked on {date}: {amount} in {months} EMIs', { date: fmtDate(o.offer.date), amount: inr(o.offer.amount), months: o.offer.months }) + '</b>' +
+      '<span class="hint">' + tr('From your bank’s SMS. If it went through, add it so its EMIs count once a month: about {emi}, {left} left.', { emi: inr(o.plan.emi), left: o.plan.left }) + '</span>' +
+      '<div class="row"><button class="primary" data-action="emi-offer-add" data-id="' + esc(c.id) + '" data-key="' + esc(o.offer.key) + '">' + tr('Check and add') + '</button>' +
+      '<button class="ghost" data-action="emi-offer-no" data-key="' + esc(o.offer.key) + '">' + tr('It didn’t go through') + '</button></div></div>';
+  }
+
   // An EMI already running on the card: a bill converted before it was added here.
   function cardEmiForm(c) {
     const emis = state.debts.filter((d) => d.viaCard === c.id && d.balance > 0);
@@ -4200,10 +4231,13 @@
         '<div class="row"><button class="link" data-action="card-emi-open" data-id="' + esc(c.id) + '">' + tr('Add an EMI already on this card') + '</button></div>';
     }
     const f = (id, name, val, extra) => '<label class="field" for="' + id + '"><span>' + tr(name) + '</span><input id="' + id + '" type="number" inputmode="decimal" min="0" value="' + esc(val) + '"' + (extra || '') + '></label>';
+    // Filled in from the bank's SMS: check the EMI against the card statement.
+    const pre = ui.cardEmiPrefill || {};
     return (list ? '<div class="summary">' + list + '</div>' : '') +
       '<div class="callout"><b>' + tr('An EMI on {card}', { card: c.name }) + '</b>' +
       '<span class="hint">' + tr('A bill you turned into an EMI. It comes off once a month on the card’s due date, and the app ends it after the last one.') + '</span>' +
-      '<div class="form-grid">' + f('ce-emi', 'EMI each month (₹)', '') + f('ce-left', 'EMIs left to pay', '', ' max="120"') + f('ce-rate', 'Interest %/yr', '22', ' step="any"') + '</div>' +
+      (pre.key ? '<span class="hint">' + tr('Filled in from the SMS. Check the EMI on your card statement: banks work it out a little differently.') + '</span>' : '') +
+      '<div class="form-grid">' + f('ce-emi', 'EMI each month (₹)', pre.emi || '') + f('ce-left', 'EMIs left to pay', pre.left || '', ' max="120"') + f('ce-rate', 'Interest %/yr', pre.rate !== undefined ? pre.rate : '22', ' step="any"') + '</div>' +
       (ui.cardEmiError ? '<p class="bad" role="alert">' + esc(ui.cardEmiError) + '</p>' : '') +
       '<div class="row"><button class="primary" data-action="card-emi-save" data-id="' + esc(c.id) + '">' + tr('Add EMI') + '</button>' +
       '<button class="ghost" data-action="card-emi-cancel">' + tr('Cancel') + '</button></div></div>';
@@ -4247,7 +4281,7 @@
       html += '<div class="row"><button class="primary" data-action="card-plan" data-id="' + esc(c.id) + '">' + tr(ui.cardPlan && ui.cardPlan.cardId === c.id ? 'Hide payment plan' : 'Plan this payment') + '</button></div>';
     }
     if (ui.cardPlan && ui.cardPlan.cardId === c.id && st.remaining) html += '<div id="card-plan">' + cardPlanPanel(c) + '</div>';
-    html += cardEmiForm(c);
+    html += emiOfferBox(c) + cardEmiForm(c);
     if (ui.cardRemove === c.id) {
       html += '<div class="callout bad"><b>' + tr('Remove {card}?', { card: cardLabel(c) }) + '</b><span class="hint">' + tr('Payments made with it stay in your records.') + '</span>' +
         '<div class="row"><button class="danger" data-action="card-remove-confirm" data-id="' + esc(c.id) + '">' + tr('Remove') + '</button><button data-action="card-remove-cancel">' + tr('Cancel') + '</button></div></div>';
@@ -5221,13 +5255,29 @@
         state.transactions = state.transactions.filter((x) => !(x.source === 'sms' && x.date < date));
         ui.smsClean = null; save(); toast(tr('{entries} removed', { entries: plural(removed.length, 'entry', 'entries') })); break;
       }
-      case 'card-emi-open': ui.cardEmi = btn.dataset.id; ui.cardEmiError = ''; break;
-      case 'card-emi-cancel': ui.cardEmi = null; ui.cardEmiError = ''; break;
+      case 'card-emi-open': ui.cardEmi = btn.dataset.id; ui.cardEmiError = ''; ui.cardEmiPrefill = null; break;
+      case 'card-emi-cancel': ui.cardEmi = null; ui.cardEmiError = ''; ui.cardEmiPrefill = null; break;
+      case 'emi-offer-add': {
+        const c = (state.cards || []).find((x) => x.id === btn.dataset.id);
+        const o = c && (state.emiOffers || []).find((x) => x.key === btn.dataset.key);
+        if (!o) return;
+        const plan = Core.cardEmiFromBooking(c, o, t);
+        ui.cardEmi = c.id; ui.cardEmiError = '';
+        ui.cardEmiPrefill = { key: o.key, emi: plan.emi, left: plan.left, rate: plan.rate };
+        break;
+      }
+      case 'emi-offer-no': {
+        const o = (state.emiOffers || []).find((x) => x.key === btn.dataset.key);
+        if (o) { o.done = true; save(); toast(tr('Left out')); }
+        break;
+      }
       case 'card-emi-save': {
         const v = (id) => (document.getElementById(id) || {}).value || '';
         const d = Core.addCardEmi(state, btn.dataset.id, { emi: v('ce-emi'), left: v('ce-left'), rate: v('ce-rate') }, t);
         if (!d) { ui.cardEmiError = tr('Enter the EMI amount and how many are left.'); break; }
-        ui.cardEmi = null; ui.cardEmiError = '';
+        const offer = ui.cardEmiPrefill && (state.emiOffers || []).find((x) => x.key === ui.cardEmiPrefill.key);
+        if (offer) offer.done = true;
+        ui.cardEmi = null; ui.cardEmiError = ''; ui.cardEmiPrefill = null;
         save();
         toast(tr('{name} added: {amount} a month, {n} left. It’s in Debts too.', { name: d.name, amount: inr(d.minPayment), n: d.emisLeft }));
         break;
@@ -6334,8 +6384,10 @@
     Promise.resolve().then(() => SmsInbox.read({ since, limit: 5000 })).then((res) => {
       const msgs = (res.messages || []).filter((m) => /[A-Za-z]/.test(m.address || '') && m.date < start);
       const queued = new Set((state.sortQueue || []).map((x) => x.key));
-      const rows = smsRows(msgs.map((m) => ({ text: m.body || '', day: Core.toISO(new Date(m.date)) })))
-        .filter((r) => r.parsed && !r.duplicate && !queued.has(r.key) && r.parsed.type !== 'credit' && r.parsed.type !== 'statement' && r.parsed.type !== 'cardpayment');
+      const all = smsRows(msgs.map((m) => ({ text: m.body || '', day: Core.toISO(new Date(m.date)) })));
+      // A card bill turned into an EMI: offered on the card, not sorted as spending.
+      all.filter((r) => r.parsed && r.parsed.type === 'cardemi' && !r.duplicate).forEach((r) => recordSms(r.parsed, { key: r.key }));
+      const rows = all.filter((r) => r.parsed && !r.duplicate && !queued.has(r.key) && ['credit', 'statement', 'cardpayment', 'cardemi'].indexOf(r.parsed.type) === -1);
       const toItem = (r) => ({ key: r.key, date: r.parsed.date, amount: r.parsed.amount, merchant: r.parsed.merchant, parsed: r.parsed });
       // Entries you typed yourself are linked, and places you've sorted before sort themselves: only the rest need you.
       const matched = rows.filter((r) => r.match).map(toItem);

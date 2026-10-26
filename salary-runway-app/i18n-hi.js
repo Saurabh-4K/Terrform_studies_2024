@@ -1769,4 +1769,11 @@
   "SMS skipped from": "इनके SMS छोड़े जाते हैं",
   "Stop skipping {shop}": "{shop} को छोड़ना बंद करें",
   "SMS from {shop} count again": "{shop} के SMS फिर से गिने जाएंगे",
+  "{months} EMIs, offered on the card to add": "{months} EMI, कार्ड पर जोड़ने के लिए सुझाई गई",
+  "An EMI booked on {date}: {amount} in {months} EMIs": "{date} को बुक हुई EMI: {amount}, {months} EMI में",
+  "From your bank’s SMS. If it went through, add it so its EMIs count once a month: about {emi}, {left} left.": "आपके बैंक के SMS से. अगर यह पूरी हुई, तो जोड़ें ताकि इसकी EMI हर महीने एक बार गिनी जाए: लगभग {emi}, {left} बाकी.",
+  "Check and add": "जांचें और जोड़ें",
+  "It didn’t go through": "यह पूरी नहीं हुई",
+  "Filled in from the SMS. Check the EMI on your card statement: banks work it out a little differently.": "SMS से भरा गया. अपने कार्ड स्टेटमेंट पर EMI जांचें: बैंक इसे थोड़ा अलग निकालते हैं.",
+  "Card EMI booked": "कार्ड पर EMI बुक हुई",
 };

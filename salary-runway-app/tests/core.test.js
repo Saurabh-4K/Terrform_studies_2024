@@ -1593,3 +1593,35 @@ test('a card-billed EMI paid from the account counts once: in the plan, next pay
   assert.equal(w.cards, 0);
   assert.equal(w.loans, 24705);
 });
+
+test('HDFC SMS formats: UPI sent, card UPI "Txn", credit alerts and Smart EMI', () => {
+  const t = '2026-10-26';
+  const read = (text) => Core.parseSms(text, {}, t);
+  // UPI from the account
+  let p = read('Sent Rs.120.50\nFrom HDFC Bank A/C *4321\nTo GREEN LEAF CAFE\nOn 21/10/26\nRef 123456789012\nNot You?\nCall 18002586161/SMS BLOCK UPI to 7308080808');
+  assert.deepEqual([p.type, p.amount, p.merchant, p.date, p.paidFrom], ['debit', 121, 'Green Leaf Cafe', '2026-10-21', 'account']);
+  // UPI on a credit card: "Txn Rs…", a date with no year, the shop behind a payment gateway
+  p = read('Txn Rs.540.00\nOn HDFC Bank Card 9876\nAt bluestore.payu@indus \nby UPI 123456789012\nOn 19-10\nNot You?\nCall 18002586161/SMS BLOCK CC 9876 to 7308080808');
+  assert.deepEqual([p.type, p.amount, p.merchant, p.date, p.paidFrom, p.last4], ['debit', 540, 'Bluestore', '2026-10-19', 'card', '9876']);
+  assert.equal(read('Txn Rs.258.00 On HDFC Bank Card 9876 At paytmqr1ab2c3@ptys by UPI 123 On 20-08').merchant, 'Paytm QR');
+  // A day-month later than today is last year's
+  assert.equal(read('Txn Rs.99.00 On HDFC Bank Card 9876 At shop@okaxis by UPI 1 On 30-12').date, '2025-12-30');
+  // Money in, including a sender the bank masks
+  p = read('Credit Alert!\nRs.2000.00 credited to HDFC Bank A/c XX4321 on 20-10-26 from VPA *7788@okaxis (UPI 629351271163)');
+  assert.deepEqual([p.type, p.amount, p.merchant, p.date], ['credit', 2000, 'UPI *7788', '2026-10-20']);
+  // Smart EMI: the OTP and the confirmation are an EMI to offer, never a payment
+  p = read('OTP: 111222\n For: HDFC Bank SMART EMI Loan booking on Card 9876\n Details: Loan of Rs 24000, 01.50% pm, Tenure 06 months.\n Never Share OTP');
+  assert.deepEqual([p.type, p.amount, p.months, p.rate, p.last4, p.booked], ['cardemi', 24000, 6, 18, '9876', false]);
+  p = read('Congrats,your loan is boarded.Dear Cardmember, we have processed your Smart EMI  request for Rs.   ****23999.99 payable in  **6 EMIs *1.50000 % ROI pm on card ending 9876 hdfcbank');
+  assert.deepEqual([p.type, p.amount, p.months, p.rate, p.last4, p.booked], ['cardemi', 24000, 6, 18, '9876', true]);
+  // Any other OTP is still nothing
+  assert.equal(read('Your OTP is 123456 for a txn of Rs 500 at Amazon'), null);
+});
+
+test('an EMI booked from SMS: how many are paid and left by today', () => {
+  const card = { statementDay: 14, dueDay: 3 };
+  // Booked 20 Jul: EMIs due 3 Sep and 3 Oct are paid, 4 left from 3 Nov
+  const r = Core.cardEmiFromBooking(card, { date: '2026-07-20', amount: 36390, months: 6, rate: 22.44 }, '2026-10-26');
+  assert.deepEqual([r.paid, r.left, r.next], [2, 4, '2026-11-03']);
+  assert.ok(r.emi > 6000 && r.emi < 6600, 'emi ' + r.emi);
+});

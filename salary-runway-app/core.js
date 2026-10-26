@@ -628,6 +628,18 @@
   }
 
   /*
+   * An EMI booked on a card on bookedIso for `months`: its first EMI is billed
+   * on the next statement. How many are already paid by todayIso, and the EMI.
+   */
+  function cardEmiFromBooking(card, booking, todayIso) {
+    let due = dueAfter(card, nextStatementAfter(card, booking.date));
+    let paid = 0;
+    while (due <= todayIso && paid < booking.months) { paid++; due = dueAfter(card, nextStatementAfter(card, addDays(due, 1))); }
+    const rate = booking.rate === null || booking.rate === undefined ? 22 : booking.rate;
+    return { emi: emiQuote(booking.amount, rate, booking.months, 0).emi, left: booking.months - paid, paid, rate, next: paid < booking.months ? due : null };
+  }
+
+  /*
    * An EMI already running on a card (a bill converted before the card was
    * added here): what's left is worked out from the EMI, how many are left
    * and the rate, unless the bank's figure is given.
@@ -2678,11 +2690,34 @@
       m = text.match(/\b(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{2,4})\b/);
       if (m) { d = +m[1]; mo = +m[2]; y = +m[3]; }
     }
+    if (!m) {
+      // "On 27-08" (HDFC card SMS): this year, or last year if that's still to come.
+      m = text.match(/\bon\s+(\d{1,2})[-\/](\d{1,2})\b(?![-\/]\d)/i);
+      if (m) {
+        d = +m[1]; mo = +m[2]; y = +todayIso.slice(0, 4);
+        if (y + '-' + pad(mo) + '-' + pad(d) > todayIso) y--;
+      }
+    }
     if (!m) return todayIso;
     if (y < 100) y += 2000;
     if (mo < 1 || mo > 12 || d < 1 || d > 31) return todayIso;
     const iso = y + '-' + pad(mo) + '-' + pad(d);
     return iso > todayIso && !future ? todayIso : iso;
+  }
+
+  /*
+   * The shop in a UPI ID: "gokhana.payu@indus" is Gokhana (PayU only took the
+   * payment), "paytmqr6s55o1@ptys" a Paytm QR code. Kept in step with SmsParser.java.
+   */
+  const GATEWAYS = /^(payu|razorpay|rzp|rzpy|cashfree|ccavenue|billdesk|paygate|pg|upi|pay|payments?|merchant|mer)$/i;
+  function vpaName(vpa) {
+    const user = String(vpa).split('@')[0];
+    // Masked by the bank ("*1995@okaxis"): only the end of it is known.
+    if (/^\*/.test(user)) return 'UPI ' + user;
+    if (/^paytmqr/i.test(user)) return 'Paytm QR';
+    if (/^q\d{6,}/i.test(user) || /^bharatpe/i.test(user)) return 'QR payment';
+    const words = user.split(/[._-]+/).filter((w) => w && !GATEWAYS.test(w) && !/^\d+$/.test(w));
+    return words.length ? words.join(' ') : user;
   }
 
   function cleanMerchant(raw) {
@@ -2692,23 +2727,24 @@
       const parts = s.split('/').map((p) => p.trim()).filter((p) => p && !/^\d+$/.test(p) && !/^(upi|p2m|p2a|imps|neft)$/i.test(p));
       s = parts.length ? parts[parts.length - 1] : s;
     }
-    if (s.indexOf('@') !== -1) s = s.split('@')[0].replace(/[._-]+/g, ' ');
+    if (s.indexOf('@') !== -1) s = vpaName(s);
     s = s.replace(/\s+/g, ' ').replace(/[.,;:]+$/, '').trim();
     if (!s || /^(a\/?c|your|ac|account|card)\b/i.test(s)) return '';
     return s
       .toLowerCase()
       .replace(/\b[a-z]/g, (ch) => ch.toUpperCase())
+      .replace(/\b(Upi|Qr)\b/g, (w) => w.toUpperCase())
       .slice(0, 40);
   }
 
   function findMerchant(text, type) {
     const patterns = type === 'credit'
-      ? [/\bfrom\s+(?:vpa\s+)?([A-Za-z0-9@._&'\/ -]{2,50}?)(?=\s+(?:on|via|ref|upi|txn|for|avl|avbl|to|dt|date)\b|\s*[.,;(]\s|\s*[.,;]?$)/i, /\b([a-z0-9._-]+@[a-z]+)\b/i]
+      ? [/\bfrom\s+(?:vpa\s+)?([A-Za-z0-9@._&'\/ -]{2,50}?)(?=\s+(?:on|via|ref|upi|txn|for|avl|avbl|to|dt|date)\b|\s*[.,;(]\s|\s*[.,;]?$)/i, /(?:^|[^a-z0-9._*-])(\*?[a-z0-9._-]+@[a-z]+)\b/i]
       : [
         /\binfo[:\s]+([^\s].*?)(?=\.\s|\.$|$|\s+avl)/i,
-        /\b(?:to|at|towards)\s+(?:vpa\s+)?([A-Za-z0-9@._&'\/ -]{2,50}?)(?=\s+(?:on|via|ref|upi|txn|for|avl|avbl|from|using|dt|date|received)\b|\s*[.,;(]\s|\s*[.,;]?$)/i,
+        /\b(?:to|at|towards)\s+(?:vpa\s+)?([A-Za-z0-9@._&'\/ -]{2,50}?)(?=\s+(?:on|via|ref|upi|txn|for|avl|avbl|from|using|by|dt|date|received)\b|\s*[.,;(]\s|\s*[.,;]?$)/i,
         /\bon\s+([A-Z][A-Z0-9 &'-]{2,30})(?=\s*[.,]|\s+avl)/,
-        /\b([a-z0-9._-]+@[a-z]+)\b/i,
+        /(?:^|[^a-z0-9._*-])(\*?[a-z0-9._-]+@[a-z]+)\b/i,
       ];
     for (const re of patterns) {
       const m = text.match(re);
@@ -2752,6 +2788,19 @@
    */
   function parseSms(text, rules, todayIso) {
     const t = String(text || '').replace(/\s+/g, ' ').trim();
+    // A card bill being turned into an EMI ("SMART EMI Loan booking"): not a payment, but the
+    // EMI it sets up. It's an OTP, so it's only offered, never recorded by itself.
+    // The OTP ("Loan of Rs 36390 … Tenure 06 months") and the confirmation ("processed your
+    // Smart EMI request for Rs. ****36389.99 payable in **6 EMIs *1.87000 % ROI pm") both count.
+    const emiLoan = /smart\s*emi|emi\s+(?:loan\s+)?booking/i.test(t) &&
+      t.match(/(?:loan of|request for)\s*(?:rs\.?|inr|₹)[\s*]*([\d,]+(?:\.\d{1,2})?)/i);
+    const emiMonths = t.match(/tenure\s*(?:of\s*)?(\d{1,3})\s*months?/i) || t.match(/\*?(\d{1,3})\s*emis?\b/i);
+    if (emiLoan && emiMonths) {
+      const pm = t.match(/(\d{1,2}(?:\.\d{1,5})?)\s*%\s*(?:roi\s*)?(?:pm|p\.m\.?|per month|a month)/i);
+      return { type: 'cardemi', amount: Math.round(parseFloat(emiLoan[1].replace(/,/g, ''))), months: +emiMonths[1],
+        rate: pm ? Math.round(parseFloat(pm[1]) * 12 * 100) / 100 : null, last4: cardLast4(t), merchant: 'Card EMI', category: 'Bills', date: todayIso,
+        booked: /processed|boarded|booked successfully|successful/i.test(t), raw: t };
+    }
     if (!t || /\botp\b|one time password|verification code/i.test(t)) return null;
     const amt = t.match(/(?:rs\.?|inr|₹)\s*([\d,]+(?:\.\d{1,2})?)/i);
     if (!amt) return null;
@@ -2775,11 +2824,12 @@
     if (card && CARD_PAYMENT.test(t)) {
       return { type: 'cardpayment', amount, last4: cardLast4(t), merchant: 'Card bill payment', category: 'Bills', date: parseSmsDate(t, todayIso), raw: t };
     }
-    const isDebit = /\b(debited|spent|paid|sent|withdrawn|purchase|debit|payment of)\b/i.test(t);
+    const isCredit = /\b(credited|received|deposited|refund(?:ed)?)\b/i.test(t);
+    // "Txn Rs.68.26 On HDFC Bank Card 6645 At …": HDFC's card and UPI payments.
+    const isDebit = /\b(debited|spent|paid|sent|withdrawn|purchase|debit|payment of)\b/i.test(t) || (!isCredit && /\btxn\s+(?:of\s+)?(?:rs\.?|inr|₹)/i.test(t));
     // Cash taken out at an ATM, and the account it came from (a/c XX1234), so it lands in the right wallet.
     const atm = /\batm\b|cash\s*withdraw|cash\s*wdl|withdrawn\s+at/i.test(t);
     const acct = (t.match(/\ba\/?c(?:count)?\.?\s*(?:no\.?\s*)?[x*.]*\s*[x*.]*(\d{3,4})\b/i) || [])[1] || null;
-    const isCredit = /\b(credited|received|deposited|refund(?:ed)?)\b/i.test(t);
     if (!isDebit && !isCredit) return null;
     const type = isDebit ? 'debit' : 'credit';
     const merchant = findMerchant(t, type);
@@ -2838,7 +2888,7 @@
     salaryFor, salaryHistory, paydayReset, suggestUse, freedomDays, interestLeak, nextPaydayPreview,
     billShare, billPot, billsMonthly, billPaidIn, billDue, payBill, undoBillPayment, zoneStatus, ESSENTIAL_CATEGORIES,
     isCardTransfer, statementOn, dueAfter, cardOwedAt, cardReserve, cardStatus, emiQuote, revolveQuote, cardBillPlan,
-    recordCardPayment, addCardEmi, looksLikeCardBill, spendToCardPayment, convertCardBalance, answerCardDue, cardLateFee, cardRate, CARD_RATE, undoCardConvert, cardFreeDays, byCategory, DEFAULT_SPLIT,
+    recordCardPayment, addCardEmi, cardEmiFromBooking, looksLikeCardBill, spendToCardPayment, convertCardBalance, answerCardDue, cardLateFee, cardRate, CARD_RATE, undoCardConvert, cardFreeDays, byCategory, DEFAULT_SPLIT,
     isLoanCredit, borrowedThisCycle, borrowCheck, rolloverOptions, setTranslator,
     payoffOrder, tickDebts, debtJourney, lenderTasks, lastBorrowed,
     encryptBackup, openBackup, backupInfo, toB64, fromB64, isTransfer, walletBalances, goalStatus, goalsMonthly, budgetEnvelopes, netWorth, reportRange, budgetHistory, aiFacts, planFacts, fraudSignals, investReady, goalResult, weekStart,
