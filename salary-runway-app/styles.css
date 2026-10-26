@@ -214,7 +214,7 @@ a { color: var(--accent); }
 
 /* ---------- forms ---------- */
 label.field { display: grid; gap: 4px; font-size: 0.82rem; color: var(--muted); min-width: 0; }
-input[type="text"], input[type="number"], input[type="date"], input[type="password"], select, textarea {
+input[type="text"], input[type="number"], input[type="date"], input[type="password"], input[type="url"], select, textarea {
   width: 100%;
   min-width: 0;
   background: var(--bg);
@@ -1088,3 +1088,25 @@ button.tx-title { display: flex; align-items: center; gap: 6px; background: none
 .loan-track { height: 8px; border-radius: 99px; background: var(--surface-2); overflow: hidden; }
 .loan-fill { display: block; height: 100%; border-radius: 99px; background: var(--accent); }
 .loan-when { font-variant-numeric: tabular-nums; color: var(--muted); white-space: nowrap; }
+
+/* AI weekly plan */
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); border: 0; }
+.plan-card .card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.plan-headline { font-family: var(--font-display); font-size: 1.12rem; font-weight: 700; line-height: 1.35; margin: 4px 0; }
+.plan-goal b { font-size: 1rem; }
+.plan-sec { display: grid; gap: 6px; padding-top: 10px; border-top: 1px solid var(--line, rgba(0,0,0,.08)); }
+.plan-sec h3 { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 1rem; }
+.plan-sec h3 svg { width: 22px; height: 22px; fill: var(--accent); flex: none; }
+.plan-fraud h3 svg { fill: var(--bad); }
+.plan-steps { margin: 0; padding-left: 22px; display: grid; gap: 8px; }
+.plan-steps li b { display: block; }
+.fraud-box { gap: 8px; background: var(--bad-soft); }
+.fraud-pay .ghost { white-space: nowrap; }
+.fraud-kind { display: grid; gap: 4px; }
+.fraud-pay { display: grid; grid-template-columns: 1fr auto auto; gap: 8px; align-items: center; font-size: 0.88rem; }
+.fraud-pay .amt { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ai-busy { animation: ai-pulse 1.2s ease-in-out infinite; }
+@keyframes ai-pulse { 50% { opacity: 0.45; } }
+@media (prefers-reduced-motion: reduce) { .ai-busy { animation: none; } }
+.ai-facts { white-space: pre-wrap; font-family: inherit; font-size: 0.8rem; line-height: 1.4; max-height: 280px; overflow: auto; background: var(--surface); border-radius: 10px; padding: 10px; margin: 6px 0 0; }
+.ai-settings .callout b { margin-top: 4px; }

@@ -1338,3 +1338,72 @@ test('a plan with nothing for daily spending: the limit is never below ₹0 and 
   assert.ok(z.essentialPerDay > 0);
   assert.equal(z.zone, 'red');
 });
+
+test('AI facts: numbers and categories only, never shop names, notes or account numbers', () => {
+  const t = '2026-10-26';
+  const s = Demo.demoState(t);
+  s.transactions.push({ id: 'p1', date: t, amount: 499, category: 'Shopping', note: 'SECRETSHOP Myntra 9876543210', source: 'sms', smsKey: 'k-secret', wallet: 'w1' });
+  s.wallets = [{ id: 'w1', name: 'HDFC', kind: 'bank', last4: '4321', created: t }];
+  const f = Core.aiFacts(s, t);
+  assert.match(f, /Today's limit: ₹/);
+  assert.match(f, /Next payday: /);
+  assert.doesNotMatch(f, /SECRETSHOP|Myntra|9876543210|k-secret|4321/);
+  // Every note in the data stays out
+  s.transactions.filter((x) => x.note && x.note.length > 4).forEach((x) => assert.ok(!f.includes(x.note), x.note));
+});
+
+test('the app connects to the internet in exactly one place: the AI weekly plan, and only when it is turned on', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const src = fs.readFileSync(path.join(__dirname, '..', 'app.js'), 'utf8');
+  const calls = src.match(/\bfetch\(|XMLHttpRequest|WebSocket|sendBeacon|EventSource/g) || [];
+  assert.deepEqual(calls, ['fetch(']);
+  const fn = src.slice(src.indexOf('function requestPlan('), src.indexOf('// ---------- privacy and backup ----------'));
+  assert.ok(fn.includes('fetch('));
+  assert.match(fn, /if \(!cfg\.on/);
+  // Off unless turned on
+  assert.match(src, /Object\.assign\(\{ on: false/);
+});
+
+test('weekly plan facts: fraud signals and loan options come from the phone, shop names never leave it', () => {
+  const t = '2026-10-26';
+  const s = Demo.demoState(t);
+  s.transactions.push(
+    { id: 'f1', date: '2026-10-24', amount: 1, category: 'Misc', note: 'PAYTMVERIFY' },
+    { id: 'f2', date: '2026-10-25', amount: 18500, category: 'Shopping', note: 'NEWSHOPELECTRONICS' },
+    { id: 'f3', date: '2026-10-25', amount: 640, category: 'Food & dining', note: 'Zomato' },
+    { id: 'f4', date: '2026-10-25', amount: 640, category: 'Food & dining', note: 'Zomato' },
+  );
+  const fr = Core.fraudSignals(s, t);
+  assert.deepEqual(fr.map((x) => x.kind), ['tiny', 'duplicate', 'large_new']);
+  assert.deepEqual(fr.find((x) => x.kind === 'large_new').ids, ['f2']);
+  const f = Core.planFacts(s, t, null);
+  assert.match(f, /Payments to double-check, last 14 days: 1 × tiny/);
+  assert.match(f, /Loan options worked out by the app: ₹1,000 more a month: debt-free \d+ months sooner/);
+  assert.match(f, /Ready to learn about investing: no\. A loan costs 42%/);
+  assert.doesNotMatch(f, /PAYTMVERIFY|NEWSHOPELECTRONICS|Zomato/);
+  // Confirmed as theirs: not flagged again
+  s.fraudOk = ['f2'];
+  assert.ok(!Core.fraudSignals(s, t).some((x) => x.kind === 'large_new'));
+});
+
+test('weekly goals are checked from the week\'s entries', () => {
+  const s = baseState({ settings: { salary: 50000, payday: 1 }, transactions: [
+    { id: '1', date: '2026-10-19', amount: 1200, category: 'Food' },
+    { id: '2', date: '2026-10-21', amount: 900, category: 'Food', paidFrom: 'c1' },
+    { id: '3', date: '2026-10-22', kind: 'move', amount: 700, category: 'Savings', useFor: 'emergency' },
+    { id: '4', date: '2026-10-26', amount: 5000, category: 'Food' }, // next week: not counted
+  ] });
+  assert.equal(Core.weekStart('2026-10-25'), '2026-10-19');
+  assert.deepEqual(Core.goalResult(s, { week: '2026-10-19', type: 'spend_cap', amount: 2500 }), { met: true, value: 2100 });
+  assert.deepEqual(Core.goalResult(s, { week: '2026-10-19', type: 'save', amount: 1000 }), { met: false, value: 700 });
+  assert.deepEqual(Core.goalResult(s, { week: '2026-10-19', type: 'no_card', amount: 0 }), { met: false, value: 900 });
+});
+
+test('investing is explained only with a month of savings and no costly loan', () => {
+  const s = Demo.demoState('2026-10-26');
+  assert.equal(Core.investReady(s, '2026-10-26').ready, false);
+  s.debts = [];
+  s.savings.emergencyBalance = 10000000;
+  assert.equal(Core.investReady(s, '2026-10-26').ready, true);
+});

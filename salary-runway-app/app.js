@@ -59,6 +59,9 @@
   const LOCK_KEY = 'salary-runway-lock';
   const THEME_KEY = 'salary-runway-theme';
   const TOUR_KEY = 'salary-runway-tour';
+  // AI weekly plan: off unless the person turns it on. Its settings are kept apart from the money data.
+  const AI_KEY = 'salary-runway-ai';
+  const AI_LANG = { en: 'English', mr: 'Marathi', hi: 'Hindi' };
   // The build number, written by the Android build; absent in the browser preview.
   const BUILD = window.HISAB_BUILD || '';
 
@@ -462,6 +465,13 @@
       'Over in one budget? On Runway → Budgets, <b>Cover it from another budget</b> that has money left. The month’s total stays the same, so today’s limit doesn’t change.',
       'Under each budget, <b>Last round</b> and the <b>average</b> show what you really spent there. Tap one to use it.',
     ]],
+    plan: ['Weekly plan', [
+      'Every Monday (when you open the app), a plan made from your own numbers: where to save more this week, which loan to put extra on and what it saves, and payments to double-check for fraud. When your emergency fund and loans allow it, it also explains types of investment.',
+      'Each plan sets one goal for the week. Next week the app checks it from your entries and tells you whether you made it.',
+      'To make the plan, a summary of numbers the app has already worked out is sent once a week. It never includes SMS text, shop names, notes or account numbers. <b>See exactly what’s sent</b> in Profile → AI weekly plan shows it word for word.',
+      'Fraud checks run on your phone, with the plan on or off: tiny test payments, the same amount twice on a day, a big first payment to a new place, and many new places in one day.',
+      'The AI can be wrong, and the investment part is general information, not advice: talk to a SEBI-registered adviser before investing.',
+    ]],
     goals: ['Savings goals', [
       'Something to save for by a date: a bike’s down payment, a trip, a rent deposit. The app works out what to put aside each payday to get there in time.',
       'That amount comes out of your salary before the flexible budgets, like yearly costs, and is added to the goal on payday. Change <b>Saved so far</b> or the date any time and the monthly amount is worked out again.',
@@ -472,14 +482,14 @@
       'It’s kept once per round, so you see the trend. Borrowing pulls it down even when the account looks fuller. Paying a loan off moves it up, even though your balance drops.',
     ]],
     data: ['Your data', [
-      'Everything is saved on this phone only. Nothing is uploaded.',
+      'Everything is saved on this phone only. Nothing is uploaded, unless you turn on the AI weekly plan.',
       '<b>Make a backup file</b> to move to a new phone, or in case this one is lost: the file is locked with your password. Save it to Google Drive, or email or WhatsApp it to yourself. On the new phone: <b>Restore from a backup</b>, pick the file and type the password.',
       'Forgot the password? Then the backup can’t be opened, by anyone. Make a new one with a password you’ll remember.',
       '<b>Erase everything</b> removes all of it from this phone, including the widget and SMS alerts.',
     ]],
     privacy: ['Your privacy', [
-      'Hisab Se has no internet permission: Android doesn’t let it connect to anything. There is no server, no account and no tracking.',
-      'Check it yourself: turn on airplane mode and use the app. Everything works.',
+      'Hisab Se connects to the internet only for the AI weekly plan, which is off unless you turn it on. There is no account and no tracking.',
+      'Check it yourself: turn on airplane mode and use the app. Everything except making a new weekly plan works.',
     ]],
     smsclean: ['Clean up SMS imports', [
       'Removes payments and money received that were added from SMS before the date you pick. Anything you added by hand stays.',
@@ -584,7 +594,7 @@
     app.innerHTML =
       '<div class="shell">' +
       '<header class="topbar"><div class="brand">' +
-      LOGO + 'Hisab Se</div><span class="privacy-chip">' + tr('Data stays on this device') + '</span>' +
+      LOGO + 'Hisab Se</div><span class="privacy-chip">' + tr(aiCfg().on ? 'Data on this device · AI on' : 'Data stays on this device') + '</span>' +
       '<button class="profile-btn" data-action="profile-open" aria-label="' + tr('Profile') + '"' + (tab === 'profile' ? ' aria-current="page"' : '') + '>' +
       '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8.5" r="3.8"/><path d="M4.5 20c1.2-3.8 4-5.6 7.5-5.6s6.3 1.8 7.5 5.6"/></svg></button></header>' +
       banner +
@@ -671,6 +681,7 @@
     yearly: '<path d="M7 2h2v2h6V2h2v2h2a2 2 0 0 1 2 2v13a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2zM5 9v10h14V9zm6 1.5h2v2.5h2.5v2H13v2.5h-2V15H8.5v-2H11z"/>',
     shield: '<path d="M12 2l8.5 3.2V11c0 5.3-3.5 9.7-8.5 11.2C7 20.7 3.5 16.3 3.5 11V5.2zm-1.1 13.3l5.8-5.8-1.4-1.4-4.4 4.4-2.1-2.1-1.4 1.4z"/>',
     sliders: '<path d="M3 5.5h4a2.5 2.5 0 0 1 4.9 0H21v2h-9.1a2.5 2.5 0 0 1-4.9 0H3zm0 6.5h10a2.5 2.5 0 0 1 4.9 0H21v2h-3.1a2.5 2.5 0 0 1-4.9 0H3zm0 6.5h2.5a2.5 2.5 0 0 1 4.9 0H21v2H10.4a2.5 2.5 0 0 1-4.9 0H3z"/>',
+    chat: '<path d="M4 4h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9l-5 4v-4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zm3 5v2h2V9zm4 0v2h2V9zm4 0v2h2V9z"/>',
     sparkle: '<path d="M11 2l2.1 6.1L19 10l-5.9 1.9L11 18l-2.1-6.1L3 10l5.9-1.9z"/><path d="M18.5 14l1.1 2.6 2.4 1.1-2.4 1.1-1.1 2.7-1.1-2.7-2.4-1.1 2.4-1.1z"/>',
     target: '<path d="M12 2a10 10 0 1 1 0 20 10 10 0 0 1 0-20zm0 3.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13zm0 3a3.5 3.5 0 1 1 0 7 3.5 3.5 0 0 1 0-7z"/>',
     loan: '<path d="M12 2l10 5v2.5H2V7zM4 11h3v7H4zm6.5 0h3v7h-3zM17 11h3v7h-3zM2 19.5h20V22H2z"/>',
@@ -802,6 +813,7 @@
     const z = Core.zoneStatus(state, t, r);
     recordToday(r);
     logWorth();
+    if (planDue()) setTimeout(requestPlan, 0);
     const streak = withinStreak();
     let headline, sub;
     if (z.zone === 'red') {
@@ -872,6 +884,9 @@
     const dfd = Core.debtFreeDates(state, t);
     const cardsDue = (state.cards || []).filter((c) => { const st = Core.cardStatus(state, c, t); return st.remaining > 0 && st.daysToDue <= 7; }).length;
     return hub('home', top, [
+      { key: 'plan', group: 'This month', icon: 'sparkle', label: 'Weekly plan', tone: 'mint',
+        badge: (() => { const n = Core.fraudSignals(state, t, 14).reduce((a, x) => a + x.ids.length, 0); return n ? { text: '!' + n, tone: 'bad' } : !aiCfg().on ? { text: tr('Off') } : state.weeklyPlan && !state.weeklyPlan.seen ? { text: tr('New'), tone: 'good' } : null; })(),
+        html: () => planCard() },
       { key: 'round', group: 'This month', icon: 'grid', label: 'This round', tone: 'mint', badge: roundTiles(cyc).won ? { text: '✓ ' + roundTiles(cyc).won, tone: 'good' } : null, html: () => roundBoard(cyc, r) },
       { key: 'bills', group: 'This month', icon: 'bill', label: 'Bills to pay', tone: 'mint', badge: billsDue ? { text: tr('{n} due', { n: billsDue }), tone: 'bad' } : { text: '✓', tone: 'good' }, html: () => billsCard() || '<section class="card"><h2>' + tr('Bills to pay') + '</h2><p class="hint">' + tr('No bills due before payday.') + '</p></section>' },
       { key: 'coming', group: 'This month', icon: 'upcoming', label: 'Coming up', tone: 'mint', badge: upcomingTotal ? { text: shortInr(upcomingTotal) } : null,
@@ -3336,6 +3351,7 @@
       { key: 'lang', group: 'App', icon: 'lang', label: 'Language & sounds', value: langName, html: langCard },
       { key: 'lock', group: 'Security', icon: 'lock', label: 'App lock', value: tr(cfg.on ? 'On' : 'Off'), tone: cfg.on ? 'good' : '', html: lockCard },
       { key: 'privacy', group: 'Security', icon: 'shield', label: 'Privacy & data protection', value: '', html: () => privacyCard() },
+      { key: 'ai', group: 'Security', icon: 'sparkle', label: 'AI weekly plan', value: tr(aiCfg().on ? 'On' : 'Off'), html: () => aiSettingsCard() },
       { key: 'data', group: 'Your data', icon: 'data', label: 'Backup & data', value: state.lastBackup ? fmtDate(state.lastBackup) : tr('No backup yet'), tone: state.lastBackup ? '' : 'bad', html: () => dataCard() },
       { key: 'smsclean', group: 'Your data', icon: 'broom', label: 'Clean up SMS imports', value: '', hide: !smsCleanup(), html: () => smsCleanup() },
       { key: 'tour', group: 'Help', icon: 'sparkle', label: 'See the app tour', value: '', action: 'tour-open', html: () => '' },
@@ -3532,7 +3548,7 @@
     { art: 'freedom', title: 'Days of Freedom', body: 'How many days your savings would pay for the basics if pay stopped. Grow it from red to green.' },
     { art: 'round', title: 'Each month is a round', body: 'Win days by staying within the limit. Reach payday without borrowing to win the round.' },
     { art: 'debt', title: 'A way out of debt', body: 'Survive, stabilize, escape: one next move at a time, with ready scripts for calling your lenders.' },
-    { art: 'private', title: 'Private by design', body: 'No internet permission, no account. Bank SMS are read on this phone only. Lock it with your fingerprint.' },
+    { art: 'private', title: 'Private by design', body: 'No account, and it works offline. Bank SMS are read on this phone only. Lock it with your fingerprint.' },
   ];
 
   function tourArt(kind) {
@@ -3586,21 +3602,189 @@
     render();
   }, { passive: true });
 
+  // ---------- AI weekly plan (optional, off by default) ----------
+
+  function aiCfg() {
+    try { return Object.assign({ on: false, url: '', code: '' }, JSON.parse(localStorage.getItem(AI_KEY) || '{}')); } catch (e) { return { on: false, url: '', code: '' }; }
+  }
+
+  function saveAiCfg(c) {
+    try { localStorage.setItem(AI_KEY, JSON.stringify(c)); } catch (e) { /* private mode */ }
+  }
+
+  const FRAUD_TEXT = {
+    tiny: 'Tiny payments of ₹10 or less: fraudsters use these to test a card or UPI.',
+    duplicate: 'The same amount to the same place twice on one day.',
+    large_new: 'A big payment to a place you haven’t paid before.',
+    many_new: 'Three or more new places paid on one day.',
+  };
+  const PLAN_ICONS = { save: 'pot', loans: 'loan', fraud: 'shield', invest: 'sprout' };
+
+  // Payments worth a second look, worked out on this phone. Works with the AI plan off too.
+  function fraudBox() {
+    const fr = Core.fraudSignals(state, today(), 14);
+    if (!fr.length) return '';
+    const byId = {};
+    state.transactions.forEach((t) => { byId[t.id] = t; });
+    return '<div class="callout fraud-box"><b class="bad">' + tr('Check these payments') + '</b>' +
+      fr.map((x) => '<div class="fraud-kind"><span class="hint">' + tr(FRAUD_TEXT[x.kind]) + '</span>' +
+        x.ids.map((id) => byId[id]).filter(Boolean).map((t) => '<div class="fraud-pay"><span>' + esc(t.note || label(t.category)) + ' · ' + fmtDate(t.date) + '</span><span class="amt">' + inr(t.amount) + '</span>' +
+          '<button class="ghost small" data-action="fraud-ok" data-id="' + esc(t.id) + '">' + tr('It’s mine') + '</button></div>').join('') + '</div>').join('') +
+      '<span class="hint">' + tr('Not yours? Call your bank now to block the card or UPI, and report it on 1930 (National Cyber Crime Helpline) or cybercrime.gov.in.') + '</span></div>';
+  }
+
+  function planSteps(sec) {
+    return '<ol class="plan-steps">' + sec.steps.map((st) => '<li><b>' + esc(st.action) + '</b>' + (st.why ? '<span class="hint">' + esc(st.why) + '</span>' : '') + '</li>').join('') + '</ol>';
+  }
+
+  function planCard() {
+    const cfg = aiCfg();
+    const t = today();
+    const wp = state.weeklyPlan;
+    if (!cfg.on) {
+      return '<section class="card plan-card">' + titled('Weekly plan', 'plan') +
+        '<p>' + tr('Every week, a concrete plan made from your own numbers: where to save more, how to clear loans sooner, and payments to double-check for fraud.') + '</p>' +
+        '<p class="hint">' + tr('It’s off. Turning it on sends a summary of your numbers once a week to make the plan. Nothing else changes.') + '</p>' +
+        '<div><button class="primary" data-action="ai-setup">' + tr('Set up the weekly plan') + '</button></div>' + fraudBox() + '</section>';
+    }
+    if (wp && !wp.seen) setTimeout(() => { if (state.weeklyPlan === wp) { wp.seen = true; save(true); } }, 0);
+    let html = '<section class="card plan-card"><div class="card-head">' + titled('Your plan this week', 'plan') +
+      '<span class="hint">' + tr('Week of {date}', { date: fmtDate(Core.weekStart(t)) }) + '</span></div>';
+    if (ui.planBusy) html += '<p class="hint ai-busy" role="status">' + tr('Making your plan… This takes about half a minute.') + '</p>';
+    if (ui.planError) html += '<p class="bad" role="alert">' + ui.planError + '</p>';
+    if (wp && wp.plan) {
+      const p = wp.plan;
+      if (wp.lastGoal && wp.lastResult) {
+        html += '<p class="' + (wp.lastResult.met ? 'good' : 'hint') + '">' + (wp.lastResult.met
+          ? tr('✓ Last week’s goal met: {goal}', { goal: esc(wp.lastGoal.text) })
+          : tr('Last week’s goal not met: {goal}. A new week, a fresh try.', { goal: esc(wp.lastGoal.text) })) + '</p>';
+      }
+      html += '<p class="plan-headline">' + esc(p.headline) + '</p>';
+      if (wp.goal) {
+        const now = Core.goalResult(state, wp.goal);
+        const g = wp.goal;
+        const progress = !now ? '' : g.type === 'spend_cap' ? tr('{spent} spent of {cap} so far', { spent: inr(now.value), cap: inr(g.amount) })
+          : g.type === 'no_card' ? (now.value ? tr('{amount} on cards so far', { amount: inr(now.value) }) : tr('No card spending so far ✓'))
+            : tr('{done} of {target} so far', { done: inr(now.value), target: inr(g.amount) });
+        html += '<div class="callout plan-goal"><span class="eyebrow">' + tr('This week’s goal') + '</span><b>' + esc(g.text) + '</b>' + (progress ? '<span class="hint">' + progress + '</span>' : '') + '</div>';
+      }
+      const ready = Core.investReady(state, t).ready;
+      p.sections.filter((sec) => sec.kind !== 'invest' || ready).forEach((sec) => {
+        html += '<div class="plan-sec plan-' + sec.kind + '"><h3><svg viewBox="0 0 24 24" fill-rule="evenodd" aria-hidden="true">' + HUB_ICONS[PLAN_ICONS[sec.kind]] + '</svg>' + esc(sec.title) + '</h3>' + planSteps(sec) +
+          (sec.kind === 'fraud' ? fraudBox() : '') +
+          (sec.kind === 'invest' ? '<div class="callout warn"><b>' + tr('General information, not advice') + '</b><span class="hint">' + tr('Before investing, talk to a SEBI-registered investment adviser. Every investment can lose value, and the decision is yours.') + '</span></div>' : '') +
+          '</div>';
+      });
+      if (!p.sections.some((sec) => sec.kind === 'fraud')) html += fraudBox();
+      html += '<p class="hint">' + tr('Made by AI on {date} from your numbers. It can be wrong: the app’s own numbers are the ones to trust.', { date: fmtDate(wp.made) }) + '</p>';
+      html += wp.made === t
+        ? '<p class="hint">' + tr('A new plan comes each Monday. You can remake it once a day.') + '</p>'
+        : '<div><button class="ghost" data-action="plan-make"' + (ui.planBusy ? ' disabled' : '') + '>' + tr('Make a new plan') + '</button></div>';
+    } else if (!ui.planBusy) {
+      html += '<p>' + tr('Your first plan is ready to make.') + '</p><div><button class="primary" data-action="plan-make">' + tr('Make my plan') + '</button></div>' + fraudBox();
+    }
+    return html + '</section>';
+  }
+
+  function aiSettingsCard() {
+    const cfg = aiCfg();
+    const f = ui.aiForm || {};
+    return '<section class="card ai-settings">' + titled('AI weekly plan', 'plan') +
+      '<p>' + tr('A plan each week from your own numbers, written by Claude from Anthropic.') + '</p>' +
+      '<div class="callout"><b>' + tr('Sent once a week, when your plan is made') + '</b>' +
+      '<span class="hint">' + tr('A summary the app has already worked out: today’s limit, zone, spending by category this week and usually, budgets, bills to come, past rounds, your loans, cards and goals by the names you gave them, and how many payments look unusual.') + '</span>' +
+      '<b>' + tr('Never sent') + '</b><span class="hint">' + tr('SMS text, shop names, notes, account or card numbers.') + '</span>' +
+      '<b>' + tr('Where it goes') + '</b><span class="hint">' + tr('To your app’s server, which keeps nothing, and on to Anthropic to write the plan.') + '</span>' +
+      '<div><button class="link" data-action="ai-show-facts">' + tr(ui.aiFacts ? 'Hide what’s sent' : 'See exactly what’s sent') + '</button></div>' +
+      (ui.aiFacts ? '<pre class="ai-facts">' + esc(Core.planFacts(state, today(), state.weeklyPlan && state.weeklyPlan.goal)) + '</pre>' : '') + '</div>' +
+      '<form id="ai-settings-form" class="form-grid" autocomplete="off">' +
+      '<label class="field wide" for="ai-url"><span>' + tr('Server address') + '</span><input id="ai-url" type="url" inputmode="url" placeholder="https://….workers.dev" value="' + esc(f.url != null ? f.url : cfg.url) + '"></label>' +
+      '<label class="field wide" for="ai-code"><span>' + tr('Invite code') + '</span><input id="ai-code" type="text" autocapitalize="off" value="' + esc(f.code != null ? f.code : cfg.code) + '"></label>' +
+      (f.error ? '<p class="bad wide" role="alert">' + f.error + '</p>' : '') +
+      '<div class="row wide">' + (cfg.on
+        ? '<button class="primary" type="submit">' + tr('Save') + '</button><button type="button" class="danger" data-action="ai-off">' + tr('Turn off the weekly plan') + '</button>'
+        : '<button class="primary" type="submit">' + tr('Turn on the weekly plan') + '</button>') + '</div></form>' +
+      '<p class="hint">' + tr('Your tester invite gives you the server address and code. Turning it off stops all sending at once.') + '</p></section>';
+  }
+
+  function saveAiSettings(ev) {
+    ev.preventDefault();
+    const url = document.getElementById('ai-url').value.trim().replace(/\/+$/, '');
+    const code = document.getElementById('ai-code').value.trim();
+    // What was typed stays in the boxes when something needs fixing.
+    if (!/^https:\/\/[^\s/]+\.[^\s]+$/.test(url)) { ui.aiForm = { url, code, error: tr('Enter the server address, starting with https://') }; render(); return; }
+    if (!code) { ui.aiForm = { url, code, error: tr('Enter your invite code.') }; render(); return; }
+    saveAiCfg({ on: true, url, code });
+    ui.aiForm = null;
+    ui.planTried = false;
+    toast(tr('Weekly plan is on'));
+    render();
+  }
+
+  // Due when it's on and this week has no plan yet: asked once per app start.
+  function planDue() {
+    return aiCfg().on && !ui.planBusy && !ui.planTried && !state.isDemo &&
+      (!state.weeklyPlan || state.weeklyPlan.week < Core.weekStart(today()));
+  }
+
+  function requestPlan() {
+    const cfg = aiCfg();
+    if (!cfg.on || ui.planBusy) return;
+    const t = today();
+    const week = Core.weekStart(t);
+    const prev = state.weeklyPlan;
+    // Last week's goal: the current plan's when the week has moved on; kept when remaking this week's plan.
+    const lastGoal = prev ? (prev.week < week ? prev.goal : prev.lastGoal) : null;
+    ui.planBusy = true;
+    ui.planTried = true;
+    ui.planError = '';
+    rerenderKeepScroll();
+    const ctl = typeof AbortController === 'function' ? new AbortController() : null;
+    const timer = setTimeout(() => { if (ctl) ctl.abort(); }, 120000);
+    const done = (plan, error) => {
+      clearTimeout(timer);
+      ui.planBusy = false;
+      if (plan) {
+        state.weeklyPlan = { week, made: t, plan, goal: Object.assign({}, plan.week_goal, { week }), lastGoal: lastGoal || null,
+          lastResult: lastGoal ? Core.goalResult(state, lastGoal) : null, seen: false };
+        save(true);
+      } else ui.planError = error;
+      rerenderKeepScroll();
+    };
+    fetch(cfg.url + '/plan', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Invite-Code': cfg.code },
+      body: JSON.stringify({ facts: Core.planFacts(state, t, lastGoal), language: AI_LANG[I18N.getLang()] || 'English' }),
+      signal: ctl ? ctl.signal : undefined,
+    }).then((res) => res.json().catch(() => ({})).then((body) => ({ status: res.status, body }))).then(({ status, body }) => {
+      if (status === 200 && body.plan && Array.isArray(body.plan.sections) && body.plan.week_goal) done(body.plan);
+      else if (status === 200 && body.declined) done(null, tr('The AI couldn’t make a plan this time. Try again later.'));
+      else if (status === 401) done(null, tr('The invite code isn’t right. Check it in Profile → AI weekly plan.'));
+      else if (status === 429) done(null, tr('The AI is busy. Try again in a minute.'));
+      else if (body.error === 'key') done(null, tr('The AI server isn’t set up yet. Ask the app’s owner.'));
+      else done(null, tr('Something went wrong on the AI server. Try again later.'));
+    }, () => done(null, tr('Couldn’t reach the AI. Check your internet and try again.')));
+  }
+
   // ---------- privacy and backup ----------
 
   // Every line here was checked against the app: the manifest, the native code and the web code.
   const PRIVACY = [
-    ['good', '<b>No internet permission.</b> Hisab Se can’t send anything anywhere, and Android enforces it. Turn on airplane mode: everything still works.'],
+    ['ai', ''],
     ['good', '<b>No account, no ads, no analytics, no crash reports.</b>'],
     ['good', '<b>Bank SMS</b> are read only when you tap Read bank SMS or turn on alerts. Messages from phone numbers (friends, family) are skipped before the app sees them. Only a payment’s amount, date and shop are saved, never the message.'],
     ['good', '<b>Your data stays on this phone</b>, in the app’s private storage. Android’s cloud backup is off for Hisab Se, so not even Google gets a copy.'],
-    ['good', '<b>Something leaves the phone only when you share it:</b> the AI report or a backup file, to the app you pick.'],
+    ['good', '<b>Something leaves the phone only when you choose:</b> a backup file you share, or the weekly summary for your AI plan.'],
     ['warn', '<b>If the phone is lost, reset, or the app is uninstalled, your data goes with it,</b> unless you have a backup file.'],
   ];
 
   function privacyCard() {
     return '<section class="card privacy-card">' + titled('Your privacy', 'privacy') +
-      '<ul class="privacy-list">' + PRIVACY.map((x) => '<li class="pv-' + x[0] + '"><span>' + tr(x[1]) + '</span></li>').join('') + '</ul></section>';
+      '<ul class="privacy-list">' + PRIVACY.map((x) => (x[0] === 'ai'
+        ? (aiCfg().on
+          ? '<li class="pv-warn"><span>' + tr('<b>The AI weekly plan is on.</b> Once a week, a summary of your numbers goes to your app’s server and on to Anthropic (Claude) to write your plan. SMS text, shop names, notes and account numbers are never sent.') + '</span></li>'
+          : '<li class="pv-good"><span>' + tr('<b>Nothing is sent anywhere.</b> The AI weekly plan is off, so the app never connects to the internet. Turn on airplane mode: everything still works.') + '</span></li>')
+        : '<li class="pv-' + x[0] + '"><span>' + tr(x[1]) + '</span></li>')).join('') + '</ul></section>';
   }
 
   function dataCard() {
@@ -4639,6 +4823,11 @@
         offerUndo(tr('{amount} a month extra to loans', { amount: inr(Number(btn.dataset.amount)) }), before);
         return;
       }
+      case 'ai-setup': openProfile(); openPage('profile', 'ai'); return;
+      case 'ai-off': saveAiCfg(Object.assign(aiCfg(), { on: false })); toast(tr('The weekly plan is off. Nothing is sent.')); break;
+      case 'ai-show-facts': ui.aiFacts = !ui.aiFacts; break;
+      case 'plan-make': requestPlan(); return;
+      case 'fraud-ok': state.fraudOk = (state.fraudOk || []).concat(btn.dataset.id).slice(-300); save(); toast(tr('Marked as yours')); break;
       case 'tx-unlink': {
         const x = state.transactions.find((t) => t.id === ui.editTx);
         if (!x || !x.matched) return;
@@ -5508,6 +5697,7 @@
     if (ev.target.id === 'wallet-form') { addWallet(ev); return; }
     if (ev.target.id === 'cover-form') { coverSave(ev); return; }
     if (ev.target.id === 'goal-form') { addGoal(ev); return; }
+    if (ev.target.id === 'ai-settings-form') { saveAiSettings(ev); return; }
     if (ev.target.id === 'move-form') { moveMoney(ev); return; }
     if (ev.target.id === 'wallet-balance-form') { saveWalletBalances(ev); return; }
     if (ev.target.id === 'balance-form') {
@@ -5770,7 +5960,7 @@
         (SmsInbox
           ? '<div class="ob-privacy"><p><b>' + tr('What we read:') + '</b> ' + tr('messages from banks and payment apps (senders like VM-HDFCBK), on this phone, from today on.') + '</p>' +
             '<p><b>' + tr('Why:') + '</b> ' + tr('to record your payments for you, so you don’t have to type them.') + '</p>' +
-            '<p><b>' + tr('What we never do:') + '</b> ' + tr('read personal chats, keep messages that aren’t payments, or send anything anywhere. Hisab Se has no server.') + '</p></div>' +
+            '<p><b>' + tr('What we never do:') + '</b> ' + tr('read personal chats, keep messages that aren’t payments, or send your messages anywhere. They never leave this phone.') + '</p></div>' +
             '<p class="hint">' + tr('Android will ask for SMS permission next. You can turn it off any time in Android settings.') + '</p>' +
             '<div class="row"><button class="primary" data-action="onboard-sms">' + tr('Allow SMS reading') + '</button><button class="ghost" data-action="onboard-finish">' + tr('Not now') + '</button></div>'
           : '<p class="hint">' + tr('In the Android app, Hisab Se can record payments from your bank SMS. Here, add them on the Spend tab.') + '</p>' +

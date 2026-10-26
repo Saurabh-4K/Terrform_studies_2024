@@ -85,6 +85,24 @@ Everything the app can do today, screen by screen, with the rules it follows. Fo
 - **Quick budgets (Plan → Flexible budgets):** under each budget, *Last round ₹5,900* and *Average of 3 rounds ₹5,400* show what was really spent. Tap one to use it, or set all at once. Rounds with nothing recorded don't pull the average down.
 - **What if I paid more? (Debts → Debt-free plans):** a slider tries extra amounts without changing anything. It shows the debt-free date, months sooner and interest saved, each loan's finish on one line, and how much less the flexible budgets would get. **Make ₹5,000 a month my plan** saves it, with undo.
 
+## Weekly plan (AI, optional, off by default)
+Every Monday, when the app is opened, a concrete plan for the week made from the person's own numbers. Runway → *Weekly plan*; settings in Profile → *AI weekly plan*.
+- **Save more:** where this week's spending ran above the usual week (the 4 weeks before), little leaks and small payments, with a realistic cut in rupees. Basics (groceries, medicine, rent, school fees) are protected.
+- **Clear loans sooner:** which loan to put extra on and how much, from loan options the app works out itself (*₹2,000 more a month: debt-free 6 months sooner, about ₹14,129 less interest*). Minimums on time come first.
+- **Stay safe from fraud:** always included. The app checks the last 14 days on the phone, plan on or off:
+  - tiny payments of ₹10 or less (how fraudsters test a card or UPI)
+  - the same amount to the same place twice in a day (₹200+)
+  - a big first payment to a new place (₹5,000+ and 3× the usual payment)
+  - three or more new places in one day
+
+  Flagged payments are listed with *It's mine* (never flagged again), and what to do if not: call the bank to block the card or UPI, report on **1930** or **cybercrime.gov.in**. The tile shows a red count. The plan adds one or two safety habits (OTP and UPI PIN, fake KYC calls, instant loan apps).
+- **Learn about investing:** only when the emergency fund covers 30 days of basics and no loan costs 12% a year or more. Explains types only (PPF, deposits, an index fund SIP, gold through an ETF), never a named fund, stock, company or platform, always with *General information, not advice: before investing, talk to a SEBI-registered investment adviser*. The app drops this section itself if the person isn't ready.
+- **One goal a week**, which the app can check: keep spending under an amount, save an amount, pay an amount extra on loans, or no card spending. Progress shows during the week (*₹1,770 spent of ₹1,800 so far*), and next week's plan opens with *✓ Last week's goal met* or *A new week, a fresh try*.
+- **How it's made:** the app sends a summary (`planFacts` in `core.js`) to your server (`server/`, a Cloudflare Worker holding the Anthropic key and checking invite codes), which asks **Claude Sonnet 5.5** for the plan in a fixed format (structured output) and stores nothing. The AI treats the app's numbers as correct and shows any sum it does; it never suggests borrowing or names investment products. Declines retry on Anthropic's recommended model.
+- **What's sent, once a week:** totals, spending by category this week and usually, budgets, bills to come, past rounds, loans, cards and goals by the names the person gave them, fraud-check counts and amounts, loan options. **Never sent:** SMS text, shop names, notes, account or card numbers. *See exactly what's sent* shows it word for word.
+- **Limits:** made automatically once a week; *Make a new plan* at most once a day. *Turn off the weekly plan* stops all sending at once. With it off, fraud checks still run on the phone.
+- **Privacy statements change with it:** the top chip reads *Data on this device · AI on*, and Profile → Privacy says exactly what goes where.
+
 ## Profile, tour and app lock
 
 ### Profile (the round button at the top right)
@@ -170,7 +188,7 @@ Every tab keeps what always matters open, and shows its other cards as small ico
 ## 1. Privacy and your data
 
 Plan → **Your privacy** lists what the app does and never does, and each line is true of the app as built:
-- **No internet permission.** The Android manifest removes it, so Android itself blocks any network use: the app can't send anything anywhere. Airplane mode changes nothing. Every build is installed on an emulator with Wi-Fi and data off; the download is only updated if it has no INTERNET permission and opens normally.
+- **Offline by default.** The app connects to the internet only for the optional **AI weekly plan**, which is off until you turn it on; with it off, nothing is ever sent. Airplane mode changes nothing else. A unit test checks that the weekly plan is the only network call in the code. Every build is installed on an emulator with Wi-Fi and data off; the download is only updated if it opens and works normally.
 - **Nothing from outside:** a content security policy stops the app's screens loading any outside script, font, image or request, and the fonts are bundled. No account, no ads, no analytics, no crash reports, no Google services.
 - **Bank SMS** are read only when you tap *Read bank SMS* or turn on alerts. Messages from phone numbers (friends, family) are skipped in the native code, before the app sees them. Only a payment's amount, date and shop are saved, never the message.
 - **Android's cloud backup and device-to-device transfer are turned off** for the app's data, so not even Google gets a copy.
@@ -192,7 +210,7 @@ Plan → **Your privacy** lists what the app does and never does, and each line 
 2. **Money in your account now** (₹0 is fine). → **Unlocked: today's limit** (*₹774: what you can spend today and still reach payday on 1 Nov. It gets more exact with the next steps.*)
 3. **Fixed payments and savings:** rent or home loan and its day, other fixed payments, savings you could use in an emergency. → **Unlocked: Days of Freedom** (*6 · At risk · 1 more day (₹174) turns it amber*)
 4. **Loans and credit cards:** each loan's name, amount left, EMI and interest (about 14% if unsure); *I have credit cards* opens the card form right after; or *No loans or cards*. → **Unlocked: debt-free date**
-5. **Bank SMS** (Android): first *What we read* (bank and payment-app messages, on this phone, from today), *Why* (to record payments for you) and *What we never do* (read personal chats, keep messages that aren't payments, send anything anywhere; there's no server), then *Allow SMS reading* (Android asks for permission) or *Not now*.
+5. **Bank SMS** (Android): first *What we read* (bank and payment-app messages, on this phone, from today), *Why* (to record payments for you) and *What we never do* (read personal chats, keep messages that aren't payments, send your messages anywhere; they never leave the phone), then *Allow SMS reading* (Android asks for permission) or *Not now*.
 
 ## 2. Plan tab: setting up your month
 

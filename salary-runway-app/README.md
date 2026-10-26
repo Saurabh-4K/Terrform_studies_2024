@@ -6,7 +6,7 @@ Shows the date your salary runs out and helps you plan your money with budgets, 
 
 **Complete feature list: [FEATURES.md](FEATURES.md)**
 
-**All data stays on your device.** The app has no server and no account. Everything is saved in your browser's local storage.
+**All data stays on your device.** No account. Everything is saved in your browser's local storage. The only exception is the optional **AI weekly plan**, off unless you turn it on (see `server/README.md`).
 
 ## Try it
 
@@ -38,8 +38,8 @@ Uninstalling the app deletes its data. Make a backup file first (Plan tab → Yo
 - Only messages from named senders (such as `VM-HDFCBK`) are read for payments. Only today's messages are read: each time you open the app it checks today's new messages, never earlier days, and you review each payment before it is added.
 - **Notifications for new bank SMS** (optional, Spend tab): each bank or UPI SMS is recorded as it arrives and a notification asks you to check its category. Tapping it opens a small "Check this payment" window (change category, or mark *Not a payment*). Payments you don't check are recorded anyway and highlighted under **Needs your check** until you confirm them. Messages are matched by their text, so one SMS is never recorded twice. The Android side (`SmsReceiver`, `SmsParser.java`) mirrors the app's own SMS reader; `tests/` pins the shared message key.
 - **Home-screen widget** "Spend today": what's left to spend today, and **+ Add** to record an expense from a small window without opening the app.
-- **No internet permission.** The manifest removes it (`tools:node="remove"`), so Android blocks any network use. A content security policy also stops the web layer loading anything from outside, fonts are bundled, and Android cloud backup is turned off for the app's data.
-- **Every build is checked offline:** the workflow installs the APK on an emulator with Wi-Fi and data off, confirms it has no INTERNET permission and that the app opens (`scripts/device-check.sh`). The download link is only updated when this passes.
+- **Internet only for the AI weekly plan.** The app has the internet permission solely for the optional weekly plan, which is off by default. A unit test checks that it is the only network call in the code and that it never runs while off. The content security policy stops the web layer loading scripts, styles or images from outside, fonts are bundled, and Android cloud backup is turned off for the app's data.
+- **Every build is checked offline:** the workflow installs the APK on an emulator with Wi-Fi and data off, and confirms the app opens and works without a network (`scripts/device-check.sh`). The download link is only updated when this passes.
 
 To build locally (needs the Android SDK and JDK 21):
 

@@ -1922,6 +1922,197 @@
     return { money, funds, loans, cards, owe: loans + cards, own: money + funds, value: Math.round(money + funds - loans - cards) };
   }
 
+  // ---------- weekly plan: fraud checks, readiness, goals ----------
+
+  // Monday of the week containing iso.
+  function weekStart(iso) {
+    return addDays(iso, -((parseISO(iso).getDay() + 6) % 7));
+  }
+
+  /*
+   * Payments worth a second look, worked out on the phone (payee names never
+   * leave it). Over the last `days` days:
+   * - tiny: debits of ₹10 or less, how fraudsters test that a card or UPI works
+   * - duplicate: the same amount to the same payee twice on one day (₹200+)
+   * - large_new: a big payment to a payee not paid in the 90 days before
+   *   (₹5,000+ and at least 3× the usual payment)
+   * - many_new: three or more first-time payees on one day
+   * Card bills, loan EMIs and moves to savings are never flagged.
+   */
+  function fraudSignals(state, todayIso, days) {
+    const from = addDays(todayIso, -((days || 14) - 1));
+    const debits = state.transactions.filter((t) => isFlexible(t) && !t.gap && t.date <= todayIso);
+    // Payments the person already confirmed as theirs aren't flagged again.
+    const ok = new Set(state.fraudOk || []);
+    const recent = debits.filter((t) => t.date >= from && !ok.has(t.id));
+    const payee = (t) => normalizeMerchant(t.note || '') || '';
+    const amounts = debits.filter((t) => t.date >= addDays(todayIso, -90)).map((t) => t.amount).sort((a, b) => a - b);
+    const median = amounts.length ? amounts[Math.floor(amounts.length / 2)] : 0;
+    const seenBefore = (t) => debits.some((x) => x !== t && payee(x) === payee(t) && x.date < t.date && x.date >= addDays(t.date, -90));
+    const out = [];
+    const add = (kind, list) => { if (list.length) out.push({ kind, count: list.length, total: Math.round(sum(list, (t) => t.amount)), ids: list.map((t) => t.id) }); };
+    add('tiny', recent.filter((t) => t.amount <= 10 && t.category !== 'Cash'));
+    const dup = [];
+    recent.forEach((t) => {
+      if (t.amount < 200 || !payee(t) || t.splitOf) return;
+      const twins = recent.filter((x) => x !== t && x.date === t.date && x.amount === t.amount && payee(x) === payee(t) && !x.splitOf);
+      if (twins.length && dup.indexOf(t) === -1) dup.push(t);
+    });
+    add('duplicate', dup);
+    add('large_new', recent.filter((t) => payee(t) && t.amount >= Math.max(5000, median * 3) && !seenBefore(t)));
+    const byDay = {};
+    recent.filter((t) => payee(t) && !seenBefore(t)).forEach((t) => { (byDay[t.date] = byDay[t.date] || []).push(t); });
+    add('many_new', [].concat(...Object.keys(byDay).filter((d) => new Set(byDay[d].map(payee)).size >= 3).map((d) => byDay[d])));
+    return out;
+  }
+
+  /*
+   * Ready to learn about investing? Only with an emergency fund that covers a
+   * month of basics and no loan at 12% a year or more: before that, paying the
+   * loan or building the fund is the better use of the money.
+   */
+  function investReady(state, todayIso) {
+    const f = freedomDays(state, todayIso);
+    const costly = (state.debts || []).filter((d) => d.balance > 0 && (Number(d.rate) || 0) >= 12).sort((a, b) => b.rate - a.rate);
+    if (costly.length) return { ready: false, reason: 'A loan costs ' + costly[0].rate + '% a year: clearing it is a sure return no investment beats.' };
+    if (!f || f.days < 30) return { ready: false, reason: 'The emergency fund covers ' + (f ? f.days : 0) + ' days of basics; build it to at least 30 days first.' };
+    return { ready: true, reason: 'Emergency fund covers ' + f.days + ' days and no loan costs 12% or more.' };
+  }
+
+  /*
+   * Whether a week's goal was met: spend_cap (flexible spending at or under
+   * the amount), save (moved to savings), extra_loan (extra paid to loans),
+   * no_card (no credit card spending). The week runs Monday to Sunday.
+   */
+  function goalResult(state, goal) {
+    if (!goal || !goal.week) return null;
+    const from = goal.week;
+    const to = addDays(goal.week, 6);
+    const txs = state.transactions.filter((t) => t.date >= from && t.date <= to);
+    const amount = Number(goal.amount) || 0;
+    let value;
+    if (goal.type === 'spend_cap') value = sum(txs.filter((t) => isFlexible(t) && !t.gap), (t) => t.amount);
+    else if (goal.type === 'save') value = sum(txs.filter((t) => isMove(t) && !t.setAside && t.useFor !== 'debt'), (t) => t.amount);
+    else if (goal.type === 'extra_loan') value = extraToLoans(state, from, to);
+    else if (goal.type === 'no_card') value = sum(txs.filter((t) => isFlexible(t) && t.paidFrom && t.paidFrom !== 'account'), (t) => t.amount);
+    else return null;
+    value = Math.round(value);
+    const met = goal.type === 'spend_cap' ? value <= amount : goal.type === 'no_card' ? value === 0 : value >= amount;
+    return { met, value };
+  }
+
+  /*
+   * Everything the weekly plan is made from: the facts below, plus this week
+   * against the usual week, little leaks, last week's goal, fraud signals
+   * (counts and amounts only), loan options worked out here, and whether
+   * the person is ready to learn about investing.
+   */
+  function planFacts(state, todayIso, lastGoal) {
+    const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const R = (n) => (n < 0 ? '-' : '') + '₹' + Math.round(Math.abs(n)).toLocaleString('en-IN');
+    const D = (iso) => { const d = parseISO(iso); return d.getDate() + ' ' + MON[d.getMonth()]; };
+    const L = [aiFacts(state, todayIso), '', 'THIS WEEK'];
+    const flex = state.transactions.filter((t) => isFlexible(t) && !t.gap);
+    const from = addDays(todayIso, -6);
+    const week = byCategory(flex.filter((t) => t.date >= from && t.date <= todayIso));
+    const before = byCategory(flex.filter((t) => t.date >= addDays(from, -28) && t.date < from));
+    const cats = Object.keys(Object.assign({}, week, before));
+    if (cats.length) {
+      L.push('Spending, last 7 days against the usual week (average of the 4 weeks before): ' + cats
+        .map((c) => ({ c, now: week[c] || 0, usual: (before[c] || 0) / 4 }))
+        .sort((a, b) => b.now - a.now).slice(0, 8)
+        .map((x) => x.c + ' ' + R(x.now) + ' (usual ' + R(x.usual) + ')').join('; ') + '.');
+    }
+    const small = flex.filter((t) => t.date >= from && t.amount < 200);
+    if (small.length) L.push('Small payments under ₹200 this week: ' + small.length + ', together ' + R(sum(small, (t) => t.amount)) + '.');
+    const leaks = leakSummary(state, todayIso);
+    if (leaks.leaks.length) L.push('Little leaks the person tagged: ' + leaks.leaks.map((x) => x.name + ' about ' + R(x.perMonth) + ' a month').join('; ') + '.');
+    const rec = weekRecap(state, todayIso);
+    L.push('Last 7 days: ' + rec.tally.won + ' days within the limit, ' + rec.tally.over + ' over; saved ' + R(rec.saved) + '; extra to loans ' + R(rec.debtPaid) + '; borrowed ' + R(rec.borrowed) + '.');
+    if (lastGoal) {
+      const res = goalResult(state, lastGoal);
+      if (res) L.push("Last week's goal: " + (lastGoal.text || lastGoal.type) + ' (' + lastGoal.type + ' ' + R(lastGoal.amount) + '): ' + (res.met ? 'met' : 'not met') + ', actual ' + R(res.value) + '.');
+    }
+    const debts = (state.debts || []).filter((d) => d.balance > 0);
+    if (debts.length) {
+      const base = monthlyPlan(Object.assign({}, state, { adjustment: null }), todayIso).debtExtra;
+      const how = payoffOrder(state);
+      const now = simulateDebts(debts, base, how, true);
+      const opts = [1000, 2000, 5000].map((x) => {
+        const r = simulateDebts(debts, base + x, how, true);
+        if (r.neverPaysOff || now.neverPaysOff) return null;
+        return R(x) + ' more a month: debt-free ' + (now.months - r.months) + ' months sooner, about ' + R(now.totalInterest - r.totalInterest) + ' less interest';
+      }).filter(Boolean);
+      const first = debts.slice().sort((a, b) => (how === 'snowball' ? a.balance - b.balance : b.rate - a.rate))[0];
+      L.push('Loan to put any extra on first: ' + first.name + ' (' + (how === 'snowball' ? 'smallest balance' : 'highest interest') + ').');
+      if (opts.length) L.push('Loan options worked out by the app: ' + opts.join('; ') + '.');
+    }
+    const fr = fraudSignals(state, todayIso, 14);
+    const FR = { tiny: 'tiny debits of ₹10 or less (fraudsters test cards and UPI this way)', duplicate: 'the same amount to the same payee twice on one day', large_new: 'a big payment to a payee not paid before', many_new: 'three or more first-time payees on one day' };
+    L.push(fr.length ? 'Payments to double-check, last 14 days: ' + fr.map((x) => x.count + ' × ' + FR[x.kind] + ', together ' + R(x.total)).join('; ') + '. The app shows the person which ones.' : 'Payments to double-check, last 14 days: none found.');
+    const inv = investReady(state, todayIso);
+    L.push('Ready to learn about investing: ' + (inv.ready ? 'yes. ' : 'no. ') + inv.reason);
+    L.push('Plan for the week starting ' + D(weekStart(todayIso)) + '.');
+    return L.join('\n');
+  }
+
+  /*
+   * What "Ask AI" sends: the numbers the app has already worked out, as short
+   * English lines (the AI answers in the app's language). Totals, categories
+   * and the names the person typed for loans, cards, budgets and goals; never
+   * SMS text, shop names, notes or account numbers.
+   */
+  function aiFacts(state, todayIso) {
+    const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const R = (n) => (n < 0 ? '-' : '') + '₹' + Math.round(Math.abs(n)).toLocaleString('en-IN');
+    const D = (iso) => { const d = parseISO(iso); return d.getDate() + ' ' + MON[d.getMonth()] + ' ' + d.getFullYear(); };
+    const r = projectRunway(state, todayIso);
+    const z = zoneStatus(state, todayIso, r);
+    const p = r.plan;
+    const L = [];
+    const daysLeft = r.remainingDays + 1;
+    L.push('Today: ' + D(todayIso) + '. Next payday: ' + D(r.cycle.next) + ' (' + daysLeft + ' days including today).');
+    if (p.salary) L.push('Salary: ' + R(p.salary) + ' a month.');
+    L.push('Money now, all accounts and wallets together: ' + R(r.balanceToday || 0) + '.');
+    L.push("Today's limit: " + R(r.dailyAllowance) + '; spent today: ' + R(r.spentToday) + (r.savedToday ? '; saved today: ' + R(r.savedToday) : '') + '.');
+    L.push('Zone: ' + { green: 'green (on track to payday)', amber: 'careful (at this pace money runs out before payday)', red: 'red (bills and basics until payday are not covered)' }[z.zone] +
+      (z.shortBy ? '; short by ' + R(z.shortBy) : '') + '.');
+    L.push('Spending pace: about ' + R(r.paceRate) + ' a day; at this pace payday comes with ' + R(r.endPace) + (r.zeroPace ? ' (runs out on ' + D(r.zeroPace) + ')' : '') + '.');
+    L.push('Basics (groceries and health) cost about ' + R(z.essentialPerDay) + ' a day.');
+    if (r.remainingDays > 0) L.push('Rule of thumb: every ' + R(1000) + ' spent extra today lowers each remaining day\'s limit by about ' + R(1000 / r.remainingDays) + '.');
+    const ahead = r.events.filter((e) => e.date > todayIso);
+    L.push(ahead.length ? 'Still to pay before payday: ' + ahead.map((e) => e.name + ' ' + R(e.amount) + ' on ' + D(e.date)).join('; ') + '.' : 'No more bills or EMIs before payday.');
+    L.push('Plan each month: fixed payments ' + R(p.fixedTotal) + ', loan minimums ' + R(p.debtMin) + ', bills that vary ' + R(p.variableBills) + ', set aside ' + R(p.savingsTotal) + ', flexible budgets ' + R(p.flexTotal) + '.');
+    const env = budgetEnvelopes(state, todayIso);
+    if (env.list.length) {
+      L.push('Budgets this round: ' + env.list.map((b) => b.name + ' ' + R(b.spent) + ' of ' + R(b.available) + (b.left < 0 ? ' (over by ' + R(-b.left) + ')' : '')).join('; ') + '.');
+    }
+    if (env.others.length) L.push('Spent with no budget this round: ' + env.others.map((o) => o.name + ' ' + R(o.spent)).join('; ') + '.');
+    const trend = spendTrend(state, todayIso, 4).filter((m) => !m.current && m.recorded);
+    if (trend.length) L.push('Past rounds: ' + trend.map((m) => D(m.start).slice(-8) + ': spent ' + R(m.spent) + ', saved ' + R(m.saved) + ', borrowed ' + R(m.borrowed)).join('; ') + '.');
+    const debts = (state.debts || []).filter((d) => d.balance > 0);
+    if (debts.length) {
+      L.push('Loans: ' + debts.map((d) => d.name + ': ' + R(d.balance) + ' left at ' + (Number(d.rate) || 0) + '% a year, EMI or minimum ' + R(Number(d.minPayment) || 0)).join('; ') + '.');
+      const dfd = debtFreeDates(state, todayIso);
+      if (dfd) L.push('Debt-free: ' + (dfd.plan.never ? 'never at the current payments' : D(dfd.plan.date)) + ' with ' + R(dfd.extra) + ' a month extra' +
+        (dfd.now.never ? '; never with minimums only' : '; ' + D(dfd.now.date) + ' with minimums only') + '. Payoff order chosen: ' + (payoffOrder(state) === 'snowball' ? 'smallest balance first' : 'highest interest first') + '.');
+    } else L.push('Loans: none.');
+    (state.cards || []).forEach((c) => {
+      const st = cardStatus(state, c, todayIso);
+      L.push('Credit card ' + c.name + ': owes ' + R(st.owed) + (st.due ? ', bill due ' + D(st.due) : '') + (st.remaining ? ', still to pay on that bill ' + R(st.remaining) : '') +
+        ', interest about ' + cardRate(c) + '% a year if not paid in full.');
+    });
+    const f = freedomDays(state, todayIso);
+    L.push('Emergency fund: ' + R(Number((state.savings || {}).emergencyBalance) || 0) + (f ? ' = ' + f.days + ' days of basics covered' : '') + '.');
+    (state.goals || []).forEach((g) => {
+      const st = goalStatus(state, g, todayIso);
+      L.push('Savings goal ' + g.name + ': ' + R(st.saved) + ' of ' + R(st.target) + (g.by ? ' by ' + D(g.by) : '') + (st.perPayday ? ', ' + R(st.perPayday) + ' a month' : '') + (st.late ? ' (date passed)' : '') + '.');
+    });
+    const n = netWorth(state, todayIso);
+    L.push('Net worth: ' + R(n.value) + ' (own ' + R(n.own) + ', owe ' + R(n.owe) + ').');
+    return L.join('\n');
+  }
+
   function walletBalances(state, todayIso, total, morning) {
     const wallets = (state.wallets || []).map((w) => {
       const from = w.check ? w.check.date : w.created || '0000-00-00';
@@ -2537,7 +2728,7 @@
     recordCardPayment, convertCardBalance, answerCardDue, cardLateFee, cardRate, CARD_RATE, undoCardConvert, cardFreeDays, byCategory, DEFAULT_SPLIT,
     isLoanCredit, borrowedThisCycle, borrowCheck, rolloverOptions, setTranslator,
     payoffOrder, tickDebts, debtJourney, lenderTasks, lastBorrowed,
-    encryptBackup, openBackup, backupInfo, toB64, fromB64, isTransfer, walletBalances, goalStatus, goalsMonthly, budgetEnvelopes, netWorth, reportRange, budgetHistory,
+    encryptBackup, openBackup, backupInfo, toB64, fromB64, isTransfer, walletBalances, goalStatus, goalsMonthly, budgetEnvelopes, netWorth, reportRange, budgetHistory, aiFacts, planFacts, fraudSignals, investReady, goalResult, weekStart,
     daySpent, daySpending, dayTally, roundSnapshot, roundResult, weekRecap,
     monthReport, LEAKS, leakNames, leakOf, leakSummary, leakSuggestions, spendWhere, spendWhen, spendTrend, BASICS,
   };

@@ -80,9 +80,9 @@
 
     <!-- Permissions -->
 
-    <!-- No internet: Hisab Se never sends anything anywhere, and Android enforces it.
-         "remove" also keeps any library from adding the permission back. -->
-    <uses-permission android:name="android.permission.INTERNET" tools:node="remove" />
+    <!-- Internet is used only by the optional Ask AI, which is off until the user turns it on.
+         Everything else works offline; the device check opens the app with no network. -->
+    <uses-permission android:name="android.permission.INTERNET" />
     <!-- Reads bank and UPI SMS on the phone to record payments. Asked for only when the user taps "Read bank SMS". -->
     <uses-permission android:name="android.permission.READ_SMS" />
     <!-- Catches new bank SMS to ask for a category check. Asked for only when the user turns alerts on. -->

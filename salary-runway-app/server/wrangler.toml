@@ -1,0 +1,10 @@
+# Cloudflare Worker for the app's optional "Ask AI".
+# Secrets (set once, never committed): ANTHROPIC_API_KEY, INVITE_CODES.
+name = "salary-runway-ai"
+main = "src/index.js"
+compatibility_date = "2025-09-01"
+compatibility_flags = ["nodejs_compat"]
+
+[vars]
+# One line to change the model; no app update needed.
+MODEL = "claude-sonnet-5-5"

@@ -1,0 +1,41 @@
+name: AI weekly plan server (deploy)
+
+# Run by hand from the Actions tab. Deploys salary-runway-app/server to
+# Cloudflare Workers. Needs these repository secrets (Settings → Secrets and
+# variables → Actions):
+#   CLOUDFLARE_API_TOKEN   token with "Edit Cloudflare Workers" permission
+#   CLOUDFLARE_ACCOUNT_ID  your Cloudflare account ID
+#   ANTHROPIC_API_KEY      key from the Claude Console (platform.claude.com)
+#   INVITE_CODES           comma-separated codes for your testers, e.g. asha-71k2,ravi-9pq4
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: salary-runway-app/server
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npm test
+      - name: Deploy to Cloudflare
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: salary-runway-app/server
+          wranglerVersion: "4.152.0"
+          secrets: |
+            ANTHROPIC_API_KEY
+            INVITE_CODES
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          INVITE_CODES: ${{ secrets.INVITE_CODES }}
