@@ -1407,3 +1407,32 @@ test('investing is explained only with a month of savings and no costly loan', (
   s.savings.emergencyBalance = 10000000;
   assert.equal(Core.investReady(s, '2026-10-26').ready, true);
 });
+
+test('a card bill paid before a balance check, answered later, is not taken off the balance twice', () => {
+  // ₹6,000 spent on the card in September, its bill due 3 Oct and paid that day.
+  // The balance was checked on 20 Oct, so the ₹6,000 had already left the account.
+  const make = () => baseState({
+    settings: { salary: 50000, payday: 1 },
+    cards: [{ id: 'c1', name: 'HDFC card', last4: '1234', limit: 100000, statementDay: 15, dueDay: 3, created: '2026-09-01',
+      statement: { date: '2026-09-15', total: 6000, min: 300, due: '2026-10-03' } }],
+    transactions: [{ id: 'sp', date: '2026-09-10', amount: 6000, category: 'Shopping', paidFrom: 'c1' }],
+    balanceCheck: { date: '2026-10-20', amount: 20000 },
+  });
+  const t = '2026-10-25';
+  // "Yes, paid" tapped on 25 Oct, with the day it was really paid: the balance stays ₹20,000
+  const right = make();
+  Core.answerCardDue(right, 'c1', 'full', 0, t, '2026-10-03');
+  assert.equal(right.transactions.find((x) => x.kind === 'cardpay').date, '2026-10-03');
+  assert.equal(Core.projectRunway(right, t).balanceToday, 20000);
+  // Recorded on the day of answering (the old way), the ₹6,000 was kept aside a second time
+  const wrong = make();
+  Core.answerCardDue(wrong, 'c1', 'full', 0, t);
+  assert.equal(Core.projectRunway(wrong, t).balanceToday, 14000);
+  // Moving that payment's date back to 3 Oct (the edit screen) puts it right
+  wrong.transactions.find((x) => x.kind === 'cardpay').date = '2026-10-03';
+  assert.equal(Core.projectRunway(wrong, t).balanceToday, 20000);
+  // A date in the future is never used
+  const future = make();
+  Core.answerCardDue(future, 'c1', 'full', 0, t, '2026-11-02');
+  assert.equal(future.transactions.find((x) => x.kind === 'cardpay').date, t);
+});

@@ -781,13 +781,20 @@
    * plus the late fee with GST when not even the minimum was paid. EMI
    * conversions go through convertCardBalance. Asked once per bill.
    */
-  function answerCardDue(state, cardId, answer, paid, todayIso) {
+  /*
+   * The answer to "did you pay the card bill?". paidOn is the day the money
+   * left the account (the due date unless the person says otherwise): a
+   * payment made before a balance check is already out of that balance, so
+   * recording it on the day of answering would count it twice.
+   */
+  function answerCardDue(state, cardId, answer, paid, todayIso, paidOn) {
     const card = (state.cards || []).find((c) => c.id === cardId);
     if (!card) return null;
     const st = cardStatus(state, card, todayIso);
     card.answered = st.due;
     paid = answer === 'full' ? st.remaining : answer === 'part' ? Math.max(0, Math.min(st.remaining, Math.round(Number(paid) || 0))) : 0;
-    if (paid > 0) recordCardPayment(state, cardId, paid, todayIso, 'account');
+    const when = paidOn && paidOn <= todayIso ? paidOn : todayIso;
+    if (paid > 0) recordCardPayment(state, cardId, paid, when, 'account');
     const rest = st.remaining - paid;
     if (rest <= 0) return { kind: 'full', paid };
     const fee = paid < st.minLeft ? Math.round(cardLateFee(st.total) * (1 + GST)) : 0;

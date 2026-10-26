@@ -1701,4 +1701,6 @@
   "Hisab Se connects to the internet only for the AI weekly plan, which is off unless you turn it on. There is no account and no tracking.": "Hisab Se फक्त AI साप्ताहिक योजनेसाठी इंटरनेट वापरते, आणि ती तुम्ही चालू केल्याशिवाय बंद असते. कोणतेही खाते नाही, ट्रॅकिंग नाही.",
   "Check it yourself: turn on airplane mode and use the app. Everything except making a new weekly plan works.": "स्वतः तपासा: विमान मोड चालू करून ॲप वापरा. नवीन साप्ताहिक योजना बनवणे सोडून सगळे चालते.",
   "<b>Something leaves the phone only when you choose:</b> a backup file you share, or the weekly summary for your AI plan.": "<b>तुम्ही ठरवाल तेव्हाच काहीतरी फोनबाहेर जाते:</b> तुम्ही शेअर केलेली बॅकअप फाइल, किंवा AI योजनेसाठीचा साप्ताहिक सारांश.",
+  "Paid on": "कधी भरले",
+  "A card bill payment: its amount is tied to the bill. You can change the date the money left your account.": "कार्ड बिलाचे पेमेंट: त्याची रक्कम बिलाशी जोडलेली आहे. तुमच्या खात्यातून पैसे गेल्याची तारीख बदलता येते.",
 };

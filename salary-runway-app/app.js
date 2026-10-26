@@ -3085,8 +3085,12 @@
       (x.matched ? '<div class="callout"><span class="hint">' + tr('Linked to a bank SMS: {merchant}, {date}.', { merchant: esc(x.matched.merchant || ''), date: fmtDate(x.matched.date) }) + '</span>' +
         '<div><button class="ghost small" data-action="tx-unlink">' + tr('Not the same payment') + '</button></div></div>' : '') +
       (state.reconciledTo && x.date <= state.reconciledTo ? '<p class="hint">' + tr('Checked against your bank on {date}. Changing it makes the app’s count differ from your bank’s.', { date: fmtDate(Core.addDays(state.reconciledTo, 1)) }) + '</p>' : '') +
-      (locked ? '<p class="hint">' + tr('This is a bill or card payment, so its amount and date are tied to the bill. To change them, delete it and record it again.') + '</p>' : '') +
+      (locked ? '<p class="hint">' + tr(x.kind === 'cardpay'
+        ? 'A card bill payment: its amount is tied to the bill. You can change the date the money left your account.'
+        : 'This is a bill or card payment, so its amount and date are tied to the bill. To change them, delete it and record it again.') + '</p>' : '') +
       '<div class="form-grid">' +
+      // A card bill payment keeps its amount, but its date can be put right (the day the money really left).
+      (locked && x.kind === 'cardpay' ? field('edit-date', 'Paid on', '<input id="edit-date" type="date" max="' + t + '" value="' + esc(x.date) + '">') : '') +
       (locked ? '' : field('edit-amount', 'Amount (₹)', '<input id="edit-amount" type="number" inputmode="decimal" min="1" step="1" value="' + esc(x.amount) + '">') +
         field('edit-date', 'Date', '<input id="edit-date" type="date" max="' + t + '" value="' + esc(x.date) + '">')) +
       field('edit-note', isIn ? 'From' : 'Where / what', '<input id="edit-note" type="text" value="' + esc(x.note || '') + '">') +
@@ -3125,6 +3129,11 @@
         x.amount = amount;
         x.date = date;
       }
+    }
+    if (x.kind === 'cardpay') {
+      const date = val('edit-date');
+      if (!date || date > today()) { ui.editError = tr('Pick a date up to today.'); render(); return; }
+      x.date = date;
     }
     x.note = note;
     const cat = val('edit-cat');
@@ -4126,7 +4135,11 @@
   function cardDueQuestion(c, st) {
     const v = { card: cardLabel(c), amount: inr(st.remaining), date: fmtDate(st.due), min: inr(st.minLeft), fee: inr(Math.round(Core.cardLateFee(st.total) * 1.18)) };
     const part = ui.cardAnswer === c.id;
+    const t = today();
+    // The day the money left: the due date unless they paid earlier or later.
+    const paidOn = '<label class="field" for="card-paid-on-' + esc(c.id) + '"><span>' + tr('Paid on') + '</span><input id="card-paid-on-' + esc(c.id) + '" type="date" max="' + t + '" value="' + (st.due && st.due <= t ? st.due : t) + '"></label>';
     return '<div class="callout ' + (st.overdue ? 'bad' : 'warn') + ' card-due"><b>' + tr(st.daysToDue === 0 ? '{card} bill of {amount} is due today. Did you pay it?' : '{card} bill of {amount} was due {date}. Did you pay it?', v) + '</b>' +
+      paidOn +
       (part
         ? '<div class="row"><label class="field grow-field" for="card-paid"><span>' + tr('How much did you pay? (₹)') + '</span><input id="card-paid" type="number" inputmode="numeric" min="1" max="' + st.remaining + '"></label></div>' +
           '<div class="row"><button class="primary" data-action="card-answer" data-answer="part" data-id="' + esc(c.id) + '">' + tr('Save') + '</button><button class="ghost" data-action="card-answer-back">' + tr('Back') + '</button></div>'
@@ -5267,7 +5280,9 @@
         const c = state.cards.find((x) => x.id === id);
         const paid = btn.dataset.answer === 'part' ? Number((document.getElementById('card-paid') || {}).value) || 0 : 0;
         if (btn.dataset.answer === 'part' && !paid) { toast('Enter how much you paid'); return; }
-        const res = Core.answerCardDue(state, id, btn.dataset.answer, paid, t);
+        const on = (document.getElementById('card-paid-on-' + id) || {}).value;
+        if (on && on > t) { toast(tr('Pick a date up to today.')); return; }
+        const res = Core.answerCardDue(state, id, btn.dataset.answer, paid, t, on || t);
         ui.cardAnswer = null;
         save();
         if (!res) break;
