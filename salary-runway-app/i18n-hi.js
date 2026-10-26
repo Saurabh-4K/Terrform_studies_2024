@@ -1897,4 +1897,11 @@
   "Which purchase?": "कौन सी खरीदारी?",
   "Paid from {name} ({left} left)": "{name} से दिया ({left} बाकी)",
   "{amount} of it was paid from money kept for it, so it doesn’t use your budgets.": "इसमें से {amount} इसके लिए रखे पैसों से दिए, इसलिए यह आपका बजट इस्तेमाल नहीं करता.",
+  "Skip SMS like this": "ऐसे SMS छोड़ें",
+  "Skip SMS that contain": "इन शब्दों वाले SMS छोड़ें",
+  "Offers or alerts that aren’t payments keep coming? Add a word from them, like BluChips. Any SMS with it is left out, now and in notifications.": "भुगतान न होने वाले ऑफ़र या अलर्ट आते रहते हैं? उनमें से कोई शब्द जोड़ें, जैसे BluChips. उस शब्द वाला हर SMS अभी और सूचनाओं में भी छोड़ दिया जाएगा.",
+  "Word or phrase": "शब्द या वाक्यांश",
+  "Use at least 3 letters, so real payments aren’t skipped.": "कम से कम 3 अक्षर लिखें, ताकि असली भुगतान न छूटें.",
+  "SMS with “{word}” are skipped from now on": "“{word}” वाले SMS अब से छोड़े जाएंगे",
+  "SMS with “{word}” count again": "“{word}” वाले SMS फिर से गिने जाएंगे",
 };

@@ -36,6 +36,8 @@ public class SmsReceiver extends BroadcastReceiver {
             if (piece != null) text.append(piece);
         }
         String body = text.toString();
+        // Words the user chose to skip ("BluChips"): never a payment.
+        if (SmsAlertStore.skipped(context, body)) return;
 
         SmsParser.Result r = SmsParser.parse(body, SmsAlertStore.rules(context));
         if (r == null) return;

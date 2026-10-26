@@ -165,6 +165,7 @@ public class SmsInboxPlugin extends Plugin {
             call.getArray("incomeCategoryLabels", new JSArray()),
             rules == null ? new JSObject() : rules,
             call.getArray("cards", new JSArray()));
+        SmsAlertStore.setSkipText(getContext(), call.getArray("skipText", new JSArray()));
         Lang.set(getContext(), call.getString("lang"));
         call.resolve();
     }

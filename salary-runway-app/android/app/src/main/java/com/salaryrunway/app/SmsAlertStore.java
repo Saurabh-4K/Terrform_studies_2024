@@ -50,6 +50,25 @@ final class SmsAlertStore {
             .apply();
     }
 
+    /** Words or phrases the user chose: an SMS containing one is never recorded or shown. */
+    static void setSkipText(Context context, JSONArray words) {
+        prefs(context).edit().putString("skipText", words.toString()).apply();
+    }
+
+    static boolean skipped(Context context, String body) {
+        String text = body == null ? "" : body.toLowerCase(java.util.Locale.ROOT);
+        try {
+            JSONArray words = new JSONArray(prefs(context).getString("skipText", "[]"));
+            for (int i = 0; i < words.length(); i++) {
+                String w = words.optString(i, "").trim().toLowerCase(java.util.Locale.ROOT);
+                if (!w.isEmpty() && text.contains(w)) return true;
+            }
+        } catch (JSONException ignored) {
+            // Nothing skipped.
+        }
+        return false;
+    }
+
     /** The user's credit cards: id, name, last4. */
     static JSONArray cards(Context context) {
         try {

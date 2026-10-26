@@ -2782,7 +2782,8 @@
             '<td>—</td><td class="amt">' + inr(p.amount) + '</td></tr>';
         }
         return '<tr' + (r.duplicate || (isIn && p.salary) ? ' class="muted"' : '') + '>' + check +
-          '<td><div class="cell-title">' + esc(tr(p.merchant)) + '</div><div class="cell-sub">' + fmtDate(p.date) + (note ? ' · ' + note : '') + '</div></td>' +
+          '<td><div class="cell-title">' + esc(tr(p.merchant)) + '</div><div class="cell-sub">' + fmtDate(p.date) + (note ? ' · ' + note : '') +
+          ' · <button class="link" data-action="sms-skip-like" data-i="' + i + '">' + tr('Skip SMS like this') + '</button></div></td>' +
           '<td><select data-sms-cat="' + i + '" aria-label="' + tr('Category') + '">' + (isIn ? incomeCategoryOptions(p.category) : categoryOptions(p.category)) + '</select></td>' +
           '<td class="amt' + (isIn ? ' good' : '') + '">' + (isIn ? '+' : '') + inr(p.amount) + '</td></tr>';
       }).join('') +
@@ -2808,9 +2809,15 @@
     return rows;
   }
 
+  // Words or phrases the user chose to skip ("BluChips"), in any case.
+  function smsSkipText(text) {
+    const lower = String(text || '').toLowerCase();
+    return (state.smsSkipText || []).some((w) => w && lower.indexOf(String(w).toLowerCase()) !== -1);
+  }
+
   function smsRowsOf(messages, known) {
     return messages.map(({ text, day }) => {
-      const parsed = Core.parseSms(text, state.merchantRules, day);
+      const parsed = smsSkipText(text) ? null : Core.parseSms(text, state.merchantRules, day);
       const key = Core.smsKey(text);
       if (parsed && parsed.type === 'credit' && parsed.salary) noteSalary(parsed);
       const duplicate = !!parsed && (known.has(key) || (parsed.type !== 'statement' && smsSkipped(parsed.merchant)) || state.transactions.some((x) => !x.kind && (
@@ -2842,8 +2849,21 @@
   }
 
   // Places whose bank SMS are never payments (an app's OTPs or payment requests, say).
-  // Places marked "skip SMS from now on", each with a way back.
+  // Places marked "skip SMS from now on", each with a way back; and words to skip.
   function skippedPlaces() {
+    return skipTextBox() + skippedShops();
+  }
+
+  function skipTextBox() {
+    const words = state.smsSkipText || [];
+    return '<div class="callout skip-text"><b>' + tr('Skip SMS that contain') + '</b>' +
+      '<span class="hint">' + tr('Offers or alerts that aren’t payments keep coming? Add a word from them, like BluChips. Any SMS with it is left out, now and in notifications.') + '</span>' +
+      (words.length ? '<div class="row">' + words.map((w) => '<button class="ghost small" data-action="sms-skip-text-remove" data-word="' + esc(w) + '" aria-label="' + esc(tr('Stop skipping {shop}', { shop: w })) + '">' + esc(w) + ' ✕</button>').join('') + '</div>' : '') +
+      '<div class="row"><label class="field" for="skip-word"><span>' + tr('Word or phrase') + '</span><input id="skip-word" type="text" maxlength="40" value="' + esc(ui.skipDraft || '') + '" placeholder="BluChips"></label>' +
+      '<button data-action="sms-skip-text-add">' + tr('Skip') + '</button></div></div>';
+  }
+
+  function skippedShops() {
     const list = state.smsSkip || [];
     if (!list.length) return '';
     return '<div class="callout"><b>' + tr('SMS skipped from') + '</b>' +
@@ -2898,6 +2918,7 @@
   function recordSms(p, o) {
     // Marked "not a payment" before, or from a place whose SMS are skipped.
     if (o.key && (state.smsIgnored || []).indexOf(o.key) !== -1) return false;
+    if (p.raw && smsSkipText(p.raw)) return false;
     if (p.type !== 'statement' && smsSkipped(p.merchant)) return false;
     const chosen = o.cardId && o.cardId !== 'account' ? (state.cards || []).find((c) => c.id === o.cardId) : null;
     const card = chosen || findCard(p.last4);
@@ -5508,6 +5529,31 @@
         toast(tr('{amount} due {date} on {name}', { amount: inr(c.setupStatement), date: fmtDate(c.setupDueDate), name: c.name }));
         break;
       }
+      case 'sms-skip-like': {
+        const r = (ui.smsRows || [])[Number(btn.dataset.i)];
+        if (!r) return;
+        // A suggestion to edit: the shop, or the message's first words.
+        const shop = r.parsed && r.parsed.merchant && !/^(bank payment|money received)$/i.test(r.parsed.merchant) ? r.parsed.merchant : '';
+        // Greetings and everyday words would skip real payments too: the first two telling words instead.
+        const common = /^(dear|customer|sir|madam|hi|hello|your|you|the|and|for|with|from|has|have|been|was|is|are|our|this|that|get|now|on|of|to|in|at|by|rs|inr|a\/c|ac|account|bank|upi|ref|txn|amount|debited|credited|sent|received|spent|paid)$/i;
+        const words = String(r.text).replace(/[^\p{L}\p{N}&' -]+/gu, ' ').split(/\s+/).filter((w) => w.length >= 3 && !/\d/.test(w) && !common.test(w));
+        ui.skipDraft = shop || words.slice(0, 2).join(' ');
+        rerenderKeepScroll();
+        setTimeout(() => { const el = document.getElementById('skip-word'); if (el) { el.focus(); el.select(); el.scrollIntoView({ block: 'center' }); } }, 50);
+        return;
+      }
+      case 'sms-skip-text-add': {
+        const w = ((document.getElementById('skip-word') || {}).value || '').trim();
+        if (w.length < 3) { toast(tr('Use at least 3 letters, so real payments aren’t skipped.')); return; }
+        state.smsSkipText = (state.smsSkipText || []).filter((x) => x.toLowerCase() !== w.toLowerCase()).concat(w).slice(-50);
+        ui.skipDraft = '';
+        // Offered now but matching: gone from the list.
+        if (ui.smsRows) ui.smsRows = ui.smsRows.map((r) => (smsSkipText(r.text) ? Object.assign({}, r, { parsed: null, checked: false }) : r));
+        save(); syncAlerts(); toast(tr('SMS with “{word}” are skipped from now on', { word: w })); break;
+      }
+      case 'sms-skip-text-remove':
+        state.smsSkipText = (state.smsSkipText || []).filter((x) => x !== btn.dataset.word);
+        save(); syncAlerts(); toast(tr('SMS with “{word}” count again', { word: btn.dataset.word })); break;
       case 'sms-unskip': {
         const name = (state.smsSkipNames || {})[btn.dataset.shop] || btn.dataset.shop;
         state.smsSkip = (state.smsSkip || []).filter((x) => x !== btn.dataset.shop);
@@ -7000,6 +7046,7 @@
       lang: I18N.getLang(),
       rules: state.merchantRules,
       cards: (state.cards || []).map((c) => ({ id: c.id, name: c.name, last4: c.last4 || '' })),
+      skipText: state.smsSkipText || [],
     };
     const key = JSON.stringify(payload);
     if (key === alertsSent) return;
