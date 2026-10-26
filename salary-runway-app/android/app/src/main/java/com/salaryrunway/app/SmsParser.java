@@ -28,7 +28,7 @@ final class SmsParser {
     private static final int CI = Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE;
     private static final Pattern NOT_PAYMENT = Pattern.compile("\\botp\\b|one time password|verification code", CI);
     // Bank SMS with an amount that isn't money moving, as NOT_MONEY in core.js.
-    private static final Pattern NOT_MONEY = Pattern.compile("reward\\s*points?|\\b(?:rp|points)\\s+(?:credited|earned|redeemed)|\\bhas requested\\b|\\bcollect request\\b|\\bpayment request\\b|\\bwill be (?:auto[- ]?)?(?:debited|deducted|charged)\\b|\\bmandate\\b.{0,60}\\b(?:registered|created|set ?up|approved)\\b|\\bauto ?pay\\b.{0,40}\\b(?:set ?up|registered|activated)\\b", CI);
+    private static final Pattern NOT_MONEY = Pattern.compile("reward\\s*points?|\\b(?:rp|points)\\s+(?:credited|earned|redeemed)|\\bhas requested\\b|\\bcollect request\\b|\\bpayment request\\b|\\bwill be (?:auto[- ]?)?(?:debited|deducted|charged)\\b|\\bmandate\\b.{0,60}\\b(?:registered|created|set ?up|approved)\\b|\\bauto ?pay\\b.{0,40}\\b(?:set ?up|registered|activated)\\b|\\bbonus amount\\b|\\bdear subscriber\\b", CI);
     private static final Pattern AMOUNT = Pattern.compile("(?:rs\\.?|inr|₹)\\s*([\\d,]+(?:\\.\\d{1,2})?)", CI);
     private static final Pattern DEBIT = Pattern.compile("\\b(debited|spent|paid|sent|withdrawn|purchase|debit|payment of)\\b", CI);
     private static final Pattern CREDIT = Pattern.compile("\\b(credited|received|deposited|refund(?:ed)?)\\b", CI);
@@ -36,6 +36,7 @@ final class SmsParser {
     private static final Pattern TXN = Pattern.compile("\\btxn\\s+(?:of\\s+)?(?:rs\\.?|inr|₹)", CI);
     // The shop in a UPI ID, as in core.js: payment gateways and QR codes aren't the shop.
     private static final Pattern GATEWAYS = Pattern.compile("^(payu|razorpay|rzp|rzpy|cashfree|ccavenue|billdesk|paygate|pg|upi|pay|payments?|merchant|mer)$", CI);
+    private static final Pattern TAX_REFUND = Pattern.compile("\\b(?:it|itr|income[- ]tax) refund\\b", CI);
     private static final Pattern REFUND = Pattern.compile("refund|reversal|reversed|cashback", CI);
     private static final Pattern SALARY = Pattern.compile("\\bsal(ary)?\\b|payroll", CI);
     private static final Pattern NOT_A_NAME = Pattern.compile("^(a/?c|your|ac|account|card)\\b", CI);
@@ -134,7 +135,7 @@ final class SmsParser {
             r.merchant = merchant.isEmpty() ? "Bank payment" : merchant;
             r.category = categorize(merchant.isEmpty() ? t : merchant, rules);
         } else {
-            r.merchant = merchant.isEmpty() ? "Money received" : merchant;
+            r.merchant = TAX_REFUND.matcher(t).find() ? "Income tax refund" : merchant.isEmpty() ? "Money received" : merchant;
             r.category = REFUND.matcher(t).find() ? "Refund" : "Money received";
             r.salary = SALARY.matcher(t).find();
         }

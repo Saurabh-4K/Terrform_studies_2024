@@ -1633,6 +1633,11 @@ test('bank SMS with an amount that is not money moving are skipped', () => {
   assert.equal(read('Asha M has requested Rs.500.00 from you on Google Pay. UPI collect request'), null);
   assert.equal(read('Dear Customer, Rs.6010.00 will be debited from your A/c XX4321 on 03-11-26 towards EMI.'), null);
   assert.equal(read('Your e-mandate for Rs.1499 to Netflix has been registered successfully on A/c XX4321.'), null);
+  // A bonus in a DTH or shop account isn't money in the bank
+  assert.equal(read('Dear Subscriber, Thank you for joining the Flexi Plan. Bonus amount of Rs. 50.00 has been credited to your a/c 1234567890. Total balance now is Rs. 900'), null);
+  // An income tax refund is money in, and says so
+  const refund = read('Dear Customer, For PAN XXXXXX111A, An IT Refund amount of Rs 4500 for AY-2026-27 has been credited to your account XXXXXXXXXX4321 on 2026-06-19. -SBI');
+  assert.deepEqual([refund.type, refund.amount, refund.merchant, refund.date], ['credit', 4500, 'Income tax refund', '2026-06-19']);
   // Real money still counts
   assert.equal(read('Rs.50.00 cashback credited to your A/c XX4321 on 25-10-26 from PhonePe').type, 'credit');
   assert.equal(read('Rs.6010.00 debited from A/c XX4321 on 03-11-26 towards EMI. Avl bal Rs.1200').amount, 6010);

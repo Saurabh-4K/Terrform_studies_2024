@@ -2776,8 +2776,9 @@
    * - UPI payment requests ("X has requested Rs 500 … approve")
    * - reminders ("Rs 6010 will be debited on 03-11")
    * - autopay set up ("mandate … registered", "AutoPay … set up")
+   * - a bonus in a shop's or DTH account ("Dear Subscriber … Bonus amount of Rs. 114.45")
    */
-  const NOT_MONEY = /reward\s*points?|\b(?:rp|points)\s+(?:credited|earned|redeemed)|\bhas requested\b|\bcollect request\b|\bpayment request\b|\bwill be (?:auto[- ]?)?(?:debited|deducted|charged)\b|\bmandate\b.{0,60}\b(?:registered|created|set ?up|approved)\b|\bauto ?pay\b.{0,40}\b(?:set ?up|registered|activated)\b/i;
+  const NOT_MONEY = /reward\s*points?|\b(?:rp|points)\s+(?:credited|earned|redeemed)|\bhas requested\b|\bcollect request\b|\bpayment request\b|\bwill be (?:auto[- ]?)?(?:debited|deducted|charged)\b|\bmandate\b.{0,60}\b(?:registered|created|set ?up|approved)\b|\bauto ?pay\b.{0,40}\b(?:set ?up|registered|activated)\b|\bbonus amount\b|\bdear subscriber\b/i;
 
   // Bill amounts round up, so paying them clears the bill.
   function money(m) { return m ? Math.ceil(parseFloat(m[1].replace(/,/g, ''))) : 0; }
@@ -2849,7 +2850,7 @@
       return {
         type,
         amount,
-        merchant: merchant || 'Money received',
+        merchant: /\b(?:it|itr|income[- ]tax) refund\b/i.test(t) ? 'Income tax refund' : merchant || 'Money received',
         date: parseSmsDate(t, todayIso),
         category: /refund|reversal|reversed|cashback/i.test(t) ? 'Refund' : 'Money received',
         salary: /\bsal(ary)?\b|payroll/i.test(t),
