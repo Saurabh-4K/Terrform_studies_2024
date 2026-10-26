@@ -1629,4 +1629,5 @@
   "Small spends that add up: cigarettes, tea, food delivery, betting apps. Tag where you pay for them to see what they cost.": "छोटे खर्च जो जुड़ते जाते हैं: सिगरेट, चाय, फ़ूड डिलीवरी, बेटिंग ऐप. ये कहाँ भरते हैं उसे टैग करें और उनकी कीमत देखें.",
   "Before investing, talk to a <b>SEBI-registered investment adviser</b>. All investments carry risk.": "निवेश से पहले <b>SEBI-पंजीकृत निवेश सलाहकार</b> से बात करें. हर निवेश में जोखिम होता है.",
   "From {from} to yesterday. Each needs a category to count; same places sort together (about {min} min).": "{from} से कल तक. गिनती के लिए हर एक को श्रेणी चाहिए; एक ही जगह के एक साथ छँटते हैं (लगभग {min} मिनट).",
+  "Your plan leaves ₹0 for daily spending: fixed payments, EMIs and minimums take the whole salary. The Debts tab shows what clearing the costliest loan frees up.": "आपकी योजना रोज़ के खर्च के लिए ₹0 छोड़ती है: तय पेमेंट, EMI और न्यूनतम किस्तें पूरी तनख़्वाह ले लेती हैं. सबसे महँगा कर्ज़ चुकाने से कितना खाली होता है, Debts टैब दिखाता है.",
 };

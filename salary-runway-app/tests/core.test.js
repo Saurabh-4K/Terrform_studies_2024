@@ -1318,3 +1318,23 @@ test('quick budgets: last round and the three-round average', () => {
   assert.deepEqual(h.Groceries, { last: 6200, avg: 5600, rounds: 2 });
   assert.deepEqual(h.Clothes, { last: 0, avg: 1500, rounds: 2 });
 });
+
+test('a plan with nothing for daily spending: the limit is never below ₹0 and never green', () => {
+  const t = '2026-10-26';
+  const s = Demo.demoState(t);
+  s.transactions = s.transactions.filter((x) => x.date < '2026-10-01');
+  // Fixed payments and EMIs use the whole salary
+  s.fixed.push({ id: 'big', name: 'Rent and EMIs', amount: Core.monthlyPlan(s, t).flexTotal + 5000, dueDay: 1 });
+  assert.equal(Core.monthlyPlan(s, t).flexTotal, 0);
+  s.balanceCheck = { date: t, amount: 409 };
+  // Yesterday's leftover moved to savings this morning
+  s.transactions.push({ id: 'mv', kind: 'move', date: t, forDate: Core.addDays(t, -1), amount: 300, category: 'Savings', useFor: null });
+  const r = Core.projectRunway(s, t);
+  assert.ok(r.dailyAllowance >= 0);
+  assert.ok(r.tomorrowAllowance >= 0);
+  const z = Core.zoneStatus(s, t, r);
+  assert.notEqual(z.zone, 'green');
+  // Basics come from real grocery and health spending, since the plan has none
+  assert.ok(z.essentialPerDay > 0);
+  assert.equal(z.zone, 'red');
+});

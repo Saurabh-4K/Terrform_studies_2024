@@ -816,6 +816,8 @@
       headline = tr('You’re in the green');
       sub = tr('At this pace you reach payday on {date} with about <b>{amount}</b> left.', { date: fmtDate(cyc.next), amount: inr(r.endPace) });
     }
+    // The cause, when it's the plan itself: nothing is left for daily spending after fixed payments and EMIs.
+    if (z.zone !== 'green' && r.plan.flexTotal <= 0 && r.plan.salary > 0) sub = tr('Your plan leaves ₹0 for daily spending: fixed payments, EMIs and minimums take the whole salary. The Debts tab shows what clearing the costliest loan frees up.') + ' ' + sub;
 
     // Joined mid-cycle: budgets cover only the days from the balance check.
     const share = r.anchor ? (cyc.days - r.anchorIdx) / cyc.days : 1;

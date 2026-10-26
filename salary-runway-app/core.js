@@ -361,6 +361,19 @@
    * - Money received arrives on its date. Whatever is kept for spending is
    *   added on top of the flexible budget for the rest of the cycle.
    */
+  /*
+   * What you really spent a day lately, on spending that passes `keep`: the
+   * finished days of the last `days` days, counted only from your first
+   * entry, so a new user isn't averaged over days the app never saw.
+   */
+  function recentDaily(state, todayIso, keep, days) {
+    const from = addDays(todayIso, -(days || 30));
+    const txs = state.transactions.filter((t) => isFlexible(t) && !t.gap && t.date >= from && t.date < todayIso && keep(t));
+    const first = state.transactions.reduce((m, t) => (t.date < m ? t.date : m), todayIso);
+    const span = daysBetween(first > from ? first : from, todayIso);
+    return span > 0 ? sum(txs, (t) => t.amount) / span : 0;
+  }
+
   function projectRunway(state, todayIso) {
     const cycle = cycleFor(todayIso, Number(state.settings.payday) || 1);
     const plan = monthlyPlan(state, todayIso);
@@ -412,8 +425,10 @@
     const daysDone = idxToday - aIdx;
     const remainingDays = N - 1 - idxToday;
     // With a balance check, extra money is shared over the days from that check.
-    const dailyBudget = plan.flexTotal / N + (anchor ? (extraIn - moved) / (N - aIdx) : 0);
-    const paceRate = daysDone >= 2 && paceSpend - paceToday > 0 ? (paceSpend - paceToday) / daysDone : plan.flexTotal / N;
+    const dailyBudget = Math.max(0, plan.flexTotal / N + (anchor ? (extraIn - moved) / (N - aIdx) : 0));
+    // Before two days of spending: the plan's rate, or, with nothing planned for daily spending, what you've really been spending.
+    const startRate = plan.flexTotal > 0 ? plan.flexTotal / N : recentDaily(state, todayIso, (t) => NON_PACE_CATEGORIES.indexOf(t.category) === -1);
+    const paceRate = daysDone >= 2 && paceSpend - paceToday > 0 ? (paceSpend - paceToday) / daysDone : startRate;
     const todayRest = Math.max(0, paceRate - paceToday);
     const flexLeft = Math.max(0, plan.flexTotal + extraIn - paceSpend - moved);
     const planRate = anchor ? dailyBudget : remainingDays > 0 ? flexLeft / remainingDays : 0;
@@ -448,8 +463,9 @@
     const billsAhead = sum(events.filter((e) => e.date > todayIso), (e) => e.amount);
     // Today's amount is fixed for the day: what spending and saving today don't change.
     const byMoney = Math.max(0, bal + spentToday + savedToday - billsAhead) / (remainingDays + 1);
+    // Never below zero: a limit of -₹50 means nothing, ₹0 says it.
     const byBudget = anchor
-      ? plan.flexTotal / N + (extraIn - (moved - savedToday)) / (N - aIdx)
+      ? Math.max(0, plan.flexTotal / N + (extraIn - (moved - savedToday)) / (N - aIdx))
       : Math.max(0, plan.flexTotal + extraIn - (moved - savedToday) - (paceSpend - spentToday)) / (remainingDays + 1);
     const dailyAllowance = Math.min(byMoney, byBudget);
     // The parts of today's limit, for "how is this calculated?".
@@ -498,7 +514,9 @@
   function zoneStatus(state, todayIso, runway) {
     const r = runway || projectRunway(state, todayIso);
     const N = r.cycle.days;
-    const essentialPerDay = sum(r.plan.budgets.filter((b) => ESSENTIAL_CATEGORIES.indexOf(b.name) !== -1), (b) => b.amount) / N;
+    // Basics a day: the plan's groceries and health, or, when the plan has no room for them, what you really spend on them.
+    const planned = sum(r.plan.budgets.filter((b) => ESSENTIAL_CATEGORIES.indexOf(b.name) !== -1), (b) => b.amount) / N;
+    const essentialPerDay = planned > 0 ? planned : recentDaily(state, todayIso, (t) => ESSENTIAL_CATEGORIES.indexOf(t.category) !== -1, 60);
     const billsAfter = (iso) => sum(r.events.filter((e) => e.date > iso), (e) => e.amount);
     const money = r.balanceToday;
     const needs = r.billsAhead + essentialPerDay * r.remainingDays;
@@ -507,7 +525,8 @@
 
     let zone = 'green';
     if (money < needs) zone = 'red';
-    else if (r.zeroPace || r.endPace < 0) zone = 'amber';
+    // Nothing left to spend today, with days still to go, is never "on track".
+    else if (r.zeroPace || r.endPace < 0 || (r.remainingDays > 0 && r.dailyAllowance < 1)) zone = 'amber';
 
     const out = { zone, money, needs, shortBy: Math.max(0, needs - money), safeDaily, essentialPerDay, needsLine, options: [] };
     if (zone === 'red') {
