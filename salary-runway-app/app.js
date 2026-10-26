@@ -845,6 +845,7 @@
     const bal = askBalance && !ui.balanceOpen ? balanceForm(true) : '';
     const top =
       paydayCard() +
+      staleRolloverNote() +
       rolloverCard() +
       followBanner() +
       loanDebtNote() +
@@ -1664,21 +1665,34 @@
     ui.rolloverHidden = false;
   }
 
+  // Money kept from a loan that is still in the Debts list: most likely a removed duplicate, not a paid-off loan.
+  function staleRollovers() {
+    const active = new Set((state.debts || []).filter((d) => d.balance > 0).map((d) => (d.name || '').trim().toLowerCase()));
+    return (state.savings.rollovers || []).filter((x) => x.kind === 'loan' && active.has((x.from || '').trim().toLowerCase()));
+  }
+
+  function staleRolloverNote() {
+    return staleRollovers().map((x) => '<div class="callout warn"><b>' + tr('{amount} a month is set aside from {name}, but {name} is still in your loans', { amount: inr(x.amount), name: esc(x.from) }) + '</b>' +
+      '<span class="hint">' + tr('This happens when a loan is removed (a duplicate, say) and kept as paid off. It takes {amount} a month from your daily spending.', { amount: inr(x.amount) }) + '</span>' +
+      '<div><button class="primary" data-action="rollover-stop" data-id="' + esc(x.id) + '">' + tr('Stop it') + '</button></div></div>').join('');
+  }
+
   function rolloverCard() {
     const a = state.rolloverAsk;
     if (!a || ui.rolloverHidden || state.isDemo) return '';
     const o = Core.rolloverOptions(state, a.amount, today());
     return '<section class="card income-card rollover-card"><div class="card-head">' +
-      titled(a.kind === 'raise' ? tr('Your pay went up by {amount}', { amount: inr(a.raise) }) : tr('{name} is done 🎉', { name: esc(a.from) }), 'rollover') + '</div>' +
+      titled(a.kind === 'raise' ? tr('Your pay went up by {amount}', { amount: inr(a.raise) }) : a.removed ? tr('You removed {name}. Is it paid off?', { name: esc(a.from) }) : tr('{name} is done 🎉', { name: esc(a.from) }), 'rollover') + '</div>' +
       '<p class="hint">' + (a.kind === 'raise'
         ? tr('Send half of it, {amount} a month, to freedom before spending grows to match it.', { amount: inr(a.amount) })
-        : tr('You’re used to living without {amount} a month. Keep paying it, to yourself:', { amount: inr(a.amount) })) + '</p>' +
+        : tr(a.removed ? 'If it’s paid off, you’re used to living without {amount} a month. Keep paying it, to yourself:' : 'You’re used to living without {amount} a month. Keep paying it, to yourself:', { amount: inr(a.amount) })) + '</p>' +
       '<div class="choices">' + o.options.map((opt) =>
         '<button class="choice' + (opt.to === o.recommended ? ' suggested' : '') + '" data-action="rollover-use" data-to="' + opt.to + '">' +
         '<span class="choice-title">' + esc(opt.title) + (opt.to === o.recommended ? ' <span class="chip chip-auto">' + tr('Suggested') + '</span>' : '') + '</span>' +
         '<span class="choice-detail">' + esc(opt.detail) + '</span></button>').join('') + '</div>' +
       '<p class="hint"><b>' + tr('Why the suggestion:') + '</b> ' + esc(o.reason) + '</p>' +
-      '<div><button class="ghost" data-action="rollover-later">' + tr('Decide later') + '</button></div></section>';
+      '<div class="row">' + (a.kind === 'loan' ? '<button data-action="rollover-no">' + tr(a.removed ? 'No, it isn’t paid off' : 'It isn’t paid off') + '</button>' : '') +
+      '<button class="ghost" data-action="rollover-later">' + tr('Decide later') + '</button></div></section>';
   }
 
   function redOptions(z, r) {
@@ -2794,7 +2808,7 @@
     const sharedOut = Math.max(0, alloc.pool);
     const lastBackup = state.lastBackup;
     return hub('plan',
-      rolloverCard() +
+      staleRolloverNote() + rolloverCard() +
       (state.onboarding && ui.onboardHidden ? '<div class="callout"><b>' + tr('Finish setting up · step {step} of {total}', { step: state.onboarding.step, total: ONBOARD_STEPS }) + '</b>' +
         '<div><button class="primary" data-action="onboard-resume">' + tr('Continue') + '</button></div></div>' : '') +
       (s.salary ? '' : '<div class="callout"><b>' + tr('Start here.') + '</b><span class="hint">' + tr('Enter your salary and payday, then your fixed payments. Everything else can come later.') + '</span></div>') +
@@ -5107,8 +5121,9 @@
       case 'list-remove': {
         const item = state[btn.dataset.list].find((x) => x.id === btn.dataset.id);
         // A loan or EMI that's gone frees its monthly payment.
-        if (item && btn.dataset.list === 'debts' && item.balance > 0) askRollover({ from: item.name || 'Your loan', amount: Number(item.minPayment) || 0, kind: 'loan' });
-        if (item && btn.dataset.list === 'fixed' && /\bemi\b|loan/i.test(item.name || '')) askRollover({ from: item.name, amount: Number(item.amount) || 0, kind: 'loan' });
+        // Removed isn't always paid off (a duplicate, a mistake), so the question asks first.
+        if (item && btn.dataset.list === 'debts' && item.balance > 0) askRollover({ from: item.name || 'Your loan', amount: Number(item.minPayment) || 0, kind: 'loan', removed: true });
+        if (item && btn.dataset.list === 'fixed' && /\bemi\b|loan/i.test(item.name || '')) askRollover({ from: item.name, amount: Number(item.amount) || 0, kind: 'loan', removed: true });
         state[btn.dataset.list] = state[btn.dataset.list].filter((x) => x !== item); save(); break;
       }
       case 'tx-filter': ui.txFilter = btn.dataset.filter; break;
@@ -5158,6 +5173,7 @@
         save(); celebrate(tr('Nice move!') + ' ' + (opt ? opt.detail : tr('{amount} a month kept for you.', { amount: inr(a.amount) }))); break;
       }
       case 'rollover-later': ui.rolloverHidden = true; break;
+      case 'rollover-no': state.rolloverAsk = null; save(); toast(tr('Nothing changed. Your plan stays as it was.')); break;
       case 'rollover-stop':
         state.savings.rollovers = (state.savings.rollovers || []).filter((x) => x.id !== btn.dataset.id);
         save(); toast('Stopped. That money goes back to your budgets.'); break;

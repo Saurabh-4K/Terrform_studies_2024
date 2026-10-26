@@ -1710,4 +1710,12 @@
   "Save to phone opens Android’s save screen: pick Downloads, or Google Drive to keep it off the phone. The backup only counts once Android confirms it’s saved.": "फोनवर जतन करा Android ची सेव्ह स्क्रीन उघडते: Downloads निवडा, किंवा फोनबाहेर ठेवण्यासाठी Google Drive. Android ने जतन झाल्याचे सांगितल्यावरच बॅकअप मोजला जातो.",
   "Saved as {name}.": "{name} म्हणून जतन.",
   "Share to Drive or WhatsApp": "Drive किंवा WhatsApp वर शेअर करा",
+  "You removed {name}. Is it paid off?": "तुम्ही {name} काढले. ते फिटले आहे का?",
+  "If it’s paid off, you’re used to living without {amount} a month. Keep paying it, to yourself:": "ते फिटले असेल, तर तुम्हाला दरमहा {amount} शिवाय राहायची सवय आहे. ते स्वतःलाच भरत राहा:",
+  "No, it isn’t paid off": "नाही, ते फिटलेले नाही",
+  "It isn’t paid off": "ते फिटलेले नाही",
+  "Nothing changed. Your plan stays as it was.": "काहीही बदलले नाही. तुमची योजना तशीच आहे.",
+  "{amount} a month is set aside from {name}, but {name} is still in your loans": "{name} मधून दरमहा {amount} बाजूला ठेवले जातात, पण {name} अजून तुमच्या कर्जांमध्ये आहे",
+  "This happens when a loan is removed (a duplicate, say) and kept as paid off. It takes {amount} a month from your daily spending.": "असे तेव्हा होते जेव्हा कर्ज (उदा. दुहेरी नोंद) काढले जाते आणि फिटले म्हणून ठेवले जाते. यामुळे रोजच्या खर्चातून दरमहा {amount} जातात.",
+  "Stop it": "थांबवा",
 };
