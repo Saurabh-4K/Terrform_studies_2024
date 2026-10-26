@@ -1703,4 +1703,11 @@
   "<b>Something leaves the phone only when you choose:</b> a backup file you share, or the weekly summary for your AI plan.": "<b>कुछ भी फ़ोन से बाहर तभी जाता है जब आप चुनें:</b> आपकी शेयर की गई बैकअप फ़ाइल, या AI योजना के लिए साप्ताहिक सारांश.",
   "Paid on": "कब भरा",
   "A card bill payment: its amount is tied to the bill. You can change the date the money left your account.": "कार्ड बिल का पेमेंट: इसकी रकम बिल से जुड़ी है. आपके खाते से पैसे जाने की तारीख बदल सकते हैं.",
+  "Backup saved as {name}. Keep the password safe.": "बैकअप {name} नाम से सेव हुआ. पासवर्ड सुरक्षित रखें.",
+  "Backup shared. Check that it arrived in Drive or WhatsApp, and keep the password safe.": "बैकअप शेयर हुआ. जाँचें कि वह Drive या WhatsApp में पहुँचा, और पासवर्ड सुरक्षित रखें.",
+  "Not saved yet: pick a folder and tap Save on Android’s screen.": "अभी सेव नहीं हुआ: Android की स्क्रीन पर फ़ोल्डर चुनें और Save दबाएँ.",
+  "Save to phone": "फ़ोन पर सेव करें",
+  "Save to phone opens Android’s save screen: pick Downloads, or Google Drive to keep it off the phone. The backup only counts once Android confirms it’s saved.": "फ़ोन पर सेव करें Android की सेव स्क्रीन खोलता है: Downloads चुनें, या फ़ोन से बाहर रखने के लिए Google Drive. Android के सेव की पुष्टि करने पर ही बैकअप गिना जाता है.",
+  "Saved as {name}.": "{name} नाम से सेव.",
+  "Share to Drive or WhatsApp": "Drive या WhatsApp पर शेयर करें",
 };

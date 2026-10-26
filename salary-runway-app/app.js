@@ -3807,7 +3807,12 @@
         '<label class="field" for="backup-pass"><span>' + tr('Password (6 or more characters)') + '</span><input id="backup-pass" type="password" autocomplete="new-password" minlength="6"></label>' +
         '<label class="field" for="backup-pass2"><span>' + tr('Same password again') + '</span><input id="backup-pass2" type="password" autocomplete="new-password" minlength="6"></label>' +
         (b.error ? '<p class="bad" role="alert">' + b.error + '</p>' : '') +
-        '<div class="row"><button class="primary" data-action="backup-make">' + tr('Lock and save') + '</button><button class="ghost" data-action="backup-cancel">' + tr('Cancel') + '</button></div></div>';
+        (ShareFile
+          ? '<div class="row"><button class="primary" data-action="backup-make" data-how="save">' + tr('Save to phone') + '</button>' +
+            '<button data-action="backup-make" data-how="share">' + tr('Share to Drive or WhatsApp') + '</button>' +
+            '<button class="ghost" data-action="backup-cancel">' + tr('Cancel') + '</button></div>' +
+            '<span class="hint">' + tr('Save to phone opens Android’s save screen: pick Downloads, or Google Drive to keep it off the phone. The backup only counts once Android confirms it’s saved.') + '</span>'
+          : '<div class="row"><button class="primary" data-action="backup-make" data-how="save">' + tr('Lock and save') + '</button><button class="ghost" data-action="backup-cancel">' + tr('Cancel') + '</button></div>') + '</div>';
     } else if (r) {
       const info = r.info;
       form = '<div class="callout restore-form"><b>' + tr('Restore from a backup') + '</b>' +
@@ -3823,7 +3828,7 @@
         '</div>';
     }
     return '<section class="card" id="data-card">' + titled('Your data', 'data') +
-      '<p class="' + (last ? 'good' : 'warn-text') + '">' + (last ? tr('Last backup: {date}.', { date: fmtDate(last, true) }) : tr('No backup yet. If this phone is lost or reset, your data goes with it.')) + '</p>' +
+      '<p class="' + (last ? 'good' : 'warn-text') + '">' + (last ? tr('Last backup: {date}.', { date: fmtDate(last, true) }) + (state.lastBackupWhere ? ' ' + tr('Saved as {name}.', { name: esc(state.lastBackupWhere) }) : '') : tr('No backup yet. If this phone is lost or reset, your data goes with it.')) + '</p>' +
       (b || r ? '' : '<div class="row"><button class="primary" data-action="backup-open">' + tr('Make a backup file') + '</button><button data-action="restore-open">' + tr('Restore from a backup') + '</button></div>') +
       form +
       '<div class="row"><button data-action="load-demo">' + tr('Load example data') + '</button>' +
@@ -3845,7 +3850,8 @@
       '<div class="row"><button class="primary" data-action="backup-go">' + tr('Make a backup') + '</button><button class="ghost" data-action="backup-later">' + tr('Later') + '</button></div></div>';
   }
 
-  function makeBackup() {
+  // how: 'save' (Android's save screen; counts only once saved) or 'share' (the share menu).
+  function makeBackup(how) {
     const p1 = (document.getElementById('backup-pass') || {}).value || '';
     const p2 = (document.getElementById('backup-pass2') || {}).value || '';
     if (p1.length < 6) { ui.backupForm = { error: tr('Use at least 6 characters.') }; render(); return; }
@@ -3853,13 +3859,20 @@
     const t = today();
     Core.encryptBackup(state, p1, t).then((text) => {
       const name = 'HisabSe-backup-' + t + '.json';
-      const done = () => {
+      const done = (saved) => {
         state.lastBackup = t;
+        state.lastBackupWhere = saved || null;
         ui.backupForm = null;
         save(); rerenderKeepScroll();
-        celebrate(tr('Backup ready. Keep it off this phone, and keep the password safe.'));
+        celebrate(saved ? tr('Backup saved as {name}. Keep the password safe.', { name: saved }) : tr('Backup shared. Check that it arrived in Drive or WhatsApp, and keep the password safe.'));
       };
-      if (ShareFile) return ShareFile.share({ name, text, title: tr('Save your backup'), mime: 'application/json' }).then(done);
+      if (ShareFile && how === 'share') return ShareFile.share({ name, text, title: tr('Save your backup'), mime: 'application/json' }).then(() => done(null));
+      if (ShareFile) {
+        return ShareFile.save({ name, text, mime: 'application/json' }).then((r) => {
+          if (r && r.saved) done(r.name || name);
+          else { ui.backupForm = { error: tr('Not saved yet: pick a folder and tap Save on Android’s screen.') }; render(); }
+        });
+      }
       const a = document.createElement('a');
       a.href = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
       a.download = name;
@@ -5076,7 +5089,7 @@
         return;
       case 'backup-open': ui.backupForm = {}; ui.restore = null; break;
       case 'backup-cancel': ui.backupForm = null; break;
-      case 'backup-make': makeBackup(); return;
+      case 'backup-make': makeBackup(btn.dataset.how || 'save'); return;
       case 'backup-go':
         ui.backupForm = {}; ui.restore = null;
         openPage('plan', 'data');
