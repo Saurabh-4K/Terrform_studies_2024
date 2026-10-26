@@ -30,6 +30,7 @@
     emergency: 'Added to emergency fund',
     grow: 'Set aside to invest',
     debt: 'Used to pay off a loan',
+    keep: 'Kept for something to buy',
   };
   const MOVE_LABELS = {
     emergency: 'moved to your emergency fund',
@@ -358,11 +359,13 @@
   }
 
   // Category names the app ships with: stored in English, shown translated.
-  const BUILT_IN_CATEGORIES = Core.DEFAULT_SPLIT.map(([name]) => name).concat(['Bills', 'Savings', 'Misc', 'Emergency', 'Cash']);
+  // Family: money for a spouse, parents or children to spend. Gifts: presents, shagun.
+  const EXTRA_CATEGORIES = ['Family', 'Gifts', 'Bills', 'Savings', 'Misc', 'Emergency', 'Cash'];
+  const BUILT_IN_CATEGORIES = Core.DEFAULT_SPLIT.map(([name]) => name).concat(EXTRA_CATEGORIES);
 
   function categories() {
     const names = state.budgets.map((b) => b.name).filter(Boolean);
-    ['Bills', 'Savings', 'Misc', 'Emergency', 'Cash'].forEach((n) => { if (names.indexOf(n) === -1) names.push(n); });
+    EXTRA_CATEGORIES.forEach((n) => { if (names.indexOf(n) === -1) names.push(n); });
     return names;
   }
 
@@ -1824,6 +1827,30 @@
       '</section>';
   }
 
+  // Money kept for something to buy (a gift for a purchase), until it's used.
+  function keptCard() {
+    const list = Core.keptFor(state);
+    if (!list.length) return '';
+    return '<section class="card kept-card"><div class="card-head"><h2>' + tr('Kept for something to buy') + '</h2></div>' +
+      '<p class="hint">' + tr('In your account, out of daily spending. Bought it? Tap Use it, and the purchase is covered.') + '</p>' +
+      '<div class="list">' + list.map((k) => '<div class="list-item"><div class="grow"><div class="title">' + esc(k.name) + '</div>' +
+        '<div class="meta">' + tr('From {who} · {date}', { who: esc(k.tx.note || label(k.tx.category)), date: fmtDate(k.tx.date) }) + '</div></div>' +
+        '<div class="amt good">' + inr(k.left) + '</div></div>' +
+        (ui.keepUse === k.tx.id ? keepUsePicker(k)
+          : '<div class="row"><button class="small" data-action="keep-use-open" data-id="' + esc(k.tx.id) + '">' + tr('Use it') + '</button></div>')).join('') + '</div></section>';
+  }
+
+  // Which purchase it paid for: recent spending, newest first.
+  function keepUsePicker(k) {
+    const from = Core.addDays(today(), -30);
+    const list = state.transactions.filter((x) => Core.isFlexible(x) && x.date >= from && Core.ownPart(x) > 0)
+      .sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, 20);
+    if (!list.length) return '<p class="hint">' + tr('No purchase recorded yet. Add it in Spend, then come back to use this money for it.') + '</p>';
+    return '<div class="row"><label class="field" for="keep-buy"><span>' + tr('Which purchase?') + '</span><select id="keep-buy">' +
+      list.map((x) => '<option value="' + esc(x.id) + '">' + esc(txTitle(x)) + ' · ' + fmtDate(x.date) + ' · ' + inr(Core.ownPart(x)) + '</option>').join('') + '</select></label>' +
+      '<button class="primary" data-action="keep-use" data-id="' + esc(k.tx.id) + '">' + tr('Use it') + '</button><button class="ghost" data-action="keep-use-cancel">' + tr('Cancel') + '</button></div>';
+  }
+
   // Savings goals with a date: the monthly amount comes out of the salary like yearly costs.
   function goalsCard() {
     const t = today();
@@ -2199,6 +2226,12 @@
     const pending = pendingIncome();
     if (!pending.length) return '';
     const tx = pending[0];
+    if (ui.keepForm === tx.id) {
+      return '<section class="card income-card"><div class="card-head"><h2>' + tr('What is the {amount} for?', { amount: inr(tx.amount) }) + '</h2></div>' +
+        '<p class="hint">' + tr('It stays in your account, kept out of daily spending. When you buy it, tap Use it, and the purchase is covered by this money.') + '</p>' +
+        '<label class="field" for="keep-name"><span>' + tr('For') + '</span><input id="keep-name" type="text" maxlength="40" placeholder="' + esc(tr('Diwali shopping')) + '"></label>' +
+        '<div class="row"><button class="primary" data-action="keep-save" data-id="' + esc(tx.id) + '">' + tr('Keep it') + '</button><button class="ghost" data-action="keep-cancel">' + tr('Cancel') + '</button></div></section>';
+    }
     const o = Core.incomeOptions(state, tx.id, today());
     return '<section class="card income-card"><div class="card-head"><h2>' + tr('What should this {amount} do?', { amount: inr(tx.amount) }) + '</h2>' +
       (pending.length > 1 ? '<span class="hint">' + tr('{n} more after this', { n: pending.length - 1 }) + '</span>' : '') + '</div>' +
@@ -2231,6 +2264,14 @@
 
   function undoIncomeUse(tx) {
     const sv = state.savings;
+    // Kept for something: the purchases it paid for count on your budgets again.
+    if (tx.useFor === 'keep') {
+      (tx.keepUses || []).forEach((u) => {
+        const x = state.transactions.find((y) => y.id === u.id);
+        if (x) { x.covered = Math.max(0, (Number(x.covered) || 0) - u.amount); if (!x.covered) { delete x.covered; delete x.coveredFrom; } }
+      });
+      delete tx.keepUses; delete tx.keepUsed; delete tx.keepFor;
+    }
     if (tx.useFor === 'emergency') sv.emergencyBalance = Math.max(0, (Number(sv.emergencyBalance) || 0) - tx.amount);
     if (tx.useFor === 'grow') sv.investSaved = Math.max(0, (Number(sv.investSaved) || 0) - tx.amount);
     if (tx.useFor === 'debt') {
@@ -3417,6 +3458,9 @@
         '<div><button class="ghost small" data-action="pass-undo">' + tr('It wasn’t passed on') + '</button></div></div>' : '') +
       (x.iouId || x.iouPay ? '<div class="callout"><span class="hint">' + tr('Money with {name} (People): not counted as income or spending.', { name: esc(((state.iou || []).find((i) => i.id === (x.iouId || x.iouPay)) || {}).name || '') }) + '</span></div>' : '') +
       (ui.iouStart && ui.iouStart.txId === x.id ? iouStartForm() : iouActions(x)) +
+      (flex && Core.ownPart(x) > 0 && Core.keptFor(state).length ? '<div class="iou-actions">' + Core.keptFor(state).slice(0, 3).map((k) =>
+        '<button class="ghost small" data-action="keep-use" data-id="' + esc(k.tx.id) + '" data-buy="' + esc(x.id) + '">' + tr('Paid from {name} ({left} left)', { name: esc(k.name), left: inr(k.left) }) + '</button>').join('') + '</div>' : '') +
+      (x.covered ? '<p class="hint">' + tr('{amount} of it was paid from money kept for it, so it doesn’t use your budgets.', { amount: inr(x.covered) }) + '</p>' : '') +
       notPaymentBox(x, flex || isIn || saved) +
       '</div></div>';
   }
@@ -3522,11 +3566,14 @@
     move: '<path d="M16 3l5 4.5L16 12V8.6H4V6.4h12zM8 12v3.4h12v2.2H8V21l-5-4.5z"/>',
     card: '<path d="M2 6a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v2H2zm0 4h20v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2zm3 5v1.6h5V15z"/>',
     tag: '<path d="M3 3h8.6l9.4 9.4-8.6 8.6L3 11.6zm4.5 6a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3z"/>',
+    family: '<path d="M8 3.5a3 3 0 1 1 0 6 3 3 0 0 1 0-6zm8.5 2a2.5 2.5 0 1 1 0 5 2.5 2.5 0 0 1 0-5zM2.5 20c0-3.3 2.5-6 5.5-6s5.5 2.7 5.5 6zm12-.1c0-2.1-.6-4-1.6-5.4.9-.6 2-.9 3.1-.9 2.8 0 5 2.4 5 5.4v.9z"/>',
+    gift: '<path d="M4 9h16v4H4zm1.5 4.5h5.7V21H5.5zm7.3 0h5.7V21h-5.7zM11.2 9V21h1.6V9zM12 8.6C9.5 4.4 6.2 5 6.6 7c.3 1.4 2.6 1.9 5.4 1.6zm0 0c2.5-4.2 5.8-3.6 5.4-1.6-.3 1.4-2.6 1.9-5.4 1.6z"/>',
   };
   const CAT_LOOK = {
     Groceries: ['cart', 'aqua'], 'Food & dining': ['food', 'magenta'], Travel: ['travel', 'blue'], Shopping: ['bag', 'violet'],
     Entertainment: ['ticket', 'green'], Health: ['heart', 'blue'], 'Personal care': ['drop', 'magenta'], Misc: ['dots', 'grey'],
     Bills: ['bolt', 'teal'], Savings: ['save', 'green'], Cash: ['cash', 'grey'], Emergency: ['alert', 'coral'],
+    Family: ['family', 'magenta'], Gifts: ['gift', 'violet'],
   };
 
   function catIcon(x) {
@@ -5023,7 +5070,7 @@
       '<div class="bar"><span style="width:' + fundPct.toFixed(1) + '%"></span></div></div>' +
       '<p class="hint">' + fundNote + '</p>' +
       '</section>' +
-      '', [
+      keptCard(), [
         { key: 'setaside', group: 'Save', icon: 'shield', label: 'This month’s set-aside', tone: 'mint',
           badge: setAside.length ? (recorded ? { text: '✓', tone: 'good' } : { text: shortInr(setAside.reduce((a, x) => a + x[1], 0)) }) : null, html: () =>
       '<section class="card"><div class="card-head">' + titled('This month’s set-aside', 'setaside') + '<span class="hint">' + tr('Cycle starting {date}', { date: fmtDate(cyc.start) }) + '</span></div>' +
@@ -5737,6 +5784,15 @@
         if (tx && tx.fromFund) state.savings.emergencyBalance = (Number(state.savings.emergencyBalance) || 0) + tx.amount;
         if (tx && tx.kind === 'cardconvert') Core.undoCardConvert(state, tx);
         if (tx && (tx.iouId || tx.iouPay)) Core.undoIouTx(state, tx);
+        // A purchase paid from kept money: that money is kept again.
+        if (tx && tx.coveredFrom) {
+          const k = state.transactions.find((y) => y.id === tx.coveredFrom);
+          if (k) {
+            const used = (k.keepUses || []).filter((u) => u.id === tx.id).reduce((a, u) => a + u.amount, 0);
+            k.keepUsed = Math.max(0, (Number(k.keepUsed) || 0) - used);
+            k.keepUses = (k.keepUses || []).filter((u) => u.id !== tx.id);
+          }
+        }
         // A deleted SMS entry stays deleted: the next scan doesn't bring it back.
         if (tx && tx.smsKey) state.smsIgnored = (state.smsIgnored || []).concat(tx.smsKey).slice(-500);
         state.transactions = state.transactions.filter((x) => x.id !== btn.dataset.id); save();
@@ -6031,6 +6087,7 @@
         toast('Notifications off'); break;
       case 'income-use': {
         const tx = state.transactions.find((x) => x.id === btn.dataset.id);
+        if (tx && btn.dataset.use === 'keep') { ui.keepForm = tx.id; break; }
         if (tx) {
           setIncomeUse(tx, btn.dataset.use, btn.dataset.debt);
           save();
@@ -6038,6 +6095,30 @@
           else celebrate(rewardMessage(btn.dataset.use, tx.amount, btn.dataset.debt, false));
         }
         break;
+      }
+      case 'keep-cancel': ui.keepForm = null; break;
+      case 'keep-save': {
+        const tx = state.transactions.find((x) => x.id === btn.dataset.id);
+        if (!tx) return;
+        setIncomeUse(tx, 'keep');
+        tx.keepFor = ((document.getElementById('keep-name') || {}).value || '').trim() || tx.note || tr('Something to buy');
+        tx.keepUsed = 0;
+        ui.keepForm = null; save();
+        toast(tr('{amount} kept for {name}. It’s in Grow until you use it.', { amount: inr(tx.amount), name: tx.keepFor }));
+        break;
+      }
+      case 'keep-use-open': ui.keepUse = btn.dataset.id; break;
+      case 'keep-use-cancel': ui.keepUse = null; break;
+      case 'keep-use': {
+        const tx = state.transactions.find((x) => x.id === btn.dataset.id);
+        const buyId = btn.dataset.buy || (document.getElementById('keep-buy') || {}).value;
+        if (!tx || !buyId) return;
+        const before = JSON.stringify(state);
+        const amount = Core.coverPurchase(state, tx.id, buyId);
+        if (!amount) return;
+        ui.keepUse = null; ui.editTx = null; save(); rerenderKeepScroll();
+        offerUndo(tr('{amount} from {name} covers what you bought', { amount: inr(amount), name: tx.keepFor }), before);
+        return;
       }
       case 'income-change': {
         const tx = state.transactions.find((x) => x.id === btn.dataset.id);

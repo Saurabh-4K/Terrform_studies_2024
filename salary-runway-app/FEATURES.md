@@ -390,6 +390,7 @@ Under **More details** on the Runway tab.
 - **Needs your check:** payments recorded from SMS that you haven't confirmed. Change the category or Paid from, then *Looks right* or *Not a payment*. Highlighted until done.
 - **Bills to pay:** bills that vary that are due, with *Paid*, plus bill payments from SMS to link to the right bill.
 - **Bank SMS:** see [Bank SMS reading](#6-bank-sms-reading).
+- **Family** (money for a spouse, parents or children to spend) and **Gifts** (presents, shagun) are spending categories too.
 - **Payments list:** this cycle or all. Shows where entries came from (SMS or widget) and whether they were paid by card. Changing a category makes the app remember it for that shop. *Delete* also undoes what an entry changed: a loan payment goes back on the loan, a fund move comes back out of the fund, a bill's due date returns to what it was, and an EMI is removed.
 
 ## 6. Bank SMS reading
@@ -427,6 +428,8 @@ For a refund, money from home, money returned, cashback, side income or extra pa
   - Any money in can be marked *Borrowed: I'll pay it back*, and any payment *I lent this*.
   - It moves the balance like any money but is never income or spending, so budgets stay right. Money you promised to pay back before payday is kept aside, unless money promised back to you first covers it; money owed to you counts only once it's back. Net worth counts both sides.
   - On a promised date: *Amit promised ₹26,000 by 27 Oct. Did it come back?* **Yes, all of it** · **Part of it** · **Not yet** (then a new date). Money coming back is asked about before money going out.
+- **Yours to keep:** commission for helping a friend, Diwali money from your father, a gift: pick *Side income*, *From family* or *Gift*, then what it does: keep it for this month, the emergency fund, a loan, or **Keep it for something to buy**.
+- **Keep it for something to buy** (*What is the ₹5,000 for? Diwali shopping*): it stays in the account but out of daily spending, so today's limit doesn't jump. Grow lists it (*Kept for something to buy*); when you buy it, **Use it** and pick the purchase (or *Paid from Diwali shopping* on the purchase itself). The purchase still shows where your money went, but it doesn't use your budgets or today's limit; what's left stays kept.
 - It raises the balance on the day it arrives.
 - **"What should this ₹X do?"** offers four choices, each with its effect in rupees:
   - **Keep it for this month:** raises today's amount, and shows the new run-out date if it changes

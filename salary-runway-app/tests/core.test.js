@@ -153,7 +153,7 @@ test('choices for money received come with facts and a suggestion', () => {
   });
   s.transactions.push({ id: 'in1', kind: 'in', date: '2026-10-05', amount: 5000, category: 'Money received', note: 'Rahul' });
   const o = Core.incomeOptions(s, 'in1', '2026-10-05');
-  assert.deepEqual(o.options.map((x) => x.use), ['spend', 'emergency', 'debt', 'grow']);
+  assert.deepEqual(o.options.map((x) => x.use), ['spend', 'emergency', 'debt', 'keep', 'grow']);
   assert.equal(o.recommended, 'debt');
   assert.ok(o.interestSaved > 0);
   // With little in the emergency fund, that comes first.
@@ -1740,4 +1740,33 @@ test('money between friends and family: no EMI, promised dates, chunks of any si
   assert.equal(Core.iouLeft(lent), 26000);
   // A promise that passed is late
   assert.deepEqual(Core.iouSummary(s, '2026-10-29').late.map((i) => i.name).sort(), ['Amit', 'Rahul']);
+});
+
+test('a gift kept for a purchase stays out of daily spending, then pays for the purchase', () => {
+  const t = '2026-10-26';
+  const make = () => baseState({ settings: { salary: 50000, payday: 1 }, balanceCheck: { date: '2026-10-23', amount: 1000 },
+    transactions: [{ id: 'g', kind: 'in', date: t, amount: 5000, category: 'From family', note: 'Father', useFor: 'keep', keepFor: 'Diwali shopping', keepUsed: 0 }] });
+  const none = Core.projectRunway(baseState({ settings: { salary: 50000, payday: 1 }, balanceCheck: { date: '2026-10-23', amount: 1000 } }), t);
+  const s = make();
+  let r = Core.projectRunway(s, t);
+  // In the account, but today's amount doesn't jump
+  assert.equal(r.balanceToday, none.balanceToday + 5000);
+  assert.equal(Math.round(r.dailyAllowance), Math.round(none.dailyAllowance));
+  assert.deepEqual(Core.keptFor(s).map((k) => [k.name, k.left]), [['Diwali shopping', 5000]]);
+  // Bought for ₹4,700 today: over today's amount, until the gift pays for it
+  s.transactions.push({ id: 'buy', date: t, amount: 4700, category: 'Shopping', note: 'Croma' });
+  assert.ok(Core.projectRunway(s, t).overToday > 0);
+  assert.equal(Core.coverPurchase(s, 'g', 'buy'), 4700);
+  r = Core.projectRunway(s, t);
+  assert.equal(r.overToday, 0);
+  assert.equal(r.spentToday, 0);
+  assert.equal(r.balanceToday, none.balanceToday + 300);
+  assert.equal(Math.round(r.dailyAllowance), Math.round(none.dailyAllowance));
+  assert.deepEqual(Core.keptFor(s).map((k) => k.left), [300]);
+  // Still where the money went: ₹4,700 on Shopping
+  assert.equal(Core.spendWhere(s, t, 'cycle').categories.find((c) => c.name === 'Shopping').spent, 4700);
+  // A second purchase takes only what's left
+  s.transactions.push({ id: 'buy2', date: t, amount: 1000, category: 'Gifts', note: 'Sweets' });
+  assert.equal(Core.coverPurchase(s, 'g', 'buy2'), 300);
+  assert.equal(Core.keptFor(s).length, 0);
 });

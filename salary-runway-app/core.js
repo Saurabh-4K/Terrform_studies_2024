@@ -455,6 +455,29 @@
       .filter((e) => e.amount > 0);
   }
 
+  // What a spending entry costs your own budgets: less what a gift kept for it paid.
+  function ownPart(t) { return Math.max(0, (Number(t.amount) || 0) - (Number(t.covered) || 0)); }
+
+  // Pays a purchase from money kept for it, as far as it goes. Returns the amount covered.
+  function coverPurchase(state, keepId, spendId) {
+    const k = state.transactions.find((t) => t.id === keepId && t.useFor === 'keep');
+    const x = state.transactions.find((t) => t.id === spendId && isFlexible(t));
+    if (!k || !x) return 0;
+    const amount = Math.min(k.amount - (Number(k.keepUsed) || 0), ownPart(x));
+    if (!(amount > 0)) return 0;
+    k.keepUsed = (Number(k.keepUsed) || 0) + amount;
+    k.keepUses = (k.keepUses || []).concat({ id: x.id, amount });
+    x.covered = (Number(x.covered) || 0) + amount;
+    x.coveredFrom = k.id;
+    return amount;
+  }
+
+  // Money kept for something to buy, not used yet: { tx, name, left }.
+  function keptFor(state) {
+    return state.transactions.filter((t) => isIncome(t) && t.useFor === 'keep' && t.amount - (Number(t.keepUsed) || 0) > 0)
+      .map((t) => ({ tx: t, name: t.keepFor || t.note || '', left: t.amount - (Number(t.keepUsed) || 0) }));
+  }
+
   /*
    * How much of a money-in entry stays in the account for spending.
    * useFor: null (not decided yet, so it stays) | 'spend' | 'emergency' |
@@ -463,6 +486,8 @@
    */
   function incomeKept(t) {
     if (!t.useFor || t.useFor === 'spend') return t.amount;
+    // Kept for something to buy (a Diwali gift for a purchase): never spending money; it pays for that purchase.
+    if (t.useFor === 'keep') return 0;
     if (t.useFor === 'debt') return t.amount - (Number(t.debtPaid) || 0);
     return 0;
   }
@@ -515,7 +540,8 @@
     const spendByDate = {};
     txns.forEach((t) => { spendByDate[t.date] = (spendByDate[t.date] || 0) + t.amount; });
     const incomes = incomeInRange(state.transactions, cycle).filter((t) => t.date <= todayIso);
-    incomes.forEach((t) => { spendByDate[t.date] = (spendByDate[t.date] || 0) - incomeKept(t); });
+    // Money kept for something stays in the account: all of it counts in the balance.
+    incomes.forEach((t) => { spendByDate[t.date] = (spendByDate[t.date] || 0) - (t.useFor === 'keep' ? t.amount : incomeKept(t)); });
     /*
      * Money with friends and family (borrowed, lent, paid back) and money
      * passed on: not income or spending, but it moves the balance, so it
@@ -545,11 +571,12 @@
     events.forEach((e) => { eventsByDate[e.date] = (eventsByDate[e.date] || 0) + e.amount; });
 
     const pastTxns = txns.filter((t) => t.date <= todayIso);
-    const spentToDate = sum(pastTxns, (t) => t.amount);
-    const spentToday = sum(pastTxns.filter((t) => t.date === todayIso), (t) => t.amount);
+    // A purchase paid from money kept for it (a gift) leaves the account, but not today's amount or the budgets.
+    const spentToDate = sum(pastTxns, ownPart);
+    const spentToday = sum(pastTxns.filter((t) => t.date === todayIso), ownPart);
     const paceSpend = sum(
       pastTxns.filter((t) => NON_PACE_CATEGORIES.indexOf(t.category) === -1 && (!anchor || t.date >= anchor.date)),
-      (t) => t.amount
+      ownPart
     );
     /*
      * The pace is the average over finished days only. Counting today as a
@@ -557,7 +584,7 @@
      * (Careful at 11 pm, Green at 12:05 am with nothing done). Today counts
      * as at least a usual day until it's over.
      */
-    const paceToday = sum(pastTxns.filter((t) => t.date === todayIso && NON_PACE_CATEGORIES.indexOf(t.category) === -1), (t) => t.amount);
+    const paceToday = sum(pastTxns.filter((t) => t.date === todayIso && NON_PACE_CATEGORIES.indexOf(t.category) === -1), ownPart);
     const daysDone = idxToday - aIdx;
     const remainingDays = N - 1 - idxToday;
     // With a balance check, extra money is shared over the days from that check.
@@ -598,20 +625,22 @@
     // account can cover after the bills still to come.
     const billsAhead = sum(events.filter((e) => e.date > todayIso), (e) => e.amount);
     // Today's amount is fixed for the day: what spending and saving today don't change.
-    const byMoney = Math.max(0, bal + spentToday + savedToday - billsAhead) / (remainingDays + 1);
+    // Money kept for something to buy is in the account but not to spend.
+    const kept = sum(state.transactions.filter((t) => isIncome(t) && t.useFor === 'keep' && t.date <= todayIso), (t) => Math.max(0, t.amount - (Number(t.keepUsed) || 0)));
+    const byMoney = Math.max(0, bal - kept + spentToday + savedToday - billsAhead) / (remainingDays + 1);
     // Never below zero: a limit of -₹50 means nothing, ₹0 says it.
     const byBudget = anchor
       ? Math.max(0, plan.flexTotal / N + (extraIn - (moved - savedToday)) / (N - aIdx))
       : Math.max(0, plan.flexTotal + extraIn - (moved - savedToday) - (paceSpend - spentToday)) / (remainingDays + 1);
     const dailyAllowance = Math.min(byMoney, byBudget);
     // The parts of today's limit, for "how is this calculated?".
-    const limit = { byMoney, byBudget, money: bal + spentToday + savedToday, bills: billsAhead, days: remainingDays + 1 };
+    const limit = { byMoney, byBudget, money: bal - kept + spentToday + savedToday, bills: billsAhead, days: remainingDays + 1, kept };
     // What is left of today's amount after spending and saving, and tomorrow's amount once today is counted.
     const usedToday = spentToday + savedToday;
     const leftToday = Math.max(0, dailyAllowance - usedToday);
     const overToday = Math.max(0, usedToday - dailyAllowance);
     const tomorrowAllowance = remainingDays > 0
-      ? Math.min(Math.max(0, bal - billsAhead) / remainingDays, anchor ? dailyBudget : planRate)
+      ? Math.min(Math.max(0, bal - kept - billsAhead) / remainingDays, anchor ? dailyBudget : planRate)
       : 0;
 
     const firstBelowZero = (key) => {
@@ -626,7 +655,7 @@
     return {
       cycle, plan, events, points, idxToday, remainingDays, anchor, anchorIdx: anchor ? aIdx : null, limit,
       spentToDate, spentToday, savedToday, flexLeft, extraIn, moved, billsAhead, paceRate, planRate, dailyAllowance, leftToday, overToday, tomorrowAllowance,
-      balanceToday: points[idxToday].actual,
+      balanceToday: points[idxToday].actual, kept,
       zeroPace: firstBelowZero('pace'),
       zeroPlan: firstBelowZero('plan'),
       endPace: last.actual !== null ? last.actual : last.pace,
@@ -654,7 +683,7 @@
     const planned = sum(r.plan.budgets.filter((b) => ESSENTIAL_CATEGORIES.indexOf(b.name) !== -1), (b) => b.amount) / N;
     const essentialPerDay = planned > 0 ? planned : recentDaily(state, todayIso, (t) => ESSENTIAL_CATEGORIES.indexOf(t.category) !== -1, 60);
     const billsAfter = (iso) => sum(r.events.filter((e) => e.date > iso), (e) => e.amount);
-    const money = r.balanceToday;
+    const money = r.balanceToday - (r.kept || 0);
     const needs = r.billsAhead + essentialPerDay * r.remainingDays;
     const needsLine = r.points.map((p, i) => (i < r.idxToday ? null : billsAfter(p.date) + essentialPerDay * (N - 1 - i)));
     const safeDaily = r.remainingDays > 0 ? Math.max(0, money - r.billsAhead) / r.remainingDays : 0;
@@ -1768,6 +1797,13 @@
       });
     }
 
+    // A gift meant for a purchase: kept out of daily spending until it's used.
+    options.push({
+      use: 'keep',
+      title: tr('Keep it for something to buy'),
+      detail: tr('It stays in your account, out of daily spending, until you buy it. Today’s amount stays {amount}.', { amount: rupeesIn(without.dailyAllowance) }),
+    });
+
     options.push({
       use: 'grow',
       title: tr('Set aside to invest'),
@@ -2136,7 +2172,8 @@
     const anchor = check && inCycle(check.date, cyc) && check.date <= todayIso ? check : null;
     const share = anchor ? (cyc.days - daysBetween(cyc.start, anchor.date)) / cyc.days : 1;
     const from = anchor ? anchor.date : cyc.start;
-    const spent = byCategory(spendInRange(state.transactions, cyc).filter((t) => t.date >= from && t.date <= todayIso));
+    const spent = byCategory(spendInRange(state.transactions, cyc).filter((t) => t.date >= from && t.date <= todayIso)
+      .map((t) => (t.covered ? Object.assign({}, t, { amount: ownPart(t) }) : t)));
     const moves = (state.budgetMoves || []).filter((m) => m.cycle === cyc.start);
     const own = {};
     (state.budgets || []).forEach((b) => { own[b.name] = b; });
@@ -2389,7 +2426,7 @@
         }
         if (t.wallet !== w.id) return;
         if (isPassedOn(t)) { bal += isIncome(t) ? t.amount : -t.amount; return; }
-        if (isIncome(t)) bal += incomeKept(t);
+        if (isIncome(t)) bal += t.useFor === 'keep' ? t.amount : incomeKept(t);
         else if (isFlexible(t) && !(t.paidFrom && t.paidFrom !== 'account')) bal -= t.amount;
         else if (isMove(t) || isBillPayment(t) || t.kind === 'cardpay') bal -= t.amount;
       });
@@ -2403,13 +2440,13 @@
   // Spent and saved on a day: saved money can't be spent either. Emergencies don't count against the day.
   function daySpent(state, date) {
     return sum(state.transactions.filter((x) =>
-      (isFlexible(x) && x.date === date && x.category !== 'Emergency' && !x.gap) || (isMove(x) && !x.setAside && (x.forDate || x.date) === date)), (x) => x.amount);
+      (isFlexible(x) && x.date === date && x.category !== 'Emergency' && !x.gap) || (isMove(x) && !x.setAside && (x.forDate || x.date) === date)), ownPart);
   }
 
   // Spending alone on a day: whether the day was won. Moving money to savings or a loan never makes a day "over".
   function daySpending(state, date) {
     // A gap found at a balance check isn't one day's spending.
-    return sum(state.transactions.filter((x) => isFlexible(x) && x.date === date && x.category !== 'Emergency' && !x.gap), (x) => x.amount);
+    return sum(state.transactions.filter((x) => isFlexible(x) && x.date === date && x.category !== 'Emergency' && !x.gap), ownPart);
   }
 
   // Days in [from, to]: won (within that day's limit), over, or not tracked (the app wasn't opened).
@@ -3037,7 +3074,7 @@
     salaryFor, salaryHistory, paydayReset, suggestUse, freedomDays, interestLeak, nextPaydayPreview,
     billShare, billPot, billsMonthly, billPaidIn, billDue, payBill, undoBillPayment, zoneStatus, ESSENTIAL_CATEGORIES,
     isCardTransfer, statementOn, dueAfter, cardOwedAt, cardReserve, cardStatus, emiQuote, revolveQuote, cardBillPlan,
-    recordCardPayment, addCardEmi, isPassedOn, passThroughPair, passOn, iouLeft, openIous, addIou, payIou, undoIouTx, iouSummary, iouEvents, cardEmiFromBooking, looksLikeCardBill, spendToCardPayment, convertCardBalance, answerCardDue, cardLateFee, cardRate, CARD_RATE, undoCardConvert, cardFreeDays, byCategory, DEFAULT_SPLIT,
+    recordCardPayment, keptFor, ownPart, coverPurchase, addCardEmi, isPassedOn, passThroughPair, passOn, iouLeft, openIous, addIou, payIou, undoIouTx, iouSummary, iouEvents, cardEmiFromBooking, looksLikeCardBill, spendToCardPayment, convertCardBalance, answerCardDue, cardLateFee, cardRate, CARD_RATE, undoCardConvert, cardFreeDays, byCategory, DEFAULT_SPLIT,
     isLoanCredit, borrowedThisCycle, borrowCheck, rolloverOptions, setTranslator,
     payoffOrder, tickDebts, debtJourney, lenderTasks, lastBorrowed,
     encryptBackup, openBackup, backupInfo, toB64, fromB64, isTransfer, walletBalances, goalStatus, goalsMonthly, budgetEnvelopes, netWorth, reportRange, budgetHistory, aiFacts, planFacts, fraudSignals, investReady, goalResult, weekStart,
