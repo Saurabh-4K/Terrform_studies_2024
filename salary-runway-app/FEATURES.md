@@ -233,6 +233,7 @@ Festivals, insurance, servicing, school fees: name, yearly amount and the month 
 Emergency fund, extra toward debts, and the Grow budget (money to invest).
 - **Automatic** by default, worked out from your own numbers:
   - about **20% of salary**, or up to 35% of what's left after fixed payments when money is tight
+  - never out of daily money: at least 10% of the salary stays for food, travel and the rest; with less left than that, nothing is set aside
   - the **emergency fund** gets a share until it holds 3 (or 6) months of needs
   - **loans at 15%+ interest** get the rest before the Grow budget does
 - The app explains each choice in a line ("Your Credit card costs about ₹2,975 a month in interest, so the extra goes there first").

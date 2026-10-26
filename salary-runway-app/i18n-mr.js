@@ -1718,4 +1718,10 @@
   "{amount} a month is set aside from {name}, but {name} is still in your loans": "{name} मधून दरमहा {amount} बाजूला ठेवले जातात, पण {name} अजून तुमच्या कर्जांमध्ये आहे",
   "This happens when a loan is removed (a duplicate, say) and kept as paid off. It takes {amount} a month from your daily spending.": "असे तेव्हा होते जेव्हा कर्ज (उदा. दुहेरी नोंद) काढले जाते आणि फिटले म्हणून ठेवले जाते. यामुळे रोजच्या खर्चातून दरमहा {amount} जातात.",
   "Stop it": "थांबवा",
+  "{name} credit card bill": "{name} क्रेडिट कार्ड बिल",
+  "Paying a card bill isn’t spending: what you bought on the card already counted. Link it to the card so it counts once.": "कार्डचे बिल भरणे हा खर्च नाही: कार्डवर घेतलेले आधीच मोजले आहे. ते एकदाच मोजले जावे म्हणून कार्डशी जोडा.",
+  "Counted once now: the {name} bill paid on {date}.": "आता एकदाच मोजले: {name} चे बिल {date} रोजी भरले.",
+  "Now a {name} bill payment on {date}, counted once.": "आता {date} रोजी {name} बिल भरणा, एकदाच मोजला.",
+  "Your last statement was on {date}, so that is an older bill. Enter what is due on the {date} statement (due {due}), or 0 if it is paid.": "तुमचे शेवटचे स्टेटमेंट {date} रोजी आले, म्हणून हे जुने बिल आहे. {date} च्या स्टेटमेंटवर देय रक्कम (देय {due}) टाका, किंवा भरले असल्यास 0.",
+  "Only {amount} is left after fixed payments and loan minimums, so all of it stays for daily spending and nothing is set aside. The Debts tab shows what clearing the costliest loan frees up.": "ठरलेले खर्च आणि कर्जांचे किमान हप्ते गेल्यावर फक्त {amount} उरतात, म्हणून ते सर्व रोजच्या खर्चासाठी राहतात आणि काहीही बाजूला ठेवले जात नाही. सर्वात महाग कर्ज फेडल्यावर किती मोकळे होते ते कर्ज टॅबमध्ये दिसते.",
 };

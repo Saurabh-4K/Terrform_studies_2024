@@ -938,9 +938,11 @@
     const bills = state.bills || [];
     // Only bills with an amount: a bill just added in Plan starts at ₹0 and isn't asking to be paid.
     const due = bills.filter((b) => (Number(b.estimate) || 0) > 0 && Core.billDue(b, cyc) && !Core.billPaidIn(state, b, cyc));
-    const unlinked = bills.length
-      ? state.transactions.filter((x) => Core.isFlexible(x) && x.category === 'Bills' && Core.inCycle(x.date, cyc))
-      : [];
+    // Bills payments to link: to a bill that varies, or, for a card bill noted as spending, to the card.
+    const named = bills.filter((b) => (b.name || '').trim());
+    const cards = state.cards || [];
+    const unlinked = state.transactions.filter((x) => Core.isFlexible(x) && x.category === 'Bills' && Core.inCycle(x.date, cyc) &&
+      (named.length || (cards.length && Core.looksLikeCardBill(x.note))));
     if (!due.length && !unlinked.length) return '';
     const rows = due.map((b) => {
       const late = b.nextDue < t;
@@ -958,11 +960,17 @@
       }
       return html;
     });
-    const links = unlinked.map((x) =>
-      '<div class="bill-item"><div class="check-top"><div class="grow"><div class="title">' + esc(x.note || tr('Bill payment')) + '</div>' +
-      '<div class="meta">' + fmtDate(x.date) + ' · ' + inr(x.amount) + ' · ' + tr('which bill is this?') + '</div></div></div>' +
-      '<div class="row"><select id="bill-link-' + esc(x.id) + '" aria-label="' + tr('Bill') + '">' + bills.map((b) => '<option value="' + esc(b.id) + '">' + esc(b.name) + '</option>').join('') + '</select>' +
-      '<button data-action="bill-link" data-id="' + esc(x.id) + '">' + tr('Link') + '</button></div></div>');
+    const links = unlinked.map((x) => {
+      const card = cards.length && Core.looksLikeCardBill(x.note);
+      const opts = cards.map((c) => '<option value="card:' + esc(c.id) + '">' + esc(tr('{name} credit card bill', { name: c.name })) + '</option>').join('');
+      return '<div class="bill-item"><div class="check-top"><div class="grow"><div class="title">' + esc(x.note || tr('Bill payment')) + '</div>' +
+        '<div class="meta">' + fmtDate(x.date) + ' · ' + inr(x.amount) + ' · ' + tr('which bill is this?') + '</div>' +
+        (card ? '<p class="hint">' + tr('Paying a card bill isn’t spending: what you bought on the card already counted. Link it to the card so it counts once.') + '</p>' : '') +
+        '</div></div>' +
+        '<div class="row"><select id="bill-link-' + esc(x.id) + '" aria-label="' + tr('Bill') + '">' + (card ? opts : '') +
+        named.map((b) => '<option value="' + esc(b.id) + '">' + esc(b.name) + '</option>').join('') + (card ? '' : opts) + '</select>' +
+        '<button data-action="bill-link" data-id="' + esc(x.id) + '">' + tr('Link') + '</button></div></div>';
+    });
     return '<section class="card bills-card"><div class="card-head">' + titled('Bills to pay', 'bills') + '<span class="hint">' + tr('Amounts vary') + '</span></div>' +
       rows.join('') + links.join('') + '</section>';
   }
@@ -4124,6 +4132,15 @@
     if (!Number(v('cf-due'))) return fail('cf-due', tr('Enter the statement day and due day from your card statement.'));
     if ((state.cards || []).some((c) => c.last4 === last4 && c.id !== ui.cardForm.id)) return fail('cf-last4', tr('You already have a card ending {last4}.', { last4 }));
     const fields = { name, last4, limit: Math.max(0, Number(v('cf-limit')) || 0), statementDay: day(v('cf-stmt')), dueDay: day(v('cf-due')) };
+    // A due date from before the last statement is the bill before last, and the latest bill would be missed.
+    const owedDue = v('cf-owed-due');
+    if (!ui.cardForm.id && Number(v('cf-owed')) > 0 && owedDue) {
+      const lastSt = Core.statementOn(fields, today());
+      if (owedDue <= lastSt) {
+        return fail('cf-owed-due', tr('Your last statement was on {date}, so that is an older bill. Enter what is due on the {date} statement (due {due}), or 0 if it is paid.',
+          { date: fmtDate(lastSt), due: fmtDate(Core.dueAfter(fields, lastSt)) }));
+      }
+    }
     state.cards = state.cards || [];
     let card = ui.cardForm.id ? state.cards.find((c) => c.id === ui.cardForm.id) : null;
     if (card) Object.assign(card, fields);
@@ -5343,6 +5360,14 @@
       case 'bill-link': {
         const tx = state.transactions.find((x) => x.id === btn.dataset.id);
         const billId = document.getElementById('bill-link-' + btn.dataset.id).value;
+        if (billId.indexOf('card:') === 0) {
+          const res = Core.spendToCardPayment(state, btn.dataset.id, billId.slice(5));
+          if (!res) return;
+          save();
+          toast(tr(res.merged ? 'Counted once now: the {name} bill paid on {date}.' : 'Now a {name} bill payment on {date}, counted once.',
+            { name: (state.cards.find((c) => c.id === res.tx.cardId) || {}).name || '', date: fmtDate(res.tx.date) }));
+          break;
+        }
         const b = (state.bills || []).find((x) => x.id === billId);
         if (!tx || !b) return;
         state.transactions = state.transactions.filter((x) => x !== tx);

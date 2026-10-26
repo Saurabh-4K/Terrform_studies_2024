@@ -1718,4 +1718,10 @@
   "{amount} a month is set aside from {name}, but {name} is still in your loans": "{name} से हर महीने {amount} अलग रखे जाते हैं, पर {name} अभी भी आपके कर्ज़ों में है",
   "This happens when a loan is removed (a duplicate, say) and kept as paid off. It takes {amount} a month from your daily spending.": "ऐसा तब होता है जब कोई कर्ज़ (जैसे दोहरी एंट्री) हटाया जाए और चुका हुआ मान लिया जाए. इससे रोज़ के खर्च से हर महीने {amount} जाते हैं.",
   "Stop it": "रोकें",
+  "{name} credit card bill": "{name} क्रेडिट कार्ड बिल",
+  "Paying a card bill isn’t spending: what you bought on the card already counted. Link it to the card so it counts once.": "कार्ड का बिल भरना खर्च नहीं है: कार्ड पर खरीदा गया पहले ही गिना जा चुका है. इसे कार्ड से जोड़ें ताकि यह एक बार गिना जाए.",
+  "Counted once now: the {name} bill paid on {date}.": "अब एक बार गिना गया: {name} का बिल {date} को भरा.",
+  "Now a {name} bill payment on {date}, counted once.": "अब {date} को {name} बिल भुगतान, एक बार गिना गया.",
+  "Your last statement was on {date}, so that is an older bill. Enter what is due on the {date} statement (due {due}), or 0 if it is paid.": "आपका आखिरी स्टेटमेंट {date} को आया था, इसलिए यह पुराना बिल है. {date} के स्टेटमेंट पर बकाया राशि (देय {due}) डालें, या भर दिया हो तो 0.",
+  "Only {amount} is left after fixed payments and loan minimums, so all of it stays for daily spending and nothing is set aside. The Debts tab shows what clearing the costliest loan frees up.": "तय भुगतान और कर्ज़ों की न्यूनतम किस्तों के बाद सिर्फ़ {amount} बचते हैं, इसलिए सब रोज़ के खर्च के लिए रहता है और कुछ अलग नहीं रखा जाता. सबसे महंगा कर्ज़ चुकाने से कितना खाली होता है, यह कर्ज़ टैब में दिखता है.",
 };

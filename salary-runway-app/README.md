@@ -96,7 +96,7 @@ Pay isn't the same every month. In the first week of each salary cycle (or when 
 The Plan tab shows this month's pay and **your pay over the year**: a 12-month chart with good and bad months coloured, the reasons, and totals for extra and less.
 
 ### Automatic budgets
-1. **Set-asides** come out first: about 20% of salary (less when money is tight). The emergency fund gets a share until it holds 3 or 6 months of needs. Debts at 15%+ interest get the rest before the Grow budget does.
+1. **Set-asides** come out first: about 20% of salary (less when money is tight), and never out of the 10% of salary kept for daily life. The emergency fund gets a share until it holds 3 or 6 months of needs. Debts at 15%+ interest get the rest before the Grow budget does.
 2. **Flexible budgets** share everything left by default weights: Groceries 30%, Food & dining 15%, Travel 15%, Shopping 10%, Entertainment 10%, Health 5%, Personal care 5%, Misc 10%. Categories you add get 5%.
 3. Type in your own amount and that category is marked *Set by you*; the automatic ones are re-shared from what remains. **Share everything out automatically** undoes your edits.
 

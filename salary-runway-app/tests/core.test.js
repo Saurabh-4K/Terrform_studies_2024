@@ -1436,3 +1436,70 @@ test('a card bill paid before a balance check, answered later, is not taken off 
   Core.answerCardDue(future, 'c1', 'full', 0, t, '2026-11-02');
   assert.equal(future.transactions.find((x) => x.kind === 'cardpay').date, t);
 });
+
+test('a card added after its bill was paid: paying on the due date shows paid, not overdue', () => {
+  // Added on 25 Oct with the bill due 3 Oct; "paid on 3 Oct" is before the card was added.
+  const s = baseState({
+    cards: [{ id: 'c1', name: 'HDFC card', last4: '1234', limit: 90000, statementDay: 14, dueDay: 3, created: '2026-10-25',
+      setupStatement: 6000, setupDueDate: '2026-10-03', setupUnbilled: 0 }],
+    transactions: [{ id: 'cp1', kind: 'cardpay', cardId: 'c1', date: '2026-10-03', amount: 6000 }],
+  });
+  const st = Core.cardStatus(s, s.cards[0], '2026-10-26');
+  assert.equal(st.remaining, 0);
+  assert.equal(st.overdue, false);
+  // A payment for an older bill, before that statement, doesn't count toward it
+  s.transactions[0].date = '2026-09-03';
+  assert.equal(Core.cardStatus(s, s.cards[0], '2026-10-26').overdue, true);
+});
+
+test('a card bill noted as spending becomes a card payment, merged with the one already recorded', () => {
+  const make = () => baseState({
+    cards: [{ id: 'c1', name: 'HDFC card', last4: '1234', limit: 90000, statementDay: 14, dueDay: 3, created: '2026-10-25',
+      setupStatement: 6000, setupDueDate: '2026-10-03' }],
+    transactions: [
+      { id: 'sp', date: '2026-10-03', amount: 6000, category: 'Bills', note: 'Credit Card', source: 'manual' },
+      { id: 'cp1', kind: 'cardpay', cardId: 'c1', date: '2026-10-26', amount: 6000, source: 'account' },
+    ],
+  });
+  assert.equal(Core.looksLikeCardBill('Credit Card'), true);
+  assert.equal(Core.looksLikeCardBill('HDFC CC bill'), true);
+  assert.equal(Core.looksLikeCardBill('Electricity'), false);
+  // Already recorded: that payment moves to the real date; the spending goes
+  const s = make();
+  const r = Core.spendToCardPayment(s, 'sp', 'c1');
+  assert.equal(r.merged, true);
+  assert.deepEqual(s.transactions.map((t) => [t.id, t.date]), [['cp1', '2026-10-03']]);
+  assert.equal(Core.cardStatus(s, s.cards[0], '2026-10-26').overdue, false);
+  // Not recorded yet: the spending itself turns into the card payment
+  const n = make();
+  n.transactions = n.transactions.filter((t) => t.id !== 'cp1');
+  const r2 = Core.spendToCardPayment(n, 'sp', 'c1');
+  assert.equal(r2.merged, false);
+  assert.equal(n.transactions.length, 1);
+  assert.equal(n.transactions[0].kind, 'cardpay');
+  assert.equal(n.transactions[0].date, '2026-10-03');
+  assert.equal(Core.spendInRange(n.transactions, { start: '2026-09-28', next: '2026-10-28' }).length, 0);
+});
+
+test('set-asides never take the money daily life needs', () => {
+  // ₹98,000 salary, ₹95,137 already gone on fixed payments and EMIs: ₹2,863 left.
+  const s = baseState({
+    settings: { salary: 98000, payday: 28 },
+    fixed: [{ id: 'f1', name: 'Rent', amount: 44350, dueDay: 28 }],
+    debts: [{ id: 'd1', name: 'Card EMI', balance: 24705, rate: 22.44, minPayment: 6010, dueDay: 3 },
+      { id: 'd2', name: 'Personal loan', balance: 1011703, rate: 11, minPayment: 44777, dueDay: 7 }],
+    budgets: ['Groceries', 'Food & dining', 'Travel', 'Shopping', 'Entertainment', 'Health', 'Personal care', 'Misc'].map((name, i) => ({ id: 'b' + i, name, amount: 0, auto: true })),
+    savings: { auto: true, emergencyBalance: 0, emergencyTargetMonths: 6 },
+  });
+  const sv = Core.autoSavings(s, '2026-10-26');
+  assert.equal(sv.emergencyMonthly + sv.debtExtra + sv.investMonthly, 0);
+  const plan = Core.monthlyPlan(s, '2026-10-26');
+  assert.equal(plan.flexTotal, 2863);
+  // A small pool is shared in tens, so Health isn't rounded down to nothing
+  const health = plan.budgets.find((b) => b.name === 'Health');
+  assert.ok(health.amount >= 100, 'Health gets ' + health.amount);
+  assert.equal(plan.budgets.reduce((t, b) => t + b.amount, 0), 2863);
+  // With room to spare, the usual set-aside is unchanged
+  s.debts[1].minPayment = 14777;
+  assert.ok(Core.autoSavings(s, '2026-10-26').emergencyMonthly > 0);
+});

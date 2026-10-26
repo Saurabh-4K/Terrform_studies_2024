@@ -590,6 +590,18 @@
     return (Number(card.setupStatement) || 0) + (Number(card.setupUnbilled) || 0);
   }
 
+  /*
+   * Payments count toward the bill owed when the card was added from that
+   * bill's statement on. A card added on 25 Oct with a bill due 3 Oct, paid
+   * on 3 Oct, is paid, not overdue.
+   */
+  function setupFrom(card) {
+    const created = card.created || '9999-12-31';
+    if (!card.setupDueDate) return created;
+    const st = statementOn(card, addDays(card.setupDueDate, -1));
+    return st < created ? st : created;
+  }
+
   // What the card owes the bank at the end of a date.
   function cardOwedAt(state, card, iso) {
     return setupOwed(card) +
@@ -614,7 +626,8 @@
 
   // Bills for what was owed before the card was added, until paid.
   function cardLegacyEvents(state, card, todayIso) {
-    const paid = sum(cardPayments(state, card).filter((t) => t.date <= todayIso), (t) => t.amount);
+    const from = setupFrom(card);
+    const paid = sum(cardPayments(state, card).filter((t) => t.date >= from && t.date <= todayIso), (t) => t.amount);
     const statementLeft = Math.max(0, (Number(card.setupStatement) || 0) - paid);
     const unbilledLeft = Math.max(0, setupOwed(card) - paid) - statementLeft;
     const out = [];
@@ -643,7 +656,8 @@
       statementDate = null;
       total = Number(card.setupStatement) || 0;
       due = card.setupDueDate || dueAfter(card, lastSt);
-      paidSince = sum(pays.filter((t) => t.date >= created), (t) => t.amount);
+      const from = setupFrom(card);
+      paidSince = sum(pays.filter((t) => t.date >= from), (t) => t.amount);
     } else {
       statementDate = lastSt;
       total = Math.max(0, cardOwedAt(state, card, lastSt));
@@ -751,6 +765,31 @@
     const tx = { id: newId('cp'), kind: 'cardpay', cardId, date: dateIso, amount: Math.round(Number(amount) || 0), note: card.name + ' bill payment', source: source || 'manual' };
     state.transactions.push(tx);
     return tx;
+  }
+
+  // A payment's note that reads like paying a credit card bill.
+  function looksLikeCardBill(note) {
+    return /credit\s*card|card\s*bill|cc\s*bill|\bcc\b/i.test(String(note || ''));
+  }
+
+  /*
+   * A card bill noted as spending counts twice: what was bought on the card
+   * already counted. It becomes a card payment instead. When the same payment
+   * is already recorded (from "did you pay?"), that one takes this one's date.
+   */
+  function spendToCardPayment(state, txId, cardId) {
+    const tx = state.transactions.find((t) => t.id === txId);
+    const card = (state.cards || []).find((c) => c.id === cardId);
+    if (!tx || !card || !isFlexible(tx)) return null;
+    const amount = Math.round(Number(tx.amount) || 0);
+    const twin = state.transactions.find((t) => t.kind === 'cardpay' && t.cardId === cardId && Math.round(t.amount) === amount &&
+      Math.abs(daysBetween(t.date, tx.date)) <= 40);
+    state.transactions = state.transactions.filter((t) => t !== tx);
+    if (twin) { twin.date = tx.date; return { tx: twin, merged: true }; }
+    const pay = { id: newId('cp'), kind: 'cardpay', cardId, date: tx.date, amount, note: card.name + ' bill payment', source: tx.source || 'manual' };
+    if (tx.smsKey) pay.smsKey = tx.smsKey;
+    state.transactions.push(pay);
+    return { tx: pay, merged: false };
   }
 
   /*
@@ -863,6 +902,8 @@
    * Monthly set-asides worked out from the user's own numbers. Budgeting
    * only: it decides how much to put aside, never what to invest it in.
    * - about 20% of salary (less when money is tight)
+   * - never out of the money daily life needs: at least 10% of the salary
+   *   stays for food, travel and the rest, or nothing is set aside
    * - emergency fund first, until it holds a few months of needs
    * - debts at 15%+ interest get the rest before the Grow budget does
    */
@@ -878,7 +919,12 @@
       return { emergencyMonthly: 0, investMonthly: 0, debtExtra: 0, notes, emergencyTarget: 0 };
     }
 
-    const pool = round100(Math.min(salary * 0.2, available * 0.35));
+    const living = salary * 0.1;
+    const pool = Math.floor(Math.min(salary * 0.2, available * 0.35, Math.max(0, available - living)) / 100) * 100;
+    if (pool <= 0) {
+      notes.push(tr('Only {amount} is left after fixed payments and loan minimums, so all of it stays for daily spending and nothing is set aside. The Debts tab shows what clearing the costliest loan frees up.', { amount: rupees(available) }));
+      return { emergencyMonthly: 0, investMonthly: 0, debtExtra: 0, notes, emergencyTarget: (Number(state.savings.emergencyTargetMonths) || 3) * (fixed + mins + available) };
+    }
     const expensive = state.debts.filter((d) => d.balance > 0 && d.rate >= 15);
     const months = Number(state.savings.emergencyTargetMonths) || 3;
     const target = months * (fixed + mins + available - pool);
@@ -905,7 +951,8 @@
    * Shares the salary out. Whatever is left after fixed payments, debt
    * minimums, yearly costs, set-asides and any budgets the user typed in
    * goes to the automatic budgets by weight (Groceries 30%, Travel 15%, ...).
-   * Amounts are whole hundreds; the rounding remainder goes to the largest.
+   * Amounts are whole hundreds (tens when there is little to share, so a
+   * small budget like Health isn't rounded to ₹0); the remainder goes to the largest.
    */
   function allocate(state, todayIso) {
     const sv = state.savings;
@@ -955,7 +1002,8 @@
     const autos = state.budgets.filter((b) => b.auto);
     const wTotal = sum(autos, (b) => weightFor(b.name));
     const amounts = {};
-    autos.forEach((b) => { amounts[b.id] = Math.floor((autoPool * weightFor(b.name)) / wTotal / 100) * 100; });
+    const step = autoPool >= 10000 ? 100 : 10;
+    autos.forEach((b) => { amounts[b.id] = Math.floor((autoPool * weightFor(b.name)) / wTotal / step) * step; });
     if (autos.length) {
       const largest = autos.reduce((a, b) => (weightFor(b.name) > weightFor(a.name) ? b : a));
       amounts[largest.id] += autoPool - sum(autos, (b) => amounts[b.id]);
@@ -2732,7 +2780,7 @@
     salaryFor, salaryHistory, paydayReset, suggestUse, freedomDays, interestLeak, nextPaydayPreview,
     billShare, billPot, billsMonthly, billPaidIn, billDue, payBill, undoBillPayment, zoneStatus, ESSENTIAL_CATEGORIES,
     isCardTransfer, statementOn, dueAfter, cardOwedAt, cardReserve, cardStatus, emiQuote, revolveQuote, cardBillPlan,
-    recordCardPayment, convertCardBalance, answerCardDue, cardLateFee, cardRate, CARD_RATE, undoCardConvert, cardFreeDays, byCategory, DEFAULT_SPLIT,
+    recordCardPayment, looksLikeCardBill, spendToCardPayment, convertCardBalance, answerCardDue, cardLateFee, cardRate, CARD_RATE, undoCardConvert, cardFreeDays, byCategory, DEFAULT_SPLIT,
     isLoanCredit, borrowedThisCycle, borrowCheck, rolloverOptions, setTranslator,
     payoffOrder, tickDebts, debtJourney, lenderTasks, lastBorrowed,
     encryptBackup, openBackup, backupInfo, toB64, fromB64, isTransfer, walletBalances, goalStatus, goalsMonthly, budgetEnvelopes, netWorth, reportRange, budgetHistory, aiFacts, planFacts, fraudSignals, investReady, goalResult, weekStart,
