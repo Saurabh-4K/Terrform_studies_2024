@@ -1113,3 +1113,6 @@ button.tx-title { display: flex; align-items: center; gap: 6px; background: none
 @media (prefers-reduced-motion: reduce) { .ai-busy { animation: none; } }
 .ai-facts { white-space: pre-wrap; font-family: inherit; font-size: 0.8rem; line-height: 1.4; max-height: 280px; overflow: auto; background: var(--surface); border-radius: 10px; padding: 10px; margin: 6px 0 0; }
 .ai-settings .callout b { margin-top: 4px; }
+.not-payment { margin-top: 14px; }
+.check-row { display: flex; gap: 8px; align-items: center; font-size: 0.95rem; }
+.check-row input { width: 18px; height: 18px; }

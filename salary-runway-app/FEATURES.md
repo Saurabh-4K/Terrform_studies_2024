@@ -567,6 +567,7 @@ Small habits that quietly cost a lot: cigarettes, liquor, tea and snacks, food d
   - A payment shows *₹450 paid to Swiggy · Tap to check the category*. On a card: *₹750 paid via HDFC card · Borrowed money: tap to verify the category*.
   - Tapping opens **Check this payment**: the SMS text, category, **Paid from**, a note, and *Save* or *Not a payment*.
   - Payments you don't check are recorded anyway and wait under **Needs your check**.
+  - **Not a payment** (an OTP, a payment request, a failed or reversed payment, an offer): in *Needs your check*, or by tapping any payment from SMS. It comes out of spending with Undo, and the same SMS never comes back on a later scan; *Also skip SMS from {place}* leaves that place's SMS out from now on (listed on the Bank SMS page, each with ✕ to count it again). Deleting an SMS payment with ✕ also keeps it from coming back.
   - **Salary SMS:** *Payday! ₹57,500 credited · Tap to review your monthly plan*.
   - **Card statement:** "HDFC card bill: ₹12,500 · Tap to plan the payment".
   - Card bill payments are recorded quietly.

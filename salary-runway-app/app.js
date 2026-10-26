@@ -2561,11 +2561,11 @@
                 ? '<button class="ghost" data-action="alerts-off">' + tr('Turn off') + '</button>'
                 : '<button class="primary" data-action="alerts-on">' + tr('Turn on notifications') + '</button>') + '</div></div>'
             : '') +
-          smsPreview() + '</section>'
+          smsPreview() + skippedPlaces() + '</section>'
         : '<section class="card"><div class="card-head">' + titled('Import from bank SMS', 'sms') + '</div>' +
           '<label class="field" for="sms-text">' + tr('Messages') + '<textarea id="sms-text" placeholder="Rs.450.00 debited from a/c **1234 on 21-10-26 to VPA swiggy@icici…">' + esc(ui.smsText) + '</textarea></label>' +
           '<div class="row"><button class="primary" data-action="sms-read">' + tr('Read messages') + '</button><button data-action="sms-sample">' + tr('Paste sample messages') + '</button></div>' +
-          smsPreview() +
+          smsPreview() + skippedPlaces() +
           '</section>') },
       ]);
   }
@@ -2621,7 +2621,7 @@
       const parsed = Core.parseSms(text, state.merchantRules, day);
       const key = Core.smsKey(text);
       if (parsed && parsed.type === 'credit' && parsed.salary) noteSalary(parsed);
-      const duplicate = !!parsed && (known.has(key) || state.transactions.some((x) => !x.kind && (
+      const duplicate = !!parsed && (known.has(key) || (parsed.type !== 'statement' && smsSkipped(parsed.merchant)) || state.transactions.some((x) => !x.kind && (
         x.date === parsed.date && x.amount === parsed.amount &&
         Core.normalizeMerchant(x.note) === Core.normalizeMerchant(parsed.merchant))));
       const unknownCard = !!parsed && (parsed.type === 'statement' || parsed.type === 'cardpayment') && !findCard(parsed.last4);
@@ -2649,6 +2649,48 @@
     return pool.sort((a, b) => Math.abs(Core.daysBetween(a.date, p.date)) - Math.abs(Core.daysBetween(b.date, p.date)))[0] || null;
   }
 
+  // Places whose bank SMS are never payments (an app's OTPs or payment requests, say).
+  // Places marked "skip SMS from now on", each with a way back.
+  function skippedPlaces() {
+    const list = state.smsSkip || [];
+    if (!list.length) return '';
+    return '<div class="callout"><b>' + tr('SMS skipped from') + '</b>' +
+      '<div class="row">' + list.map((x) => {
+        const name = (state.smsSkipNames || {})[x] || x;
+        return '<button class="ghost small" data-action="sms-unskip" data-shop="' + esc(x) + '" aria-label="' + esc(tr('Stop skipping {shop}', { shop: name })) + '">' + esc(name) + ' ✕</button>';
+      }).join('') + '</div></div>';
+  }
+
+  // Compared without spaces: one bank writes "Sukhwani Petroleum", another "sukhwanipetroleum@okaxis".
+  function skipKey(merchant) { return Core.normalizeMerchant(merchant).replace(/\s+/g, ''); }
+  function smsSkipped(merchant) {
+    const shop = skipKey(merchant);
+    return !!shop && (state.smsSkip || []).indexOf(shop) !== -1;
+  }
+
+  /*
+   * An SMS-made entry that isn't a payment: taken out, with whatever it changed
+   * undone, and its SMS remembered so a later scan doesn't bring it back. With
+   * skipShop, SMS from that place are left out from now on.
+   */
+  function notPayment(tx, skipShop) {
+    const before = JSON.stringify(state);
+    // For a problem report: which readings were wrong, so the SMS reader can learn.
+    logEvent('notpayment', { shop: logText(tx.note), amount: tx.amount, kind: tx.kind || 'spend', category: tx.category, skipShop: !!skipShop });
+    if (Core.isIncome(tx) || Core.isMove(tx)) undoIncomeUse(tx);
+    if (tx.smsKey) state.smsIgnored = (state.smsIgnored || []).concat(tx.smsKey).slice(-500);
+    const shop = skipKey(tx.note);
+    if (skipShop && shop && (state.smsSkip || []).indexOf(shop) === -1) {
+      state.smsSkip = (state.smsSkip || []).concat(shop).slice(-200);
+      state.smsSkipNames = Object.assign({}, state.smsSkipNames, { [shop]: tx.note });
+    }
+    state.transactions = state.transactions.filter((x) => x !== tx);
+    ui.editTx = null;
+    save();
+    rerenderKeepScroll();
+    offerUndo(skipShop && shop ? tr('Left out. SMS from {shop} are skipped from now on.', { shop: tx.note }) : tr('Left out. It won’t come back from SMS.'), before);
+  }
+
   // SMS keys already recorded: transactions and card statements.
   function knownSmsKeys() {
     return new Set(state.transactions.map((x) => x.smsKey)
@@ -2662,6 +2704,9 @@
    * chosen in the pop-up). Returns false if nothing was recorded.
    */
   function recordSms(p, o) {
+    // Marked "not a payment" before, or from a place whose SMS are skipped.
+    if (o.key && (state.smsIgnored || []).indexOf(o.key) !== -1) return false;
+    if (p.type !== 'statement' && smsSkipped(p.merchant)) return false;
     const chosen = o.cardId && o.cardId !== 'account' ? (state.cards || []).find((c) => c.id === o.cardId) : null;
     const card = chosen || findCard(p.last4);
     if (p.type === 'statement') {
@@ -3165,6 +3210,16 @@
     return Core.isBillPayment(x) || Core.isCardTransfer(x);
   }
 
+  // From a bank SMS that wasn't really a payment: an OTP, a request, a failed payment, an offer.
+  function notPaymentBox(x, can) {
+    if (!can || !(x.smsKey || x.source === 'sms')) return '';
+    const shop = Core.normalizeMerchant(x.note) && x.note !== 'Bank payment' ? x.note : '';
+    return '<div class="callout not-payment"><b>' + tr('Not a payment?') + '</b>' +
+      '<span class="hint">' + tr('Read from a bank SMS that wasn’t one: an OTP, a payment request, a failed or reversed payment, or an offer. It comes out of your spending and won’t come back from SMS.') + '</span>' +
+      (shop ? '<label class="check-row" for="np-skip"><input type="checkbox" id="np-skip"> ' + tr('Also skip SMS from {shop} from now on', { shop: esc(shop) }) + '</label>' : '') +
+      '<div><button class="danger" data-action="tx-not-payment">' + tr('It’s not a payment') + '</button></div></div>';
+  }
+
   function editModal() {
     const x = ui.editTx && state.transactions.find((t) => t.id === ui.editTx);
     if (!x) return '';
@@ -3196,6 +3251,7 @@
       (flex && ui.split && ui.split.id === x.id ? splitEditor(x) : flex ? '<button class="link" data-action="split-open">' + tr('Split this payment into categories') + '</button>' : '') +
       (ui.editError ? '<p class="bad" role="alert">' + ui.editError + '</p>' : '') +
       '<div class="row"><button class="primary" data-action="edit-save">' + tr('Save changes') + '</button><button class="ghost" data-action="edit-cancel">' + tr('Cancel') + '</button></div>' +
+      notPaymentBox(x, flex || isIn || saved) +
       '</div></div>';
   }
 
@@ -5187,6 +5243,12 @@
         toast(tr('{amount} due {date} on {name}', { amount: inr(c.setupStatement), date: fmtDate(c.setupDueDate), name: c.name }));
         break;
       }
+      case 'sms-unskip': {
+        const name = (state.smsSkipNames || {})[btn.dataset.shop] || btn.dataset.shop;
+        state.smsSkip = (state.smsSkip || []).filter((x) => x !== btn.dataset.shop);
+        if (state.smsSkipNames) delete state.smsSkipNames[btn.dataset.shop];
+        save(); toast(tr('SMS from {shop} count again', { shop: name })); break;
+      }
       case 'report-save': makeReport('save'); return;
       case 'report-share': makeReport('share'); return;
       case 'report-clear':
@@ -5347,6 +5409,8 @@
         if (tx && Core.isBillPayment(tx)) Core.undoBillPayment(state, tx);
         if (tx && tx.fromFund) state.savings.emergencyBalance = (Number(state.savings.emergencyBalance) || 0) + tx.amount;
         if (tx && tx.kind === 'cardconvert') Core.undoCardConvert(state, tx);
+        // A deleted SMS entry stays deleted: the next scan doesn't bring it back.
+        if (tx && tx.smsKey) state.smsIgnored = (state.smsIgnored || []).concat(tx.smsKey).slice(-500);
         state.transactions = state.transactions.filter((x) => x.id !== btn.dataset.id); save();
         rerenderKeepScroll(); offerUndo('Deleted', before); return;
       }
@@ -5618,13 +5682,11 @@
         break;
       }
       case 'tx-not-payment': {
-        const tx = state.transactions.find((x) => x.id === btn.dataset.id);
-        if (tx) {
-          if (tx.smsKey) state.smsIgnored = (state.smsIgnored || []).concat(tx.smsKey).slice(-500);
-          state.transactions = state.transactions.filter((x) => x !== tx);
-          save(); toast('Left out');
-        }
-        break;
+        const tx = state.transactions.find((x) => x.id === (btn.dataset.id || ui.editTx));
+        if (!tx) return;
+        const skip = document.getElementById('np-skip');
+        notPayment(tx, !!(skip && skip.checked));
+        return;
       }
       case 'alerts-on': enableAlerts(); return;
       case 'alerts-off':

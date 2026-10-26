@@ -1760,4 +1760,13 @@
   "You pay it from your account with the card bill. It comes off once a month on the card’s due date. It isn’t card spending, so it isn’t added again next month.": "आप इसे कार्ड बिल के साथ अपने खाते से भरते हैं. यह हर महीने कार्ड की देय तारीख पर एक बार जाती है. यह कार्ड पर खर्च नहीं है, इसलिए अगले महीने दोबारा नहीं जुड़ती.",
   "Does this EMI show on your credit card bill? Pick the card, so it’s counted once, not again inside the card bill.": "क्या यह EMI आपके क्रेडिट कार्ड के बिल में दिखती है? कार्ड चुनें, ताकि यह एक बार गिनी जाए, कार्ड बिल में दोबारा नहीं.",
   "{name} is on the {card} bill now: counted once a month, from your account.": "{name} अब {card} के बिल में: हर महीने एक बार, आपके खाते से गिनी जाती है.",
+  "Left out. SMS from {shop} are skipped from now on.": "हटा दिया. {shop} के SMS अब से छोड़ दिए जाएंगे.",
+  "Left out. It won’t come back from SMS.": "हटा दिया. यह SMS से दोबारा नहीं आएगा.",
+  "Not a payment?": "यह भुगतान नहीं है?",
+  "Read from a bank SMS that wasn’t one: an OTP, a payment request, a failed or reversed payment, or an offer. It comes out of your spending and won’t come back from SMS.": "ऐसे बैंक SMS से पढ़ा जो भुगतान नहीं था: OTP, पैसे की मांग, असफल या वापस हुआ भुगतान, या कोई ऑफ़र. यह आपके खर्च से हट जाएगा और SMS से दोबारा नहीं आएगा.",
+  "Also skip SMS from {shop} from now on": "अब से {shop} के SMS भी छोड़ दें",
+  "It’s not a payment": "यह भुगतान नहीं है",
+  "SMS skipped from": "इनके SMS छोड़े जाते हैं",
+  "Stop skipping {shop}": "{shop} को छोड़ना बंद करें",
+  "SMS from {shop} count again": "{shop} के SMS फिर से गिने जाएंगे",
 };
