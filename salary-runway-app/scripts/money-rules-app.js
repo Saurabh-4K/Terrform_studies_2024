@@ -195,6 +195,21 @@ async function notifications(browser, B) {
       (s) => s.transactions.some((t) => t.note === 'KREDITBEE' && t.borrowed)],
     'Gift → asks what it should do': [alert({ type: 'credit', amount: 1500, merchant: 'FATHER', category: 'Gift' }),
       (s) => s.transactions.some((t) => t.note === 'FATHER' && t.kind === 'in' && !t.useFor)],
+    'not tapped, then Lent in Needs your check': [alert({ type: 'debit', amount: 3000, merchant: 'AMIT', category: 'Misc', status: 'new' }),
+      (s) => s.iou.some((i) => i.name === 'AMIT' && i.dir === 'lent' && i.amount === 3000) && s.transactions.some((t) => t.note === 'AMIT' && t.iouId && !t.needsReview),
+      async (page) => {
+        await page.evaluate(() => document.querySelector('[data-action=tab][data-tab=spend]').click()); await page.waitForTimeout(200);
+        await page.evaluate(() => { const e = document.querySelector('.check-card select[data-tx-cat]'); e.value = '@lent'; e.dispatchEvent(new Event('change', { bubbles: true })); });
+        await page.waitForTimeout(200);
+      }],
+    'money in, then "Rahul paying back" in Payments': [alert({ type: 'credit', amount: 1000, merchant: 'RAHUL K', category: 'Money received', status: 'new' }),
+      (s) => s.iou.find((i) => i.id === 'iou1').paid === 1000 && s.transactions.some((t) => t.note === 'RAHUL K' && t.iouPay === 'iou1' && t.useFor === 'spend'),
+      async (page) => {
+        await page.evaluate(() => document.querySelector('[data-action=tab][data-tab=spend]').click()); await page.waitForTimeout(200);
+        await page.evaluate(() => document.querySelector('[data-action=page-open][data-key=payments]').click()); await page.waitForTimeout(200);
+        await page.evaluate(() => { const e = [...document.querySelectorAll('select[data-tx-cat]')].find((x) => [...x.options].some((o) => o.value === '@iou:iou1')); e.value = '@iou:iou1'; e.dispatchEvent(new Event('change', { bubbles: true })); });
+        await page.waitForTimeout(200);
+      }],
     'Not a payment → never offered again': [alert({ type: 'debit', amount: 99, merchant: 'OFFER', category: 'Misc', status: 'ignored' }),
       (s, a) => !s.transactions.some((t) => t.note === 'OFFER') && (s.smsIgnored || []).indexOf(a.key) !== -1],
   };
@@ -225,12 +240,13 @@ async function notifications(browser, B) {
     console.log((ok ? 'OK   ' : 'FAIL ') + 'pop-up lists include People' + (ok ? '' : '\n   ' + JSON.stringify(lists)));
     await page.close();
   }
-  for (const [name, [a, check]] of Object.entries(cases)) {
+  for (const [name, [a, check, then]] of Object.entries(cases)) {
     const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
     const errors = []; page.on('pageerror', (e) => errors.push(e.message));
     await page.addInitScript(() => {
       window.HisabTestSms = { getAlerts: () => Promise.resolve({ items: JSON.parse(localStorage.getItem('test-alerts') || '[]') }),
-        removeAlerts: () => { localStorage.removeItem('test-alerts'); return Promise.resolve(); }, syncAlerts: () => Promise.resolve() };
+        removeAlerts: () => { localStorage.removeItem('test-alerts'); return Promise.resolve(); }, syncAlerts: () => Promise.resolve(),
+        read: () => Promise.resolve({ messages: [] }) };
     });
     await page.clock.setFixedTime(new Date('2026-10-26T10:00:00+05:30'));
     await page.goto(B + '#home');
@@ -243,6 +259,7 @@ async function notifications(browser, B) {
       // The pop-up answered while the app was closed; the app opens.
       await page.evaluate((x) => localStorage.setItem('test-alerts', JSON.stringify([x])), a);
       await page.reload(); await page.waitForTimeout(600);
+      if (then) await then(page);
       landed = await page.evaluate(([src, x]) => (0, eval)('(' + src + ')')(JSON.parse(localStorage.getItem('salary-runway-v1')), x), [check.toString(), a]);
       mid = await snap(page);
       const ids = await page.evaluate((n) => JSON.parse(localStorage.getItem('salary-runway-v1')).transactions.slice(n).map((t) => t.id), JSON.parse(before).txs);

@@ -2054,7 +2054,7 @@
       '<div class="list">' + list.map((x) => Core.isMove(x) ? savedCheckItem(x) :
         '<div class="check-item"><div class="check-top"><div class="grow"><div class="title">' + esc(tr(x.note || 'Bank payment')) + '</div>' +
         '<div class="meta">' + fmtDate(x.date) + '</div></div><div class="amt">' + inr(x.amount) + '</div></div>' +
-        '<div class="row"><select data-tx-cat="' + esc(x.id) + '" aria-label="' + tr('Category') + '">' + categoryOptions(x.category) + '</select>' +
+        '<div class="row"><select data-tx-cat="' + esc(x.id) + '" aria-label="' + tr('Category') + '">' + categoryOptions(x.category) + peopleOptionsFor(x) + '</select>' +
         ((state.cards || []).length || x.paidFrom
           ? '<select data-tx-from="' + esc(x.id) + '" aria-label="' + tr('Paid from') + '">' + paidFromOptions(x.paidFrom) +
             (x.paidFrom && x.paidFrom.indexOf('card:') === 0 ? '<option value="' + esc(x.paidFrom) + '" selected>' + tr('Card ending {last4} (not added)', { last4: esc(x.paidFrom.slice(5)) }) + '</option>' : '') + '</select>'
@@ -3099,6 +3099,12 @@
     logEvent('sms-people', { dir: isIn ? 'in' : 'out', repay: !!pick.iou, amount: tx.amount });
   }
 
+  // People choices on an entry's category list, unless it's already tied to someone.
+  function peopleOptionsFor(x) {
+    if (x.iouId || x.iouPay || x.passedOn || x.covered || (Core.isIncome(x) && x.useFor && x.useFor !== 'spend')) return '';
+    return personOptions(Core.isIncome(x), null);
+  }
+
   function personOptions(isIn, selected) {
     const list = personChoices(isIn);
     return '<optgroup label="' + esc(tr('People')) + '">' + list.map(([v, l]) => '<option value="' + esc(v) + '"' + (v === selected ? ' selected' : '') + '>' + esc(l) + '</option>').join('') + '</optgroup>';
@@ -3742,7 +3748,7 @@
     const onCard = x.paidFrom && x.paidFrom !== 'account' ? (state.cards || []).find((c) => c.id === x.paidFrom) : null;
     const cat = Core.isTransfer(x) ? esc(walletName(x.from)) + ' → ' + esc(walletName(x.to))
       : edit && !saved && !Core.isBillPayment(x) && !Core.isCardTransfer(x)
-      ? '<select data-tx-cat="' + esc(x.id) + '" aria-label="' + tr('Category') + '">' + (isIn ? incomeCategoryOptions(x.category) : categoryOptions(x.category)) + '</select>'
+      ? '<select data-tx-cat="' + esc(x.id) + '" aria-label="' + tr('Category') + '">' + (isIn ? incomeCategoryOptions(x.category) : categoryOptions(x.category)) + peopleOptionsFor(x) + '</select>'
       : saved ? esc(x.useFor ? tr('Saved → {place}', { place: savedWhere(x) }) : tr('Saved: choose where it goes'))
         : esc(label(Core.isCardTransfer(x) ? 'Card' : Core.isBillPayment(x) ? 'Bills' : x.category || ''));
     const sub = cat + ' · ' + fmtDate(x.date) +
@@ -6519,6 +6525,17 @@
     if (el.dataset.txCat) {
       const tx = state.transactions.find((x) => x.id === el.dataset.txCat);
       if (!tx) return;
+      const pick = personPick(el.value);
+      if (pick) {
+        const before = JSON.stringify(state);
+        tx.category = Core.isIncome(tx) ? (pick.iou ? 'Money returned' : 'Money received') : tx.category;
+        tx.needsReview = false;
+        linkPerson(tx, pick);
+        save(); rerenderKeepScroll();
+        offerUndo(peopleNews.join(' · ') || tr('Saved'), before);
+        peopleNews = [];
+        return;
+      }
       tx.category = el.value;
       if (el.value === 'Savings' && Core.isFlexible(tx)) {
         tx.kind = 'move';
