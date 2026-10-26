@@ -443,6 +443,9 @@ For a refund, money from home, money returned, cashback, side income or extra pa
 - Until you choose, it counts as this month's money. You can change the choice later, and the old effect is undone.
 - **Loans are not income.** Money in marked *Loan or Pay Later*, or a bank SMS for a loan payout (the word loan or disbursed, a credit line, Pay Later, or a known lending app such as KreditBee, MoneyView, Navi, LazyPay or Simpl), is counted as **borrowed**. It isn't offered for saving or investing, and the Runway asks you to **add it to Debts** so its interest and EMI are planned.
 
+### Every saving goes somewhere you can see
+A transfer to savings (Jar, a SIP, an RD, typed or from SMS) goes to one place: the **emergency fund**, one of your **savings goals**, **Grow (to invest)**, or the costliest loan. From SMS it's placed where that app's money went last time (or the app's suggestion) and says so: *₹100 saved through Jar → Emergency fund*. Every saving's row shows *Saved → Emergency fund* (or *Goal: Bike down payment*) with **Change**, which opens the places right there; moving it takes it out of one and adds it to the other, and the app remembers the choice for that app.
+
 ## 8. Daily savings: "you saved ₹58 today"
 
 - When a day ends under its amount, the app asks (the next morning, or after 8 PM the same day): *"You spent ₹142 of your ₹200. Saving that much every day adds up to ₹1,740 a month."*

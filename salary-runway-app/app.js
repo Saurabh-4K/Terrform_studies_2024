@@ -140,7 +140,12 @@
    * What a move to safety buys, in true numbers: days of freedom for the
    * emergency fund, interest saved a year for a loan.
    */
-  function rewardMessage(use, amount, debtId, daily) {
+  function rewardMessage(use, amount, debtId, daily, goalId) {
+    if (use === 'goal') {
+      const g = (state.goals || []).find((x) => x.id === goalId);
+      const st = g ? Core.goalStatus(state, g, today()) : null;
+      return g ? tr(st && st.done ? 'Nice move! {name} is reached ✓' : 'Nice move! {name}: {saved} of {target}.', { name: g.name, saved: inr(st.saved), target: inr(st.target) }) : tr('Saved');
+    }
     if (use === 'emergency') {
       const before = Core.freedomDays(state, today());
       // The move has already been applied: compare with the fund before it.
@@ -2064,11 +2069,30 @@
     const top = state.debts.filter((d) => d.balance > 0).sort((a, b) => b.rate - a.rate)[0];
     return '<form id="save-tx" class="form-grid" autocomplete="off">' +
       '<label class="field">' + tr('Amount (₹)') + '<input id="sv-amount" type="number" inputmode="decimal" min="1" step="1" required placeholder="58"></label>' +
-      '<label class="field">' + tr('Counts as') + '<select id="sv-use"><option value="emergency">' + tr('Emergency fund') + '</option><option value="grow">' + tr('Savings / investing') + '</option>' +
-      (top ? '<option value="debt" data-debt="' + esc(top.id) + '">' + tr('Paid {name}', { name: esc(top.name) }) + '</option>' : '') + '</select></label>' +
+      '<label class="field">' + tr('Goes to') + '<select id="sv-use">' + savingPlaces().map((p) => '<option value="' + p.use + '"' +
+        (p.debtId ? ' data-debt="' + esc(p.debtId) + '"' : '') + (p.goalId ? ' data-goal="' + esc(p.goalId) + '"' : '') + '>' + esc(p.label) + '</option>').join('') + '</select></label>' +
       '<label class="field">' + tr('Date') + '<input id="sv-date" type="date" value="' + t + '" max="' + t + '" required></label>' +
       '<label class="field">' + tr('Where') + '<input id="sv-note" type="text" placeholder="Jar"></label>' +
       '<div class="wide"><button class="primary" type="submit">' + tr('Add money saved') + '</button></div></form>';
+  }
+
+  // Places a saving can go: the emergency fund, each open goal, Grow, the costliest loan.
+  function savingPlaces() {
+    const top = state.debts.filter((d) => d.balance > 0).sort((a, b) => b.rate - a.rate)[0];
+    const t = today();
+    return [{ use: 'emergency', label: tr('Emergency fund') }]
+      .concat((state.goals || []).filter((g) => !Core.goalStatus(state, g, t).done).map((g) => ({ use: 'goal', goalId: g.id, label: tr('Goal: {name}', { name: g.name }) })))
+      .concat([{ use: 'grow', label: tr('Grow (to invest)') }])
+      .concat(top ? [{ use: 'debt', debtId: top.id, label: tr('Paid {name}', { name: top.name }) }] : []);
+  }
+
+  // Where a saving went, for its row: "Emergency fund", "Goal: Bike", "Grow", "Personal loan".
+  function savedWhere(x) {
+    if (x.useFor === 'emergency') return tr('Emergency fund');
+    if (x.useFor === 'goal') { const g = (state.goals || []).find((y) => y.id === x.goalId); return g ? tr('Goal: {name}', { name: g.name }) : tr('a goal'); }
+    if (x.useFor === 'grow') return tr('Grow (to invest)');
+    if (x.useFor === 'debt') { const d = state.debts.find((y) => y.id === x.debtId); return d ? d.name : tr('a loan'); }
+    return '';
   }
 
   // A transfer to savings (Jar, a SIP, an RD): where does it count?
@@ -2077,8 +2101,7 @@
     const b = (use, name, extra) => '<button data-action="saved-dest" data-id="' + esc(x.id) + '" data-use="' + use + '"' + (extra || '') + '>' + name + '</button>';
     return '<div class="check-item"><div class="check-top"><div class="grow"><div class="title">' + tr('Saved to {where}', { where: esc(x.note || tr('savings')) }) + '</div>' +
       '<div class="meta">' + fmtDate(x.date) + ' · ' + tr('not spending. Where does it count?') + '</div></div><div class="amt good">' + inr(x.amount) + '</div></div>' +
-      '<div class="row">' + b('emergency', tr('Emergency fund')) + b('grow', tr('Savings / investing')) +
-      (top ? b('debt', tr('Paid {name}', { name: esc(top.name) }), ' data-debt="' + esc(top.id) + '"') : '') + '</div>' +
+      '<div class="row">' + savingPlaces().map((p) => b(p.use, esc(p.label), (p.debtId ? ' data-debt="' + esc(p.debtId) + '"' : '') + (p.goalId ? ' data-goal="' + esc(p.goalId) + '"' : ''))).join('') + '</div>' +
       '<div class="row"><button class="ghost" data-action="saved-was-spend" data-id="' + esc(x.id) + '">' + tr('It was spending') + '</button></div></div>';
   }
 
@@ -2256,9 +2279,15 @@
   }
 
   // Applies a choice for money received: moves it to a fund or a loan.
-  function setIncomeUse(tx, use, debtId) {
+  function setIncomeUse(tx, use, debtId, goalId) {
     undoIncomeUse(tx);
     const sv = state.savings;
+    if (use === 'goal') {
+      const g = (state.goals || []).find((x) => x.id === goalId);
+      if (!g) return;
+      g.saved = (Number(g.saved) || 0) + tx.amount;
+      tx.goalId = g.id;
+    }
     if (use === 'emergency') sv.emergencyBalance = (Number(sv.emergencyBalance) || 0) + tx.amount;
     if (use === 'grow') sv.investSaved = (Number(sv.investSaved) || 0) + tx.amount;
     if (use === 'debt') {
@@ -2281,6 +2310,11 @@
         if (x) { x.covered = Math.max(0, (Number(x.covered) || 0) - u.amount); if (!x.covered) { delete x.covered; delete x.coveredFrom; } }
       });
       delete tx.keepUses; delete tx.keepUsed; delete tx.keepFor;
+    }
+    if (tx.useFor === 'goal') {
+      const g = (state.goals || []).find((x) => x.id === tx.goalId);
+      if (g) g.saved = Math.max(0, (Number(g.saved) || 0) - tx.amount);
+      delete tx.goalId;
     }
     if (tx.useFor === 'emergency') sv.emergencyBalance = Math.max(0, (Number(sv.emergencyBalance) || 0) - tx.amount);
     if (tx.useFor === 'grow') sv.investSaved = Math.max(0, (Number(sv.investSaved) || 0) - tx.amount);
@@ -3037,24 +3071,27 @@
     const learned = (state.savingRules || {})[Core.normalizeMerchant(tx.note)];
     let use = learned && learned.use;
     let debtId = learned && learned.debtId;
+    const goalId = learned && learned.goalId;
     if (use === 'debt' && !state.debts.some((d) => d.id === debtId && d.balance > 0)) use = null;
+    // A goal that's gone or reached: back to the usual place.
+    if (use === 'goal' && !(state.goals || []).some((g) => g.id === goalId && !Core.goalStatus(state, g, today()).done)) use = null;
     if (!use) {
       const sug = Core.suggestUse(state, today(), null);
       use = sug.use === 'spend' ? 'emergency' : sug.use;
       debtId = sug.debtId;
     }
-    setIncomeUse(tx, use, debtId);
+    setIncomeUse(tx, use, debtId, goalId);
     tx.autoUse = true;
     tx.needsReview = false;
     ui.autoSaved = (ui.autoSaved || []).concat(tx.id);
   }
 
   // Remembers where money for an app goes, so the next SMS from it is placed the same way.
-  function learnSaving(tx, use, debtId) {
+  function learnSaving(tx, use, debtId, goalId) {
     const shop = Core.normalizeMerchant(tx.note);
     if (!shop || /^unspent on/.test(shop)) return;
     state.savingRules = state.savingRules || {};
-    state.savingRules[shop] = { use, debtId: debtId || null };
+    state.savingRules[shop] = { use, debtId: debtId || null, goalId: goalId || null };
   }
 
   // Savings SMS waiting for a decision (from before this was automatic): place them now.
@@ -3074,9 +3111,7 @@
     if (!list.length) return;
     if (list.length === 1) {
       const x = list[0];
-      celebrate(tr(x.useFor === 'emergency' ? '{amount} to {where} added to your emergency fund. Change it in Spend if needed.'
-        : x.useFor === 'debt' ? '{amount} to {where} added to your loan payoff. Change it in Spend if needed.'
-          : '{amount} to {where} added to your savings. Change it in Spend if needed.', { amount: inr(x.amount), where: x.note }));
+      celebrate(tr('{amount} saved through {where} → {place}. Change it in Spend if needed.', { amount: inr(x.amount), where: x.note, place: savedWhere(x) }));
     } else {
       celebrate(tr('{amount} of savings added to your funds. Change any in Spend if needed.', { amount: inr(list.reduce((a, x) => a + x.amount, 0)) }));
     }
@@ -3629,7 +3664,8 @@
     const cat = Core.isTransfer(x) ? esc(walletName(x.from)) + ' → ' + esc(walletName(x.to))
       : edit && !saved && !Core.isBillPayment(x) && !Core.isCardTransfer(x)
       ? '<select data-tx-cat="' + esc(x.id) + '" aria-label="' + tr('Category') + '">' + (isIn ? incomeCategoryOptions(x.category) : categoryOptions(x.category)) + '</select>'
-      : esc(label(saved ? 'Saved' : Core.isCardTransfer(x) ? 'Card' : Core.isBillPayment(x) ? 'Bills' : x.category || ''));
+      : saved ? esc(x.useFor ? tr('Saved → {place}', { place: savedWhere(x) }) : tr('Saved: choose where it goes'))
+        : esc(label(Core.isCardTransfer(x) ? 'Card' : Core.isBillPayment(x) ? 'Bills' : x.category || ''));
     const sub = cat + ' · ' + fmtDate(x.date) +
       (x.source === 'sms' ? ' · ' + tr('from SMS') : x.source === 'widget' ? ' · ' + tr('from widget') : '') +
       (onCard ? ' · <span class="warn">' + tr('on {card}', { card: cardLabel(onCard) }) + '</span>' : '') +
@@ -3644,7 +3680,12 @@
     return '<div class="tx-row' + (x.needsReview ? ' needs-check' : '') + '">' + catIcon(x) +
       '<div class="tx-main"><button class="tx-title" data-action="tx-edit" data-id="' + esc(x.id) + '" aria-label="' + esc(tr('Edit {name}', { name: txTitle(x) })) + '">' + txTitle(x) +
       (x.needsReview ? ' <span class="chip chip-check">' + tr('Check') + '</span>' : '') + '<svg class="tx-pen" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4l10.5-10.5-4-4L4 16z"/></svg></button>' +
-      '<div class="tx-sub">' + sub + extra + '</div></div>' +
+      '<div class="tx-sub">' + sub + extra + '</div>' +
+      (saved && ui.savedChange === x.id ? '<div class="row saved-places">' + savingPlaces().map((p) => {
+        const here = p.use === x.useFor && (p.use !== 'goal' || p.goalId === x.goalId) && (p.use !== 'debt' || p.debtId === x.debtId);
+        return '<button class="small' + (here ? ' primary' : '') + '" data-action="saved-dest" data-id="' + esc(x.id) + '" data-use="' + p.use + '"' +
+          (p.debtId ? ' data-debt="' + esc(p.debtId) + '"' : '') + (p.goalId ? ' data-goal="' + esc(p.goalId) + '"' : '') + '>' + (here ? '✓ ' : '') + esc(p.label) + '</button>';
+      }).join('') + '</div>' : '') + '</div>' +
       '<div class="tx-side"><span class="tx-amt' + (isIn || saved ? ' good' : Core.isTransfer(x) ? ' muted' : '') + '">' + (isIn ? '+' : '') + inr(x.amount) + '</span>' +
       (edit ? '<button class="icon tx-del" data-action="tx-delete" data-id="' + esc(x.id) + '" aria-label="' + tr('Delete') + '">✕</button>' : '') + '</div></div>';
   }
@@ -5928,21 +5969,15 @@
       case 'saved-dest': {
         const tx = state.transactions.find((x) => x.id === btn.dataset.id);
         if (!tx) return;
-        setIncomeUse(tx, btn.dataset.use, btn.dataset.debt);
+        setIncomeUse(tx, btn.dataset.use, btn.dataset.debt, btn.dataset.goal);
+        ui.savedChange = null;
         tx.needsReview = false;
         tx.autoUse = false;
-        learnSaving(tx, btn.dataset.use, btn.dataset.debt);
-        save(); celebrate(rewardMessage(btn.dataset.use, tx.amount, btn.dataset.debt, false)); break;
+        learnSaving(tx, btn.dataset.use, btn.dataset.debt, btn.dataset.goal);
+        save(); celebrate(rewardMessage(btn.dataset.use, tx.amount, btn.dataset.debt, false, btn.dataset.goal)); break;
       }
-      case 'saved-change': {
-        const tx = state.transactions.find((x) => x.id === btn.dataset.id);
-        if (!tx) return;
-        undoIncomeUse(tx);
-        tx.useFor = null;
-        tx.autoUse = false;
-        tx.needsReview = true;
-        save(); window.scrollTo(0, 0); render(); toast('Choose where it counts, at the top.'); return;
-      }
+      // The places open right under the saving; nothing changes until one is picked.
+      case 'saved-change': ui.savedChange = ui.savedChange === btn.dataset.id ? null : btn.dataset.id; break;
       case 'saved-was-spend': {
         const tx = state.transactions.find((x) => x.id === btn.dataset.id);
         if (!tx) return;
@@ -6490,6 +6525,7 @@
       const sel = document.getElementById('sv-use');
       const use = sel.value;
       const debtId = sel.selectedOptions[0] && sel.selectedOptions[0].dataset.debt;
+      const goalId = sel.selectedOptions[0] && sel.selectedOptions[0].dataset.goal;
       const date = document.getElementById('sv-date').value || today();
       // If the bank SMS for this transfer is already here, use it instead of adding a second entry.
       let tx = savedTwin(amount, date, true);
@@ -6498,10 +6534,10 @@
         tx = { id: uid(), kind: 'move', date, amount, category: 'Savings', note: document.getElementById('sv-note').value.trim() || 'Savings', source: 'manual', useFor: null };
         state.transactions.push(tx);
       }
-      setIncomeUse(tx, use, debtId);
-      learnSaving(tx, use, debtId);
+      setIncomeUse(tx, use, debtId, goalId);
+      learnSaving(tx, use, debtId, goalId);
       save();
-      celebrate(rewardMessage(use, amount, debtId, false));
+      celebrate(rewardMessage(use, amount, debtId, false, goalId));
       rerenderKeepScroll();
       return;
     }
