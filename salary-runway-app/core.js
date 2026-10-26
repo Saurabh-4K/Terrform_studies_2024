@@ -2770,6 +2770,15 @@
   // `(?:(?!\.\s).)` is any character within the same sentence (amounts like 8,400.00 have dots).
   const CARD_PAYMENT = /(?:payment|pymt)(?:(?!\.\s).){0,50}(?:received|credited|successful|processed)|(?:received|credited)(?:(?!\.\s).){0,40}(?:payment|pymt)|thank you for (?:the |your )?payment|towards(?:(?!\.\s).){0,40}credit card|credit card(?:(?!\.\s).){0,30}(?:bill|payment)/i;
 
+  /*
+   * Bank SMS with an amount that isn't money moving. Kept in step with SmsParser.java.
+   * - reward points ("Reward Points Credited: 140 … 2 RP per Rs.200")
+   * - UPI payment requests ("X has requested Rs 500 … approve")
+   * - reminders ("Rs 6010 will be debited on 03-11")
+   * - autopay set up ("mandate … registered", "AutoPay … set up")
+   */
+  const NOT_MONEY = /reward\s*points?|\b(?:rp|points)\s+(?:credited|earned|redeemed)|\bhas requested\b|\bcollect request\b|\bpayment request\b|\bwill be (?:auto[- ]?)?(?:debited|deducted|charged)\b|\bmandate\b.{0,60}\b(?:registered|created|set ?up|approved)\b|\bauto ?pay\b.{0,40}\b(?:set ?up|registered|activated)\b/i;
+
   // Bill amounts round up, so paying them clears the bill.
   function money(m) { return m ? Math.ceil(parseFloat(m[1].replace(/,/g, ''))) : 0; }
 
@@ -2801,7 +2810,7 @@
         rate: pm ? Math.round(parseFloat(pm[1]) * 12 * 100) / 100 : null, last4: cardLast4(t), merchant: 'Card EMI', category: 'Bills', date: todayIso,
         booked: /processed|boarded|booked successfully|successful/i.test(t), raw: t };
     }
-    if (!t || /\botp\b|one time password|verification code/i.test(t)) return null;
+    if (!t || /\botp\b|one time password|verification code/i.test(t) || NOT_MONEY.test(t)) return null;
     const amt = t.match(/(?:rs\.?|inr|₹)\s*([\d,]+(?:\.\d{1,2})?)/i);
     if (!amt) return null;
     const amount = Math.round(parseFloat(amt[1].replace(/,/g, '')));

@@ -1625,3 +1625,15 @@ test('an EMI booked from SMS: how many are paid and left by today', () => {
   assert.deepEqual([r.paid, r.left, r.next], [2, 4, '2026-11-03']);
   assert.ok(r.emi > 6000 && r.emi < 6600, 'emi ' + r.emi);
 });
+
+test('bank SMS with an amount that is not money moving are skipped', () => {
+  const read = (text) => Core.parseSms(text, {}, '2026-11-03');
+  // Read before as a ₹200 refund to the card
+  assert.equal(read('Reward Points Credited: 140 To HDFC Bank Credit Card 9876 On 03/AUG/2026 Towards 2 RP per Rs.200 on CC UPI spend'), null);
+  assert.equal(read('Asha M has requested Rs.500.00 from you on Google Pay. UPI collect request'), null);
+  assert.equal(read('Dear Customer, Rs.6010.00 will be debited from your A/c XX4321 on 03-11-26 towards EMI.'), null);
+  assert.equal(read('Your e-mandate for Rs.1499 to Netflix has been registered successfully on A/c XX4321.'), null);
+  // Real money still counts
+  assert.equal(read('Rs.50.00 cashback credited to your A/c XX4321 on 25-10-26 from PhonePe').type, 'credit');
+  assert.equal(read('Rs.6010.00 debited from A/c XX4321 on 03-11-26 towards EMI. Avl bal Rs.1200').amount, 6010);
+});
