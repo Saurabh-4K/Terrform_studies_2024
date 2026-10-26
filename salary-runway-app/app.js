@@ -1738,12 +1738,15 @@
       '<p class="hint">' + (a.kind === 'raise'
         ? tr('Send half of it, {amount} a month, to freedom before spending grows to match it.', { amount: inr(a.amount) })
         : tr(a.removed ? 'If it’s paid off, you’re used to living without {amount} a month. Keep paying it, to yourself:' : 'You’re used to living without {amount} a month. Keep paying it, to yourself:', { amount: inr(a.amount) })) + '</p>' +
+      // Removed by mistake or as a duplicate: the plain answer first, before any plan for the money.
+      (a.removed ? '<div class="row"><button class="primary" data-action="rollover-no">' + tr('Added by mistake: ignore') + '</button>' +
+        '<button data-action="rollover-no">' + tr('Not paid off yet') + '</button></div><p class="hint">' + tr('Paid off? Then choose what its money does now:') + '</p>' : '') +
       '<div class="choices">' + o.options.map((opt) =>
         '<button class="choice' + (opt.to === o.recommended ? ' suggested' : '') + '" data-action="rollover-use" data-to="' + opt.to + '">' +
         '<span class="choice-title">' + esc(opt.title) + (opt.to === o.recommended ? ' <span class="chip chip-auto">' + tr('Suggested') + '</span>' : '') + '</span>' +
         '<span class="choice-detail">' + esc(opt.detail) + '</span></button>').join('') + '</div>' +
       '<p class="hint"><b>' + tr('Why the suggestion:') + '</b> ' + esc(o.reason) + '</p>' +
-      '<div class="row">' + (a.kind === 'loan' ? '<button data-action="rollover-no">' + tr(a.removed ? 'No, it isn’t paid off' : 'It isn’t paid off') + '</button>' : '') +
+      '<div class="row">' + (a.kind === 'loan' && !a.removed ? '<button data-action="rollover-no">' + tr('It isn’t paid off') + '</button>' : '') +
       '<button class="ghost" data-action="rollover-later">' + tr('Decide later') + '</button></div></section>';
   }
 
@@ -5273,6 +5276,14 @@
       }
       case 'card-emi-save': {
         const v = (id) => (document.getElementById(id) || {}).value || '';
+        // Already in Debts with about this EMI (on this card, or named like a card EMI): not added twice.
+        const emiNow = Math.round(Number(v('ce-emi')) || 0);
+        const twin = emiNow > 0 && state.debts.find((x) => x.balance > 0 && (x.viaCard === btn.dataset.id || (!x.viaCard && Core.looksLikeCardBill(x.name))) &&
+          Math.abs((Number(x.minPayment) || 0) - emiNow) <= emiNow * 0.1);
+        if (twin) {
+          ui.cardEmiError = tr('{name} ({amount} a month) is already in your loans. Set it to this card’s bill in Debts → Loans instead of adding it again.', { name: twin.name, amount: inr(twin.minPayment) });
+          break;
+        }
         const d = Core.addCardEmi(state, btn.dataset.id, { emi: v('ce-emi'), left: v('ce-left'), rate: v('ce-rate') }, t);
         if (!d) { ui.cardEmiError = tr('Enter the EMI amount and how many are left.'); break; }
         const offer = ui.cardEmiPrefill && (state.emiOffers || []).find((x) => x.key === ui.cardEmiPrefill.key);
@@ -5595,6 +5606,8 @@
       case 'card-remove-cancel': ui.cardRemove = null; break;
       case 'card-remove-confirm':
         state.cards = state.cards.filter((c) => c.id !== btn.dataset.id);
+        // Its EMIs stay as loans, now on their own due day.
+        state.debts.forEach((d) => { if (d.viaCard === btn.dataset.id) delete d.viaCard; });
         ui.cardRemove = null; save(); toast('Card removed'); break;
       case 'card-plan':
         ui.cardPlan = ui.cardPlan && ui.cardPlan.cardId === btn.dataset.id ? null : { cardId: btn.dataset.id, emi: { rate: 22, months: 6, fee: 0 }, emiAmount: 0 };

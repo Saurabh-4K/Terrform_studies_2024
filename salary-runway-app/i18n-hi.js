@@ -1776,4 +1776,8 @@
   "It didn’t go through": "यह पूरी नहीं हुई",
   "Filled in from the SMS. Check the EMI on your card statement: banks work it out a little differently.": "SMS से भरा गया. अपने कार्ड स्टेटमेंट पर EMI जांचें: बैंक इसे थोड़ा अलग निकालते हैं.",
   "Card EMI booked": "कार्ड पर EMI बुक हुई",
+  "Added by mistake: ignore": "गलती से जोड़ा: अनदेखा करें",
+  "Not paid off yet": "अभी चुका नहीं",
+  "Paid off? Then choose what its money does now:": "चुका दिया? तो चुनें कि उसका पैसा अब कहां जाए:",
+  "{name} ({amount} a month) is already in your loans. Set it to this card’s bill in Debts → Loans instead of adding it again.": "{name} (हर महीने {amount}) पहले से आपके कर्ज़ों में है. इसे दोबारा जोड़ने के बजाय कर्ज़ → कर्ज़ में इस कार्ड के बिल पर रखें.",
 };
