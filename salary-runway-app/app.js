@@ -2852,6 +2852,7 @@
       '<option value="">' + tr('Bank account (its own EMI)') + '</option>' +
       cards.map((c) => '<option value="' + esc(c.id) + '"' + (d.viaCard === c.id ? ' selected' : '') + '>' + esc(tr('{name} bill (EMI on the card)', { name: c.name })) + '</option>').join('') +
       '</select></label>' +
+      (d.viaCard ? listField('debts', d, 'emisLeft', 'EMIs left (if you know)', 'number', ' max="120" placeholder="4"') : '') +
       (ask ? '<span class="hint warn">' + tr('Is this EMI billed on your credit card? Pick the card, so it’s counted once, not again in the card bill.') + '</span>' : '') + '</div>';
   }
 
@@ -4132,6 +4133,25 @@
     return tr('Borrowed until you pay the bill due {date}. Counted as spent today. Pay that whole bill and it’s free; pay less, even the minimum, and interest of about 3.5% a month plus GST starts.', { date: fmtDate(due) });
   }
 
+  // An EMI already running on the card: a bill converted before it was added here.
+  function cardEmiForm(c) {
+    const emis = state.debts.filter((d) => d.viaCard === c.id && d.balance > 0);
+    const list = emis.map((d) => '<div class="line"><span>' + esc(d.name) + '</span><span>' + tr('{amount} a month', { amount: inr(d.minPayment) }) +
+      (Number(d.emisLeft) > 0 ? ' · ' + tr('{n} left', { n: d.emisLeft }) : '') + '</span></div>').join('');
+    if (ui.cardEmi !== c.id) {
+      return (list ? '<div class="summary">' + list + '</div>' : '') +
+        '<div class="row"><button class="link" data-action="card-emi-open" data-id="' + esc(c.id) + '">' + tr('Add an EMI already on this card') + '</button></div>';
+    }
+    const f = (id, name, val, extra) => '<label class="field" for="' + id + '"><span>' + tr(name) + '</span><input id="' + id + '" type="number" inputmode="decimal" min="0" value="' + esc(val) + '"' + (extra || '') + '></label>';
+    return (list ? '<div class="summary">' + list + '</div>' : '') +
+      '<div class="callout"><b>' + tr('An EMI on {card}', { card: c.name }) + '</b>' +
+      '<span class="hint">' + tr('A bill you turned into an EMI. It comes off once a month on the card’s due date, and the app ends it after the last one.') + '</span>' +
+      '<div class="form-grid">' + f('ce-emi', 'EMI each month (₹)', '') + f('ce-left', 'EMIs left to pay', '', ' max="120"') + f('ce-rate', 'Interest %/yr', '22', ' step="any"') + '</div>' +
+      (ui.cardEmiError ? '<p class="bad" role="alert">' + esc(ui.cardEmiError) + '</p>' : '') +
+      '<div class="row"><button class="primary" data-action="card-emi-save" data-id="' + esc(c.id) + '">' + tr('Add EMI') + '</button>' +
+      '<button class="ghost" data-action="card-emi-cancel">' + tr('Cancel') + '</button></div></div>';
+  }
+
   function cardsSection() {
     const cards = state.cards || [];
     let html = '<section class="card"><div class="card-head">' + titled('Credit cards', 'cards') + '<span class="hint">' + tr('{n} of {max}', { n: cards.length, max: MAX_CARDS }) + '</span></div>';
@@ -4170,6 +4190,7 @@
       html += '<div class="row"><button class="primary" data-action="card-plan" data-id="' + esc(c.id) + '">' + tr(ui.cardPlan && ui.cardPlan.cardId === c.id ? 'Hide payment plan' : 'Plan this payment') + '</button></div>';
     }
     if (ui.cardPlan && ui.cardPlan.cardId === c.id && st.remaining) html += '<div id="card-plan">' + cardPlanPanel(c) + '</div>';
+    html += cardEmiForm(c);
     if (ui.cardRemove === c.id) {
       html += '<div class="callout bad"><b>' + tr('Remove {card}?', { card: cardLabel(c) }) + '</b><span class="hint">' + tr('Payments made with it stay in your records.') + '</span>' +
         '<div class="row"><button class="danger" data-action="card-remove-confirm" data-id="' + esc(c.id) + '">' + tr('Remove') + '</button><button data-action="card-remove-cancel">' + tr('Cancel') + '</button></div></div>';
@@ -5143,6 +5164,17 @@
         state.transactions = state.transactions.filter((x) => !(x.source === 'sms' && x.date < date));
         ui.smsClean = null; save(); toast(tr('{entries} removed', { entries: plural(removed.length, 'entry', 'entries') })); break;
       }
+      case 'card-emi-open': ui.cardEmi = btn.dataset.id; ui.cardEmiError = ''; break;
+      case 'card-emi-cancel': ui.cardEmi = null; ui.cardEmiError = ''; break;
+      case 'card-emi-save': {
+        const v = (id) => (document.getElementById(id) || {}).value || '';
+        const d = Core.addCardEmi(state, btn.dataset.id, { emi: v('ce-emi'), left: v('ce-left'), rate: v('ce-rate') }, t);
+        if (!d) { ui.cardEmiError = tr('Enter the EMI amount and how many are left.'); break; }
+        ui.cardEmi = null; ui.cardEmiError = '';
+        save();
+        toast(tr('{name} added: {amount} a month, {n} left. It’s in Debts too.', { name: d.name, amount: inr(d.minPayment), n: d.emisLeft }));
+        break;
+      }
       case 'card-latest': {
         const c = (state.cards || []).find((x) => x.id === btn.dataset.id);
         const el = document.getElementById('card-latest-' + btn.dataset.id);
@@ -5782,6 +5814,7 @@
       else {
         let v = Math.max(0, Number(el.value) || 0);
         if (f === 'dueDay') v = Math.min(31, Math.max(1, Math.round(v) || 1));
+        if (f === 'emisLeft') v = Math.min(120, Math.round(v));
         if (el.dataset.list === 'debts' && f === 'balance' && item.balance > 0 && v === 0) {
           askRollover({ from: item.name || 'Your loan', amount: Number(item.minPayment) || 0, kind: 'loan' });
         }

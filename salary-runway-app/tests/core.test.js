@@ -1543,3 +1543,34 @@ test('an EMI billed on a credit card is counted once, not again in the card bill
   Core.tickDebts(s, '2026-11-04');
   assert.ok(s.debts[0].balance < 24705 && s.debts[0].balance > 18000, 'balance ' + s.debts[0].balance);
 });
+
+test('a card EMI with 4 left ends after the 4th, and stops being billed on the card', () => {
+  // A bill turned into 6 EMIs of ₹6,010 two months ago; 4 left, the next on 3 Nov.
+  const s = baseState({
+    settings: { salary: 98000, payday: 28 },
+    fixed: [], budgets: [],
+    cards: [{ id: 'c1', name: 'HDFC card', last4: '6645', limit: 90000, statementDay: 14, dueDay: 3, created: '2026-10-25',
+      setupStatement: 6010, setupDueDate: '2026-11-03' }],
+  });
+  const d = Core.addCardEmi(s, 'c1', { emi: 6010, left: 4, rate: 22 }, '2026-10-26');
+  assert.equal(d.viaCard, 'c1');
+  assert.equal(d.emiThrough, '2026-10-03');
+  // What's left, worked out from 4 EMIs at 22%: a bit under 4 × ₹6,010
+  assert.ok(d.balance > 22000 && d.balance < 24040, 'balance ' + d.balance);
+  // The payoff plan clears it in month 4, not 5
+  assert.deepEqual(Core.simulateDebts([{ name: 'x', balance: 24705, rate: 22.44, minPayment: 6010, emisLeft: 4 }], 0, 'avalanche').order, [{ name: 'x', month: 4 }]);
+  // 3 Nov, 3 Dec, 3 Jan, 3 Feb: then it's cleared
+  let cleared = Core.tickDebts(s, '2027-01-04');
+  assert.equal(d.emisLeft, 1);
+  assert.ok(d.balance > 0);
+  assert.equal(cleared.length, 0);
+  cleared = Core.tickDebts(s, '2027-02-03');
+  assert.equal(d.balance, 0);
+  assert.equal(cleared.length, 1);
+  // Billed on the card for the Nov, Dec and Jan statements (due Dec, Jan, Feb), and not after
+  assert.equal(Core.cardOwedAt(s, s.cards[0], '2027-01-20'), 6010 + 3 * 6010);
+  assert.equal(Core.cardOwedAt(s, s.cards[0], '2027-03-20'), 6010 + 3 * 6010);
+  // No more EMI leaving after it's done
+  const mar = Core.cycleEvents(s, Core.cycleFor('2027-03-01', 28), '2027-03-01');
+  assert.equal(mar.filter((e) => e.kind === 'debt').length, 0);
+});

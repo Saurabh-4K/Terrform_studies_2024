@@ -616,11 +616,34 @@
     return (state.debts || []).filter((d) => d.viaCard === card.id && Number(d.balance) > 0 && Number(d.minPayment) > 0);
   }
   function cardEmiCharges(state, card, iso) {
-    const emi = sum(cardEmis(state, card), (d) => Number(d.minPayment));
-    if (!emi) return 0;
-    let n = 0;
-    for (let st = nextStatementAfter(card, card.created || iso); st <= iso; st = nextStatementAfter(card, st)) n++;
-    return n * emi;
+    // A finished EMI was billed up to its last one.
+    const loans = (state.debts || []).filter((d) => d.viaCard === card.id && Number(d.minPayment) > 0 &&
+      (Number(d.balance) > 0 || (d.lastEmi && d.lastEmi.date)));
+    let total = 0;
+    for (let st = nextStatementAfter(card, card.created || iso); st <= iso; st = nextStatementAfter(card, st)) {
+      const due = dueAfter(card, st);
+      total += sum(loans.filter((d) => Number(d.balance) > 0 || due <= d.lastEmi.date), (d) => Number(d.minPayment));
+    }
+    return total;
+  }
+
+  /*
+   * An EMI already running on a card (a bill converted before the card was
+   * added here): what's left is worked out from the EMI, how many are left
+   * and the rate, unless the bank's figure is given.
+   */
+  function addCardEmi(state, cardId, opts, todayIso) {
+    const card = (state.cards || []).find((c) => c.id === cardId);
+    const emi = Math.round(Number(opts.emi) || 0);
+    const left = Math.round(Number(opts.left) || 0);
+    if (!card || !(emi > 0) || !(left > 0)) return null;
+    const rate = Number(opts.rate) >= 0 && opts.rate !== '' && opts.rate !== undefined ? Number(opts.rate) : 22;
+    const i = rate / 1200;
+    const owed = Number(opts.balance) > 0 ? Math.round(Number(opts.balance)) : Math.round(i > 0 ? (emi * (1 - Math.pow(1 + i, -left))) / i : emi * left);
+    const debt = { id: newId('d'), name: opts.name || card.name + ' EMI', balance: owed, startBalance: owed, rate, minPayment: emi, dueDay: card.dueDay,
+      viaCard: card.id, emisLeft: left, emiThrough: lastDueOn(todayIso, Number(card.dueDay) || 1) };
+    state.debts.push(debt);
+    return debt;
   }
 
   // What the card owes the bank at the end of a date.
@@ -1207,7 +1230,7 @@
   function simulateDebts(debts, extra, strategy, rollover) {
     const list = debts
       .filter((d) => d.balance > 0)
-      .map((d) => ({ name: d.name, bal: Number(d.balance), rate: Number(d.rate) || 0, min: Number(d.minPayment) || 0 }));
+      .map((d) => ({ name: d.name, bal: Number(d.balance), rate: Number(d.rate) || 0, min: Number(d.minPayment) || 0, left: Math.round(Number(d.emisLeft) || 0) }));
     const budgetBase = sum(list, (d) => d.min) + (Number(extra) || 0);
     const order = (a, b) =>
       strategy === 'snowball' ? a.bal - b.bal || b.rate - a.rate : b.rate - a.rate || a.bal - b.bal;
@@ -1230,6 +1253,8 @@
         const pay = Math.min(d.min, d.bal, budget);
         d.bal -= pay;
         budget -= pay;
+        // A loan with a set number of EMIs ends with the last one.
+        if (d.left > 0 && pay >= d.min && --d.left === 0) d.bal = 0;
       });
       active.filter((d) => d.bal > 0).sort(order).forEach((d) => {
         const pay = Math.min(budget, d.bal);
@@ -1314,7 +1339,12 @@
         const due = toISO(clampedDate(from.getFullYear(), from.getMonth() + k, day));
         if (due > todayIso) break;
         const interest = (d.balance * (Number(d.rate) || 0)) / 1200;
-        const after = Math.max(0, Math.round(d.balance + interest - emi));
+        let after = Math.max(0, Math.round(d.balance + interest - emi));
+        // With a set number of EMIs left (a card EMI, say), the last one clears it.
+        if (Number(d.emisLeft) > 0) {
+          d.emisLeft = Math.round(Number(d.emisLeft)) - 1;
+          if (d.emisLeft === 0) after = 0;
+        }
         d.lastEmi = { date: due, off: Math.round(d.balance - after) };
         d.balance = after;
         d.emiThrough = due;
@@ -2806,7 +2836,7 @@
     salaryFor, salaryHistory, paydayReset, suggestUse, freedomDays, interestLeak, nextPaydayPreview,
     billShare, billPot, billsMonthly, billPaidIn, billDue, payBill, undoBillPayment, zoneStatus, ESSENTIAL_CATEGORIES,
     isCardTransfer, statementOn, dueAfter, cardOwedAt, cardReserve, cardStatus, emiQuote, revolveQuote, cardBillPlan,
-    recordCardPayment, looksLikeCardBill, spendToCardPayment, convertCardBalance, answerCardDue, cardLateFee, cardRate, CARD_RATE, undoCardConvert, cardFreeDays, byCategory, DEFAULT_SPLIT,
+    recordCardPayment, addCardEmi, looksLikeCardBill, spendToCardPayment, convertCardBalance, answerCardDue, cardLateFee, cardRate, CARD_RATE, undoCardConvert, cardFreeDays, byCategory, DEFAULT_SPLIT,
     isLoanCredit, borrowedThisCycle, borrowCheck, rolloverOptions, setTranslator,
     payoffOrder, tickDebts, debtJourney, lenderTasks, lastBorrowed,
     encryptBackup, openBackup, backupInfo, toB64, fromB64, isTransfer, walletBalances, goalStatus, goalsMonthly, budgetEnvelopes, netWorth, reportRange, budgetHistory, aiFacts, planFacts, fraudSignals, investReady, goalResult, weekStart,
