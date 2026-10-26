@@ -1830,7 +1830,7 @@
       '<p class="nw-big' + (n.value < 0 ? ' bad-text' : '') + '">' + signed(n.value) + '</p>' +
       '<p class="hint">' + (n.value < 0 ? tr('You owe more than you own. Every loan payment and every rupee saved moves this up.') : tr('What you own minus what you owe.')) +
       (change !== null ? ' ' + tr(change >= 0 ? 'Up {amount} since last round.' : 'Down {amount} since last round.', { amount: inr(Math.abs(change)) }) : '') + '</p>' +
-      '<div class="summary">' + line('Money in your account and wallets', inr(n.money)) + line('Emergency fund and Grow savings', inr(n.funds)) +
+      '<div class="summary">' + line('Money in your account and wallets', inr(n.money)) + line('Emergency fund, goals and Grow', inr(n.funds)) +
       (n.lentPeople ? line('Owed to you by people', inr(n.lentPeople)) : '') +
       (n.loans ? line('Loans', '−' + inr(n.loans)) : '') + (n.cards ? line('Card dues from before', '−' + inr(n.cards)) : '') +
       (n.owedPeople ? line('Owed to people', '−' + inr(n.owedPeople)) : '') +
@@ -2286,6 +2286,8 @@
       const g = (state.goals || []).find((x) => x.id === goalId);
       if (!g) return;
       g.saved = (Number(g.saved) || 0) + tx.amount;
+      // A transfer out of the account (not money still in it): kept apart, so net worth still counts it.
+      if (Core.isMove(tx)) g.savedOutside = (Number(g.savedOutside) || 0) + tx.amount;
       tx.goalId = g.id;
     }
     if (use === 'emergency') sv.emergencyBalance = (Number(sv.emergencyBalance) || 0) + tx.amount;
@@ -2313,7 +2315,10 @@
     }
     if (tx.useFor === 'goal') {
       const g = (state.goals || []).find((x) => x.id === tx.goalId);
-      if (g) g.saved = Math.max(0, (Number(g.saved) || 0) - tx.amount);
+      if (g) {
+        g.saved = Math.max(0, (Number(g.saved) || 0) - tx.amount);
+        if (Core.isMove(tx)) g.savedOutside = Math.max(0, (Number(g.savedOutside) || 0) - tx.amount);
+      }
       delete tx.goalId;
     }
     if (tx.useFor === 'emergency') sv.emergencyBalance = Math.max(0, (Number(sv.emergencyBalance) || 0) - tx.amount);
@@ -3543,16 +3548,42 @@
       const date = val('edit-date');
       if (!(amount > 0)) { ui.editError = tr('Enter an amount above ₹0.'); render(); return; }
       if (!date || date > today()) { ui.editError = tr('Pick a date up to today.'); render(); return; }
-      if (Core.isIncome(x) || Core.isMove(x)) {
-        // Take back what it did to a fund or loan, change it, then do it again with the new amount.
+      // Money with friends follows the entry: what's owed, or what's been paid back.
+      const iou = (state.iou || []).find((i) => i.id === (x.iouId || x.iouPay));
+      if (iou && x.iouId) {
+        if (amount < (Number(iou.paid) || 0)) { ui.editError = tr('{amount} of it is already paid back. It can’t be less.', { amount: inr(iou.paid) }); render(); return; }
+        iou.amount = (Number(iou.amount) || 0) + amount - x.amount;
+      }
+      if (iou && x.iouPay) {
+        iou.paid = Math.max(0, (Number(iou.paid) || 0) + amount - x.amount);
+        (iou.payments || []).forEach((pm) => { if (pm.txId === x.id) pm.amount = amount; });
+      }
+      if (x.useFor === 'keep') {
+        // Kept for a purchase: the purchases it already paid for stay paid.
+        if (amount < (Number(x.keepUsed) || 0)) { ui.editError = tr('{amount} of it already paid for purchases. It can’t be less.', { amount: inr(x.keepUsed) }); render(); return; }
+        x.amount = amount;
+        x.date = date;
+      } else if (Core.isIncome(x) || Core.isMove(x)) {
+        // Take back what it did to a fund, goal or loan, change it, then do it again with the new amount.
         const use = x.useFor;
         const debtId = x.debtId;
+        const goalId = x.goalId;
         if (use) undoIncomeUse(x);
         x.amount = amount;
         x.date = date;
-        if (use) setIncomeUse(x, use, debtId);
+        if (use) setIncomeUse(x, use, debtId, goalId);
       } else {
         if (x.fromFund) state.savings.emergencyBalance = (Number(state.savings.emergencyBalance) || 0) + x.amount - amount;
+        // A purchase paid from kept money, now smaller: what it no longer needs is kept again.
+        if (x.covered && amount < x.covered) {
+          const k = state.transactions.find((y) => y.id === x.coveredFrom);
+          const back = x.covered - amount;
+          if (k) {
+            k.keepUsed = Math.max(0, (Number(k.keepUsed) || 0) - back);
+            (k.keepUses || []).forEach((u) => { if (u.id === x.id) u.amount = Math.max(0, u.amount - back); });
+          }
+          x.covered = amount;
+        }
         x.amount = amount;
         x.date = date;
       }

@@ -2209,7 +2209,9 @@
     const r = projectRunway(state, todayIso);
     const money = Math.max(0, Number(r.balanceToday) || 0);
     const sv = state.savings || {};
-    const funds = (Number(sv.emergencyBalance) || 0) + (Number(sv.investSaved) || 0);
+    // Money moved out of the account into a goal (Jar for a bike) is still yours; set-asides for goals stay in the account.
+    const funds = (Number(sv.emergencyBalance) || 0) + (Number(sv.investSaved) || 0) +
+      sum(state.goals || [], (g) => Number(g.savedOutside) || 0);
     const loans = sum((state.debts || []).filter((d) => d.balance > 0), (d) => Number(d.balance) || 0);
     // Card spending this cycle already came off the money; what was owed before the card was added did not.
     // EMIs on a card bill are counted once, with the loans.

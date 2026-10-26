@@ -1917,4 +1917,7 @@
   "Saved: choose where it goes": "बचत: चुनें कहां जाए",
   "Nice move! {name} is reached ✓": "बढ़िया! {name} पूरा हुआ ✓",
   "Nice move! {name}: {saved} of {target}.": "बढ़िया! {name}: {target} में से {saved}.",
+  "{amount} of it is already paid back. It can’t be less.": "इसमें से {amount} पहले ही लौटाए जा चुके हैं. इससे कम नहीं हो सकता.",
+  "{amount} of it already paid for purchases. It can’t be less.": "इसमें से {amount} पहले ही खरीदारी में लगे. इससे कम नहीं हो सकता.",
+  "Emergency fund, goals and Grow": "आपात फंड, लक्ष्य और बढ़त",
 };

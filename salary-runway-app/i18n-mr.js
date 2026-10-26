@@ -1917,4 +1917,7 @@
   "Saved: choose where it goes": "बचत: कुठे जाते ते निवडा",
   "Nice move! {name} is reached ✓": "छान! {name} पूर्ण झाले ✓",
   "Nice move! {name}: {saved} of {target}.": "छान! {name}: {target} पैकी {saved}.",
+  "{amount} of it is already paid back. It can’t be less.": "त्यातले {amount} आधीच परत दिले आहेत. यापेक्षा कमी असू शकत नाही.",
+  "{amount} of it already paid for purchases. It can’t be less.": "त्यातले {amount} आधीच खरेदीसाठी वापरले. यापेक्षा कमी असू शकत नाही.",
+  "Emergency fund, goals and Grow": "आपत्कालीन निधी, ध्येये आणि वाढ",
 };
