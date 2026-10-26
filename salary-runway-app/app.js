@@ -50,7 +50,8 @@
 
   // Inside the Android app, Capacitor provides a bridge to the SMS inbox.
   const NATIVE = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
-  const SmsInbox = NATIVE ? window.Capacitor.registerPlugin('SmsInbox') : null;
+  // HisabTestSms: a stand-in for the phone's SMS store in scripts/money-rules-app.js.
+  const SmsInbox = NATIVE ? window.Capacitor.registerPlugin('SmsInbox') : (window.HisabTestSms || null);
   const SpendWidget = NATIVE ? window.Capacitor.registerPlugin('SpendWidget') : null;
   const Haptics = NATIVE ? window.Capacitor.registerPlugin('Haptics') : null;
   const ShareFile = NATIVE ? window.Capacitor.registerPlugin('ShareFile') : null;
@@ -2833,7 +2834,7 @@
         return '<tr' + (r.duplicate || (isIn && p.salary) ? ' class="muted"' : '') + '>' + check +
           '<td><div class="cell-title">' + esc(tr(p.merchant)) + '</div><div class="cell-sub">' + fmtDate(p.date) + (note ? ' · ' + note : '') +
           ' · <button class="link" data-action="sms-skip-like" data-i="' + i + '">' + tr('Skip SMS like this') + '</button></div></td>' +
-          '<td><select data-sms-cat="' + i + '" aria-label="' + tr('Category') + '">' + (isIn ? incomeCategoryOptions(p.category) : categoryOptions(p.category)) + '</select></td>' +
+          '<td><select data-sms-cat="' + i + '" aria-label="' + tr('Category') + '">' + (isIn ? incomeCategoryOptions(personPick(p.category) ? null : p.category) : categoryOptions(personPick(p.category) ? null : p.category)) + personOptions(isIn, p.category) + '</select></td>' +
           '<td class="amt' + (isIn ? ' good' : '') + '">' + (isIn ? '+' : '') + inr(p.amount) + '</td></tr>';
       }).join('') +
       '</tbody></table></div>' +
@@ -2962,7 +2963,8 @@
   /*
    * Records one parsed bank SMS. o: key, review (mark "needs your check"),
    * category and note (chosen by the user), cardId ('account' or a card,
-   * chosen in the pop-up). Returns false if nothing was recorded.
+   * chosen in the pop-up). Returns false if nothing was recorded. A category
+   * from personChoices() (lent, borrowed, paid back) goes to People.
    */
   function recordSms(p, o) {
     // Marked "not a payment" before, or from a place whose SMS are skipped.
@@ -2976,6 +2978,8 @@
       card.statement = { date: p.date, total: p.amount, min: p.min, due: p.due, smsKey: o.key };
       return true;
     }
+    const person = personPick(o.category);
+    const cat = person ? (p.type === 'credit' ? (person.iou ? 'Money returned' : 'Money received') : 'Misc') : o.category || p.category;
     // An EMI booked on a card: kept to offer on the card, never as a payment.
     if (p.type === 'cardemi') {
       if ((state.emiOffers || []).some((x) => x.key === o.key)) return false;
@@ -3004,7 +3008,7 @@
     else if (p.paidFrom === 'card') paidFrom = card ? card.id : 'card:' + (p.last4 || '');
     const fromWallet = paidFrom === 'account' ? walletForAcct(p.acct) : null;
     // With a Cash wallet, cash from an ATM is moved, not spent: what's spent in cash is noted from the wallet.
-    if (p.type === 'debit' && p.atm && paidFrom === 'account' && cashWallet() && (o.category || p.category) === 'Cash') {
+    if (p.type === 'debit' && p.atm && paidFrom === 'account' && cashWallet() && cat === 'Cash') {
       state.transactions.push({ id: uid(), kind: 'transfer', date: p.date, amount: p.amount, from: fromWallet ? fromWallet.id : 'main', to: cashWallet().id,
         note: tr('ATM withdrawal'), source: o.source || 'sms', smsKey: o.key });
       return true;
@@ -3014,12 +3018,13 @@
     if (mine) {
       mine.smsKey = o.key;
       // Kept so "Not the same payment" can add the SMS as its own entry.
-      mine.matched = { date: p.date, merchant: p.merchant, category: o.category || p.category, type: p.type, paidFrom: paidFrom === 'account' ? null : paidFrom, wallet: fromWallet ? fromWallet.id : null };
+      mine.matched = { date: p.date, merchant: p.merchant, category: cat, type: p.type, paidFrom: paidFrom === 'account' ? null : paidFrom, wallet: fromWallet ? fromWallet.id : null };
       if (paidFrom !== 'account' && paidFrom.indexOf('card:') !== 0 && !mine.paidFrom && !mine.wallet) mine.paidFrom = paidFrom;
       else if (fromWallet && !mine.paidFrom && !mine.wallet) mine.wallet = fromWallet.id;
+      if (person && (!Core.isIncome(mine) || !mine.useFor || mine.useFor === 'spend')) linkPerson(mine, person);
       return true;
     }
-    const tx = { id: uid(), date: p.date, amount: p.amount, category: o.category || p.category, note: o.note || p.merchant, source: 'sms', smsKey: o.key };
+    const tx = { id: uid(), date: p.date, amount: p.amount, category: cat, note: o.note || p.merchant, source: 'sms', smsKey: o.key };
     if (paidFrom !== 'account') tx.paidFrom = paidFrom;
     else if (fromWallet) tx.wallet = fromWallet.id;
     if (p.type !== 'credit' && tx.category === 'Savings') {
@@ -3040,20 +3045,63 @@
       tx.kind = 'in';
       // A refund to a card lowers the card bill, so it stays as this month's money.
       tx.useFor = paidFrom !== 'account' ? 'spend' : null;
-      if (paidFrom === 'account' && Core.isLoanCredit(p.raw)) {
+      if (paidFrom === 'account' && !person && (Core.isLoanCredit(p.raw) || tx.category === LOAN_CATEGORY)) {
         tx.category = LOAN_CATEGORY;
         tx.borrowed = true;
         tx.useFor = 'spend';
       }
     } else if (o.review || paidFrom.indexOf('card:') === 0) {
       tx.needsReview = true;
-    } else if (!o.noLearn) {
+    } else if (!o.noLearn && !person) {
       const shop = Core.normalizeMerchant(tx.note);
       if (shop && tx.note !== 'Bank payment') state.merchantRules[shop] = tx.category;
     }
     if (o.source) tx.source = o.source;
     state.transactions.push(tx);
+    if (person) linkPerson(tx, person);
     return true;
+  }
+
+  /*
+   * People choices next to the categories (notification pop-up, SMS list):
+   * paying back someone with an open IOU, or a new lend / borrow.
+   */
+  function personChoices(isIn) {
+    return Core.openIous(state, isIn ? 'lent' : 'owe').slice(0, 3).map((i) => ['@iou:' + i.id,
+      tr(isIn ? '{name} paying back ({left} left)' : 'Paying {name} back ({left} left)', { name: i.name, left: inr(Core.iouLeft(i)) })])
+      .concat([[isIn ? '@borrowed' : '@lent', tr(isIn ? 'Borrowed from someone' : 'Lent to someone')]]);
+  }
+
+  function personPick(category) {
+    if (!category || String(category).charAt(0) !== '@') return null;
+    return { iou: category.indexOf('@iou:') === 0 ? category.slice(5) : null };
+  }
+
+  // What a People choice did, said once the SMS are in.
+  let peopleNews = [];
+
+  // Ties an entry from SMS to People: a repayment of that IOU, or a new one (the payee or payer is the person).
+  function linkPerson(tx, pick) {
+    if (tx.iouId || tx.iouPay || tx.passedOn) return;
+    const isIn = Core.isIncome(tx);
+    if (pick.iou) {
+      const i = Core.openIous(state).find((x) => x.id === pick.iou);
+      // Settled meanwhile: left for the person to check.
+      if (!i) { tx.needsReview = true; return; }
+      Core.payIou(state, i.id, Math.min(tx.amount, Core.iouLeft(i)), tx.date, tx.id);
+      peopleNews.push(Core.iouLeft(i) ? tr('{left} still to go with {name}', { left: inr(Core.iouLeft(i)), name: i.name }) : tr('Settled with {name}', { name: i.name }));
+    } else {
+      const i = Core.addIou(state, { name: tx.note, dir: isIn ? 'owe' : 'lent', amount: tx.amount, txId: tx.id }, today());
+      if (!i) return;
+      peopleNews.push(tr(i.dir === 'owe' ? 'In People: you owe {name} {amount}' : 'In People: {name} owes you {amount}', { name: i.name, amount: inr(i.amount) }));
+    }
+    if (isIn) tx.useFor = tx.useFor || 'spend';
+    logEvent('sms-people', { dir: isIn ? 'in' : 'out', repay: !!pick.iou, amount: tx.amount });
+  }
+
+  function personOptions(isIn, selected) {
+    const list = personChoices(isIn);
+    return '<optgroup label="' + esc(tr('People')) + '">' + list.map(([v, l]) => '<option value="' + esc(v) + '"' + (v === selected ? ' selected' : '') + '>' + esc(l) + '</option>').join('') + '</optgroup>';
   }
 
   /*
@@ -3992,7 +4040,7 @@
         sealedBlob = null;
         locked = false; ui.unlocking = false; ui.unlockedAt = Date.now();
         if (!booted) boot();
-        else { render(); if (NATIVE) collectNative(); }
+        else { render(); if (SmsInbox) collectNative(); }
       })
       .catch((e) => {
         ui.unlocking = false;
@@ -6306,7 +6354,8 @@
           if (!r.checked || !r.parsed || recorded.has(r.key)) return;
           if (recordSms(r.parsed, { key: r.key, category: r.parsed.category })) added++;
         });
-        ui.smsRows = null; ui.smsText = ''; markSmsSeen(); save(); toast(tr('{items} added', { items: plural(added, 'item') }));
+        ui.smsRows = null; ui.smsText = ''; markSmsSeen(); save(); toast(peopleNews.length ? peopleNews.join(' · ') : tr('{items} added', { items: plural(added, 'item') }));
+        peopleNews = [];
         announceAutoSaved(); break;
       }
       case 'record-savings': {
@@ -7115,11 +7164,13 @@
   // Gives the notification pop-up the same categories and learned shops as the app.
   function syncAlerts() {
     if (!SmsInbox || !state.smsAlerts) return;
+    const out = categories().filter((c) => c !== 'Emergency').map((c) => [c, label(c)]).concat(personChoices(false));
+    const inn = INCOME_CATEGORIES.map((c) => [c, label(c)]).concat(personChoices(true));
     const payload = {
-      categories: categories().filter((c) => c !== 'Emergency'),
-      categoryLabels: categories().filter((c) => c !== 'Emergency').map(label),
-      incomeCategories: INCOME_CATEGORIES,
-      incomeCategoryLabels: INCOME_CATEGORIES.map(label),
+      categories: out.map((c) => c[0]),
+      categoryLabels: out.map((c) => c[1]),
+      incomeCategories: inn.map((c) => c[0]),
+      incomeCategoryLabels: inn.map((c) => c[1]),
       lang: I18N.getLang(),
       rules: state.merchantRules,
       cards: (state.cards || []).map((c) => ({ id: c.id, name: c.name, last4: c.last4 || '' })),
@@ -7165,7 +7216,8 @@
       });
       save();
       return SmsInbox.removeAlerts({ keys: items.map((it) => it.key) }).then(() => {
-        if (added) toast(tr('{sms} recorded', { sms: plural(added, 'bank SMS', 'bank SMS') }));
+        if (added) toast(peopleNews.length ? peopleNews.join(' · ') : tr('{sms} recorded', { sms: plural(added, 'bank SMS', 'bank SMS') }));
+        peopleNews = [];
         announceAutoSaved();
       });
     }).catch(() => {});
@@ -7216,7 +7268,7 @@
   function boot() {
     booted = true;
     assignWaitingSaved();
-    if (NATIVE) collectNative();
+    if (SmsInbox) collectNative();
     const fromHash = (location.hash || '').replace('#', '');
     tab = TABS.indexOf(fromHash) !== -1 ? fromHash : 'home';
     // The tour opens once, the first time the app is opened (with the example numbers).

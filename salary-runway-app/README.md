@@ -152,7 +152,7 @@ It opens the report in the real app on the report's date, visits every page, and
 Everything in the app affects something else, so the relationships are checked as rules, for every kind of entry (spending, card spending, money received and each thing it can do, savings to the fund, Grow or a goal, borrowed, lent, passed on, card bills):
 
 - `tests/money-rules.test.js` (runs with `npm test`): net worth changes by exactly what was earned or spent, and moving your own money changes nothing; only spending shows as spending; what isn't income or spending (passed on, borrowed and lent together, kept for a purchase, a card bill) doesn't move today's limit; a covered purchase uses the kept money, not the budgets.
-- `scripts/money-rules-app.js` (`npm run build` first; Playwright): in the real app, each entry added through the screens and deleted again leaves every number as it was (funds, goals, loans, People, kept money, net worth, limit, balance), and editing an amount keeps every link right.
+- `scripts/money-rules-app.js` (`npm run build` first; Playwright): in the real app, each entry added through the screens and deleted again leaves every number as it was (funds, goals, loans, People, kept money, net worth, limit, balance), and editing an amount keeps every link right. A category picked in the notification pop-up (a stand-in for the phone's store, `window.HisabTestSms`) must land in the same place as in the app: a budget, a saving place, a card, People, or *not a payment*.
 
 Add a rule here whenever a new kind of entry or a new place for money is added.
 

@@ -164,6 +164,100 @@ async function edits(browser, B) {
   return bad;
 }
 
+/*
+ * Categories picked in the notification pop-up: the app saves them when it
+ * opens, and each must land where the same choice in the app does (People,
+ * a saving place, a card, "not a payment"), then undo cleanly on delete.
+ * HisabTestSms stands in for the phone's store of pop-up answers.
+ */
+async function notifications(browser, B) {
+  const data = household();
+  data.smsAlerts = true;
+  data.cards = [{ id: 'c1', name: 'HDFC', last4: '6645', limit: 100000, dueDay: 5, statementDay: 15 }];
+  data.iou = [{ id: 'iou1', name: 'Rahul', dir: 'lent', amount: 5000, paid: 0, promised: null, created: '2026-10-20', payments: [] }];
+  const alert = (o) => Object.assign({ key: 'k' + Math.random().toString(36).slice(2), date: '2026-10-26', body: '', status: 'confirmed' }, o);
+  const cases = {
+    'spend, Food & dining': [alert({ type: 'debit', amount: 500, merchant: 'ZOMATO', category: 'Food & dining' }),
+      (s) => s.transactions.some((t) => t.note === 'ZOMATO' && t.category === 'Food & dining' && !t.kind && !t.needsReview)],
+    'spend, Family': [alert({ type: 'debit', amount: 2000, merchant: 'PRIYA', category: 'Family' }),
+      (s) => s.transactions.some((t) => t.note === 'PRIYA' && t.category === 'Family' && Core.isFlexible(t))],
+    'Savings → a saving place': [alert({ type: 'debit', amount: 1000, merchant: 'JAR', category: 'Savings' }),
+      (s) => s.transactions.some((t) => t.note === 'JAR' && t.kind === 'move' && !!t.useFor)],
+    'paid with a card': [alert({ type: 'debit', amount: 800, merchant: 'AMAZON', category: 'Shopping', cardId: 'c1' }),
+      (s) => s.transactions.some((t) => t.note === 'AMAZON' && t.paidFrom === 'c1')],
+    'Lent to someone → People': [alert({ type: 'debit', amount: 3000, merchant: 'AMIT', category: '@lent' }),
+      (s) => s.iou.some((i) => i.name === 'AMIT' && i.dir === 'lent' && i.amount === 3000) && s.transactions.some((t) => t.note === 'AMIT' && t.iouId)],
+    'Borrowed from someone → People': [alert({ type: 'credit', amount: 4000, merchant: 'SUNIL', category: '@borrowed' }),
+      (s) => s.iou.some((i) => i.name === 'SUNIL' && i.dir === 'owe' && i.amount === 4000) && s.transactions.some((t) => t.note === 'SUNIL' && t.iouId && t.useFor === 'spend')],
+    'Rahul paying back → People': [alert({ type: 'credit', amount: 2000, merchant: 'RAHUL K', category: '@iou:iou1' }),
+      (s) => s.iou.find((i) => i.id === 'iou1').paid === 2000 && s.transactions.some((t) => t.note === 'RAHUL K' && t.iouPay === 'iou1')],
+    'Loan or Pay Later → borrowed': [alert({ type: 'credit', amount: 10000, merchant: 'KREDITBEE', category: 'Loan or Pay Later' }),
+      (s) => s.transactions.some((t) => t.note === 'KREDITBEE' && t.borrowed)],
+    'Gift → asks what it should do': [alert({ type: 'credit', amount: 1500, merchant: 'FATHER', category: 'Gift' }),
+      (s) => s.transactions.some((t) => t.note === 'FATHER' && t.kind === 'in' && !t.useFor)],
+    'Not a payment → never offered again': [alert({ type: 'debit', amount: 99, merchant: 'OFFER', category: 'Misc', status: 'ignored' }),
+      (s, a) => !s.transactions.some((t) => t.note === 'OFFER') && (s.smsIgnored || []).indexOf(a.key) !== -1],
+  };
+  const snap = (page) => page.evaluate(() => {
+    const s = JSON.parse(localStorage.getItem('salary-runway-v1')); const t = '2026-10-26';
+    const r = Core.projectRunway(s, t);
+    return JSON.stringify({ fund: s.savings.emergencyBalance, invest: s.savings.investSaved || 0, goal: [s.goals[0].saved, s.goals[0].savedOutside || 0],
+      people: (s.iou || []).map((i) => [i.name, Core.iouLeft(i)]), worth: Core.netWorth(s, t).value, limit: Math.round(r.dailyAllowance), balance: r.balanceToday, txs: s.transactions.length });
+  });
+  let bad = 0;
+  // The pop-up's lists: People choices sit with the categories.
+  {
+    const page = await browser.newPage();
+    await page.addInitScript(() => {
+      window.HisabTestSms = { synced: null, getAlerts: () => Promise.resolve({ items: [] }), removeAlerts: () => Promise.resolve(),
+        syncAlerts: (x) => { window.HisabTestSms.synced = x; return Promise.resolve(); } };
+    });
+    await page.clock.setFixedTime(new Date('2026-10-26T10:00:00+05:30'));
+    await page.goto(B + '#home');
+    await page.evaluate((d) => { localStorage.clear(); localStorage.setItem('salary-runway-lang', 'en'); localStorage.setItem('salary-runway-tour', '1'); localStorage.setItem('salary-runway-v1', JSON.stringify(d)); }, data);
+    await page.reload(); await page.waitForTimeout(500);
+    const lists = await page.evaluate(() => window.HisabTestSms.synced);
+    const ok = !!lists && lists.categories.indexOf('@lent') !== -1 && lists.categories.indexOf('Family') !== -1 && lists.categories.indexOf('Savings') !== -1 &&
+      lists.incomeCategories.indexOf('@borrowed') !== -1 && lists.incomeCategories.indexOf('@iou:iou1') !== -1 &&
+      lists.incomeCategoryLabels[lists.incomeCategories.indexOf('@iou:iou1')] === 'Rahul paying back (₹5,000 left)' &&
+      lists.categories.length === lists.categoryLabels.length && lists.incomeCategories.length === lists.incomeCategoryLabels.length;
+    if (!ok) bad++;
+    console.log((ok ? 'OK   ' : 'FAIL ') + 'pop-up lists include People' + (ok ? '' : '\n   ' + JSON.stringify(lists)));
+    await page.close();
+  }
+  for (const [name, [a, check]] of Object.entries(cases)) {
+    const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+    const errors = []; page.on('pageerror', (e) => errors.push(e.message));
+    await page.addInitScript(() => {
+      window.HisabTestSms = { getAlerts: () => Promise.resolve({ items: JSON.parse(localStorage.getItem('test-alerts') || '[]') }),
+        removeAlerts: () => { localStorage.removeItem('test-alerts'); return Promise.resolve(); }, syncAlerts: () => Promise.resolve() };
+    });
+    await page.clock.setFixedTime(new Date('2026-10-26T10:00:00+05:30'));
+    await page.goto(B + '#home');
+    await page.evaluate((d) => { localStorage.clear(); localStorage.setItem('salary-runway-lang', 'en'); localStorage.setItem('salary-runway-tour', '1'); localStorage.setItem('salary-runway-v1', JSON.stringify(d)); }, data);
+    await page.reload(); await page.waitForTimeout(500);
+    const c = async (sel) => { await page.evaluate((x) => { const e = document.querySelector(x); if (!e) throw new Error('missing ' + x); e.click(); }, sel); await page.waitForTimeout(150); };
+    const before = await snap(page);
+    let landed = false; let mid = '';
+    try {
+      // The pop-up answered while the app was closed; the app opens.
+      await page.evaluate((x) => localStorage.setItem('test-alerts', JSON.stringify([x])), a);
+      await page.reload(); await page.waitForTimeout(600);
+      landed = await page.evaluate(([src, x]) => (0, eval)('(' + src + ')')(JSON.parse(localStorage.getItem('salary-runway-v1')), x), [check.toString(), a]);
+      mid = await snap(page);
+      const ids = await page.evaluate((n) => JSON.parse(localStorage.getItem('salary-runway-v1')).transactions.slice(n).map((t) => t.id), JSON.parse(before).txs);
+      await c('[data-action=tab][data-tab=spend]'); await c('[data-action=page-open][data-key=payments]');
+      for (const id of ids.reverse()) await c('[data-action=tx-delete][data-id="' + id + '"]');
+    } catch (e) { errors.push(String(e.message || e)); }
+    const after = await snap(page);
+    const ok = landed && before === after && !errors.length;
+    if (!ok) bad++;
+    console.log((ok ? 'OK   ' : 'FAIL ') + name + (ok ? '' : '\n   landed ' + landed + '\n   before ' + before + '\n   added  ' + mid + '\n   after  ' + after + (errors.length ? '\n   errors ' + errors.join(' / ') : '')));
+    await page.close();
+  }
+  return bad;
+}
+
 (async () => {
   await new Promise((ok) => server.listen(0, ok));
   const B = 'http://localhost:' + server.address().port + '/index.html';
@@ -174,6 +268,8 @@ async function edits(browser, B) {
     bad += await addThenDelete(browser, B);
     console.log('Edit amounts:');
     bad += await edits(browser, B);
+    console.log('Notification pop-up:');
+    bad += await notifications(browser, B);
   } finally { await browser.close(); server.close(); }
   process.exit(bad ? 1 : 0);
 })();

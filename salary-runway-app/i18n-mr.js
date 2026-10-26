@@ -1920,4 +1920,6 @@
   "{amount} of it is already paid back. It can’t be less.": "त्यातले {amount} आधीच परत दिले आहेत. यापेक्षा कमी असू शकत नाही.",
   "{amount} of it already paid for purchases. It can’t be less.": "त्यातले {amount} आधीच खरेदीसाठी वापरले. यापेक्षा कमी असू शकत नाही.",
   "Emergency fund, goals and Grow": "आपत्कालीन निधी, ध्येये आणि वाढ",
+  "Lent to someone": "कोणाला उसने दिले",
+  "Borrowed from someone": "कोणाकडून उसने घेतले",
 };
