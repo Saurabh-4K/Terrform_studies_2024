@@ -592,6 +592,14 @@
      * passed on: not income or spending, but it moves the balance, so it
      * counts with money received (out as less). Passed on, in and out cancel.
      */
+    // Card bills from before the card was added, paid from the account; card spending turned into an EMI.
+    (state.cards || []).forEach((c) => {
+      if (!(cardPayments(state, c).length)) return;
+      for (let d = cycle.start; d <= todayIso && d < cycle.next; d = addDays(d, 1)) {
+        const fx = cardDayEffect(state, c, d);
+        if (fx) spendByDate[d] = (spendByDate[d] || 0) - fx;
+      }
+    });
     const flows = state.transactions.filter((t) => isPassedOn(t) && inCycle(t.date, cycle) && t.date <= todayIso);
     const flowOf = (t) => (isIncome(t) ? t.amount : -t.amount);
     flows.forEach((t) => { spendByDate[t.date] = (spendByDate[t.date] || 0) - flowOf(t); });
@@ -880,20 +888,60 @@
    * amount owed from before the card was added first.
    */
   function cardReserve(state, iso) {
-    return sum(state.cards || [], (c) => {
-      const spent = sum(cardSpends(state, c).filter((t) => t.date < iso), (t) => t.amount) -
-        sum(cardRefunds(state, c).filter((t) => t.date < iso), (t) => t.amount);
-      // Payments before the bill the card was added with paid older bills.
-      const paid = sum(cardPayments(state, c).filter((t) => t.date >= setupFrom(c) && t.date < iso), (t) => t.amount);
-      // Payments clear what isn't card spending first: the bill from before the card was added, and EMIs billed on it.
-      return Math.max(0, spent - Math.max(0, paid - setupOwed(c) - cardEmiCharges(state, c, addDays(iso, -1))));
-    });
+    return sum(state.cards || [], (c) => Math.max(0, cardSpendOwed(state, c, iso)));
+  }
+  // Card spending (less refunds) and what was turned into EMIs, before the day iso.
+  function cardSpentNet(state, c, iso) {
+    return sum(cardSpends(state, c).filter((t) => t.date < iso), (t) => t.amount) -
+      sum(cardRefunds(state, c).filter((t) => t.date < iso), (t) => t.amount);
+  }
+  function cardConverted(state, c, iso) {
+    return sum(cardPayments(state, c).filter((t) => t.kind === 'cardconvert' && t.date >= setupFrom(c) && t.date < iso), (t) => t.amount);
+  }
+  /*
+   * Paid toward the card's bills before the day iso: payments from the
+   * account, and EMI conversions beyond the card spending (an EMI made of
+   * card spending turns that spending into a loan; only the rest of it covers
+   * the bill from before the card was added). Payments before the bill the
+   * card was added with paid older bills.
+   */
+  function cardBillPaid(state, c, iso) {
+    const cash = sum(cardPayments(state, c).filter((t) => t.kind !== 'cardconvert' && t.date >= setupFrom(c) && t.date < iso), (t) => t.amount);
+    return cash + Math.max(0, cardConverted(state, c, iso) - Math.max(0, cardSpentNet(state, c, iso)));
+  }
+  // Card spending not yet paid, before the day iso (below 0: a refund credit on the card).
+  function cardSpendOwed(state, c, iso) {
+    const spent = cardSpentNet(state, c, iso);
+    const toEmi = Math.min(cardConverted(state, c, iso), Math.max(0, spent));
+    // Payments clear what isn't card spending first: the bill from before the card was added, and EMIs billed on it.
+    return spent - toEmi - Math.max(0, cardBillPaid(state, c, iso) - setupOwed(c) - cardEmiCharges(state, c, addDays(iso, -1)));
+  }
+
+  /*
+   * What the card does to the money shown on day d, beyond counting its
+   * spending that day (spending is kept aside at once): paying the bill from
+   * before the card was added takes money out of the account, turning card
+   * spending into an EMI gives back what was kept aside for it. The EMI part
+   * of a card bill leaves on its own due date, as the loan's EMI, so paying it
+   * changes nothing here.
+   */
+  function cardDayEffect(state, c, d) {
+    const from = setupFrom(c);
+    const next = addDays(d, 1);
+    const emiSetup = Math.min(Number(c.setupStatement) || 0, sum(cardEmis(state, c), (x) => Number(x.minPayment)));
+    const owedBefore = setupOwed(c);
+    // How much of what's been paid up to a day went to EMIs (paid in order: the EMI on the first bill, the rest of it, later EMIs, spending).
+    const emiPart = (paid, iso) => Math.min(paid, emiSetup) + Math.min(Math.max(0, paid - owedBefore), cardEmiCharges(state, c, iso));
+    const paidBy = (iso) => cardBillPaid(state, c, iso);
+    const cash = sum(cardPayments(state, c).filter((t) => t.kind === 'cardpay' && t.date >= from && t.date === d), (t) => t.amount);
+    const emiToday = emiPart(paidBy(next), d) - emiPart(paidBy(d), addDays(d, -1));
+    const spends = sum(cardSpends(state, c).filter((t) => t.date === d), (t) => t.amount) - sum(cardRefunds(state, c).filter((t) => t.date === d), (t) => t.amount);
+    return spends - Math.max(0, cash - emiToday) - (cardSpendOwed(state, c, next) - cardSpendOwed(state, c, d));
   }
 
   // Bills for what was owed before the card was added, until paid.
   function cardLegacyEvents(state, card, todayIso) {
-    const from = setupFrom(card);
-    const paid = sum(cardPayments(state, card).filter((t) => t.date >= from && t.date <= todayIso), (t) => t.amount);
+    const paid = cardBillPaid(state, card, addDays(todayIso, 1));
     const billLeft = Math.max(0, (Number(card.setupStatement) || 0) - paid);
     // The EMIs on that bill leave as the loans' own EMIs, so only the rest is a bill to pay here.
     const statementLeft = Math.min(billLeft, Math.max(0, (Number(card.setupStatement) || 0) - sum(cardEmis(state, card), (d) => Number(d.minPayment))));
@@ -2285,13 +2333,19 @@
     const money = Math.max(0, (Number(r.balanceToday) || 0) + iouDue);
     const sv = state.savings || {};
     // Money moved out of the account into a goal (Jar for a bike) is still yours; set-asides for goals stay in the account.
+    // Money received and given to a goal stays in the account but outside the balance shown, like the emergency fund.
+    // A saving not yet given a place (Jar, still to choose) is yours too.
+    const goalIds = new Set((state.goals || []).map((g) => g.id));
     const funds = (Number(sv.emergencyBalance) || 0) + (Number(sv.investSaved) || 0) +
-      sum(state.goals || [], (g) => Number(g.savedOutside) || 0);
+      sum(state.goals || [], (g) => Number(g.savedOutside) || 0) +
+      sum(state.transactions.filter((t) => t.date <= todayIso && ((isIncome(t) && t.useFor === 'goal' && goalIds.has(t.goalId)) || (isMove(t) && !t.useFor && !t.setAside))), (t) => t.amount);
     const loans = sum((state.debts || []).filter((d) => d.balance > 0), (d) => Number(d.balance) || 0);
     // Card spending this cycle already came off the money; what was owed before the card was added did not.
-    // EMIs on a card bill are counted once, with the loans.
-    const cards = sum(state.cards || [], (c) => Math.max(0, setupOwed(c) - sum(cardEmis(state, c), (d) => Number(d.minPayment)) -
-      sum(cardPayments(state, c).filter((t) => t.date >= setupFrom(c) && t.date <= todayIso), (t) => t.amount)));
+    // EMIs on a card bill are counted once, with the loans. Payments go to the EMI on that bill first, as its bill to pay does.
+    const cards = sum(state.cards || [], (c) => {
+      const emiSetup = Math.min(Number(c.setupStatement) || 0, sum(cardEmis(state, c), (d) => Number(d.minPayment)));
+      return Math.max(0, setupOwed(c) - emiSetup - Math.max(0, cardBillPaid(state, c, addDays(todayIso, 1)) - emiSetup));
+    });
     // Friends and family: what you owe them, and what they owe you.
     const people = iouSummary(state, todayIso);
     return { money, funds, loans, cards, owedPeople: people.oweTotal, lentPeople: people.lentTotal,

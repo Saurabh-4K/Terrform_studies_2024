@@ -3387,8 +3387,11 @@
 
   function intoOptions(x) {
     const cur = x && x.wallet ? x.wallet : '';
-    return '<option value="account"' + (!cur ? ' selected' : '') + '>' + esc(mainWalletName()) + '</option>' +
-      (state.wallets || []).map((w) => '<option value="w:' + esc(w.id) + '"' + (cur === w.id ? ' selected' : '') + '>' + esc(w.name) + '</option>').join('');
+    // A refund to a card stays on the card.
+    const card = x && x.paidFrom ? (state.cards || []).find((c) => c.id === x.paidFrom) : null;
+    return '<option value="account"' + (!cur && !card ? ' selected' : '') + '>' + esc(mainWalletName()) + '</option>' +
+      (state.wallets || []).map((w) => '<option value="w:' + esc(w.id) + '"' + (cur === w.id ? ' selected' : '') + '>' + esc(w.name) + '</option>').join('') +
+      (x && Core.isIncome(x) ? (state.cards || []).map((c) => '<option value="' + esc(c.id) + '"' + (card === c ? ' selected' : '') + '>' + esc(tr('Refund to {card}', { card: cardLabel(c) })) + '</option>').join('') : '');
   }
 
   // Applies a "paid from" or "into" choice to a payment.
@@ -3627,6 +3630,10 @@
         if (amount < (Number(iou.paid) || 0)) { ui.editError = tr('{amount} of it is already paid back. It can’t be less.', { amount: inr(iou.paid) }); render(); return; }
         iou.amount = (Number(iou.amount) || 0) + amount - x.amount;
       }
+      if (iou && x.iouPay && amount - x.amount > Core.iouLeft(iou)) {
+        ui.editError = tr('Only {max} was left to pay back with {name}. Make it {max} or less, and add the rest as its own entry.', { name: iou.name, max: inr(Core.iouLeft(iou) + x.amount) });
+        render(); return;
+      }
       if (iou && x.iouPay) {
         iou.paid = Math.max(0, (Number(iou.paid) || 0) + amount - x.amount);
         (iou.payments || []).forEach((pm) => { if (pm.txId === x.id) pm.amount = amount; });
@@ -3641,7 +3648,8 @@
         const use = x.useFor;
         const debtId = x.debtId;
         const goalId = x.goalId;
-        if (use) undoIncomeUse(x);
+        // Taken back once, with the old amount (setIncomeUse would take it back again).
+        if (use) { undoIncomeUse(x); x.useFor = null; }
         x.amount = amount;
         x.date = date;
         if (use) setIncomeUse(x, use, debtId, goalId);
@@ -3656,6 +3664,16 @@
             (k.keepUses || []).forEach((u) => { if (u.id === x.id) u.amount = Math.max(0, u.amount - back); });
           }
           x.covered = amount;
+        }
+        // Now bigger: kept money still left pays more of it.
+        if (x.coveredFrom && amount > x.amount) {
+          const k = state.transactions.find((y) => y.id === x.coveredFrom);
+          const add = k ? Math.min(Math.max(0, k.amount - (Number(k.keepUsed) || 0)), amount - (Number(x.covered) || 0)) : 0;
+          if (add > 0) {
+            k.keepUsed = (Number(k.keepUsed) || 0) + add;
+            (k.keepUses || []).forEach((u) => { if (u.id === x.id) u.amount += add; });
+            x.covered = (Number(x.covered) || 0) + add;
+          }
         }
         x.amount = amount;
         x.date = date;

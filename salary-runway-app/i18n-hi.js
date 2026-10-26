@@ -1930,4 +1930,6 @@
   "last EMI {date}": "आखिरी EMI {date}",
   "last EMI {date} ({n} left)": "आखिरी EMI {date} ({n} बाकी)",
   "The EMI doesn’t cover the {amount} interest a month, so it never ends. Check the balance and EMI.": "EMI महीने का {amount} ब्याज भी नहीं भरती, इसलिए लोन कभी खत्म नहीं होगा. बकाया और EMI जांचें.",
+  "Only {max} was left to pay back with {name}. Make it {max} or less, and add the rest as its own entry.": "{name} के साथ सिर्फ {max} लौटाना बाकी था. {max} या कम करें, और बाकी रकम अलग एंट्री में जोड़ें.",
+  "Refund to {card}": "{card} पर रिफंड",
 };

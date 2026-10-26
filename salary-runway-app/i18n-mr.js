@@ -1930,4 +1930,6 @@
   "last EMI {date}": "शेवटचा EMI {date}",
   "last EMI {date} ({n} left)": "शेवटचा EMI {date} ({n} बाकी)",
   "The EMI doesn’t cover the {amount} interest a month, so it never ends. Check the balance and EMI.": "EMI महिन्याचे {amount} व्याजही भरत नाही, त्यामुळे कर्ज कधीच संपणार नाही. बाकी रक्कम आणि EMI तपासा.",
+  "Only {max} was left to pay back with {name}. Make it {max} or less, and add the rest as its own entry.": "{name} सोबत फक्त {max} परत द्यायचे बाकी होते. {max} किंवा कमी करा, आणि उरलेली रक्कम वेगळी नोंद म्हणून जोडा.",
+  "Refund to {card}": "{card} वर परतावा",
 };
