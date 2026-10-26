@@ -1927,4 +1927,7 @@
   "Ended {date}: not counted any more. Remove it with ✕.": "{date} ला संपले: आता मोजले जात नाही. ✕ ने काढा.",
   "Last one {date}. Not counted after that.": "शेवटचा {date} ला. त्यानंतर मोजला जाणार नाही.",
   "{amount} paid. That was the last one.": "{amount} भरले. हा शेवटचा होता.",
+  "last EMI {date}": "शेवटचा EMI {date}",
+  "last EMI {date} ({n} left)": "शेवटचा EMI {date} ({n} बाकी)",
+  "The EMI doesn’t cover the {amount} interest a month, so it never ends. Check the balance and EMI.": "EMI महिन्याचे {amount} व्याजही भरत नाही, त्यामुळे कर्ज कधीच संपणार नाही. बाकी रक्कम आणि EMI तपासा.",
 };

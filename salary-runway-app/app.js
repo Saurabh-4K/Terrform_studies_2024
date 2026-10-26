@@ -4602,10 +4602,18 @@
   }
 
   // An EMI already running on the card: a bill converted before it was added here.
+  // "· last EMI Feb 2031 (52 left)", worked out from what's owed, the rate and the EMI.
+  function loanEndText(d) {
+    const e = Core.loanEnd(state, d, today());
+    if (!e) return '';
+    if (e.never) return ' · <span class="bad">' + tr('The EMI doesn’t cover the {amount} interest a month, so it never ends. Check the balance and EMI.', { amount: inr(e.interest) }) + '</span>';
+    return ' · ' + tr(e.left === 1 ? 'last EMI {date}' : 'last EMI {date} ({n} left)', { date: monthYear(e.last), n: e.left });
+  }
+
   function cardEmiForm(c) {
     const emis = state.debts.filter((d) => d.viaCard === c.id && d.balance > 0);
     const list = emis.map((d) => '<div class="line"><span>' + esc(d.name) + '</span><span>' + tr('{amount} a month', { amount: inr(d.minPayment) }) +
-      (Number(d.emisLeft) > 0 ? ' · ' + tr('{n} left', { n: d.emisLeft }) : '') + '</span></div>').join('');
+      loanEndText(d) + '</span></div>').join('');
     if (ui.cardEmi !== c.id) {
       return (list ? '<div class="summary">' + list + '</div>' : '') +
         '<div class="row"><button class="link" data-action="card-emi-open" data-id="' + esc(c.id) + '">' + tr('Add an EMI already on this card') + '</button></div>';
@@ -5179,7 +5187,7 @@
       '<div><button data-action="list-add" data-list="debts">' + tr('Add loan') + '</button></div>' +
       (debts.length ? '<div class="list">' + debts.map((d) => {
         const i = (d.balance * d.rate) / 1200;
-        return '<div class="list-item"><div class="grow"><div class="title">' + esc(d.name) + '</div><div class="meta">' + tr('{rate}% a year', { rate: d.rate }) + '</div></div>' +
+        return '<div class="list-item"><div class="grow"><div class="title">' + esc(d.name) + '</div><div class="meta">' + tr('{rate}% a year', { rate: d.rate }) + loanEndText(d) + '</div></div>' +
           '<div class="amt ' + (d.rate >= 15 ? 'bad' : '') + '">' + tr('{amount} interest/month', { amount: inr(i) }) + '</div></div>';
       }).join('') + '</div>' : '') +
       '</section>';

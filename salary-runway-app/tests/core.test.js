@@ -1819,3 +1819,23 @@ test('an EMI kept as a bill or fixed payment ends by itself after the last one',
   // Blank: no end
   assert.equal(Core.lastDueFrom(bill, true, '', t), null);
 });
+
+test('each loan’s last EMI, from what is owed, the rate and the EMI', () => {
+  const s = baseState({ settings: { salary: 98000, payday: 28 } });
+  const t = '2026-10-27';
+  // ₹1,00,000 at 12% with ₹10,000 a month: 11 EMIs (the bank's own schedule), the next on 7 Nov
+  const d = { id: 'd', name: 'Loan', balance: 100000, rate: 12, minPayment: 10000, dueDay: 7, emiThrough: '2026-10-07' };
+  assert.deepEqual(Core.loanEnd(s, d, t), { left: 11, next: '2026-11-07', last: '2027-09-07' });
+  // It agrees with paying it month by month
+  let b = 100000, n = 0;
+  while (b > 0) { b = Math.max(0, Math.round(b * 1.01 - 10000)); n++; }
+  assert.equal(n, 11);
+  // No interest: owed ÷ EMI
+  assert.equal(Core.loanEnd(s, Object.assign({}, d, { rate: 0 }), t).left, 10);
+  // An EMI below the month's interest never ends
+  assert.deepEqual(Core.loanEnd(s, Object.assign({}, d, { minPayment: 900 }), t), { never: true, interest: 1000 });
+  // A card EMI with 4 left: 4, on the card's due day
+  s.cards = [{ id: 'c', name: 'HDFC', dueDay: 3, statementDay: 14 }];
+  const emi = { id: 'e', name: 'HDFC EMI', balance: 23000, rate: 22.44, minPayment: 6010, viaCard: 'c', emisLeft: 4, emiThrough: '2026-10-03' };
+  assert.deepEqual(Core.loanEnd(s, emi, t), { left: 4, next: '2026-11-03', last: '2027-02-03' });
+});

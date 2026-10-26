@@ -1543,6 +1543,34 @@
    * balances are paid through the card bill and left alone.
    * Returns the loans that reached ₹0.
    */
+  /*
+   * When a loan ends at its EMI: from what's still owed, the interest rate and
+   * the EMI (an EMI on a card with a set number left: that number). Each
+   * month the interest is added and the EMI comes off, as the bank does.
+   * { left, next, last } or { never: true } when the EMI doesn't cover the
+   * month's interest (the loan would never end).
+   */
+  function loanEnd(state, d, todayIso) {
+    const bal = Number(d.balance) || 0;
+    const emi = Number(d.minPayment) || 0;
+    if (!(bal > 0) || !(emi > 0)) return null;
+    const card = d.viaCard && (state.cards || []).find((c) => c.id === d.viaCard);
+    const day = Number(card ? card.dueDay : d.dueDay) || 1;
+    // The next EMI: after the last one counted, or the first, or the next due day from today.
+    let next;
+    if (d.starts && d.starts > todayIso) next = nextFixedDue({ dueDay: day }, d.starts);
+    else if (d.emiThrough) { const f = parseISO(d.emiThrough); next = toISO(clampedDate(f.getFullYear(), f.getMonth() + 1, day)); }
+    else next = nextFixedDue({ dueDay: day }, todayIso);
+    let left = Math.round(Number(d.emisLeft) || 0);
+    if (!(left > 0)) {
+      const r = (Number(d.rate) || 0) / 1200;
+      if (r > 0 && emi <= bal * r) return { never: true, interest: Math.round(bal * r) };
+      left = r > 0 ? Math.ceil(-Math.log(1 - (r * bal) / emi) / Math.log(1 + r) - 1e-9) : Math.ceil(bal / emi);
+    }
+    const n = parseISO(next);
+    return { left, next, last: toISO(clampedDate(n.getFullYear(), n.getMonth() + left - 1, day)) };
+  }
+
   function tickDebts(state, todayIso) {
     const cleared = [];
     state.debts.forEach((d) => {
@@ -3122,7 +3150,7 @@
     splitSmsBatch, smsKey, categorize, normalizeMerchant, sinkingMonthly, inCycle,
     spendInRange, incomeInRange, incomeKept, isIncome, isMove, isBillPayment, isFlexible, incomeOptions,
     salaryFor, salaryHistory, paydayReset, suggestUse, freedomDays, interestLeak, nextPaydayPreview,
-    billShare, billPot, billsMonthly, billPaidIn, billDue, billEnded, fixedEnded, billsFor, fixedFor, fixedTotal, paymentsLeft, lastDueFrom, nextFixedDue, payBill, undoBillPayment, zoneStatus, ESSENTIAL_CATEGORIES,
+    billShare, billPot, billsMonthly, billPaidIn, billDue, billEnded, fixedEnded, loanEnd, billsFor, fixedFor, fixedTotal, paymentsLeft, lastDueFrom, nextFixedDue, payBill, undoBillPayment, zoneStatus, ESSENTIAL_CATEGORIES,
     isCardTransfer, statementOn, dueAfter, cardOwedAt, cardReserve, cardStatus, emiQuote, revolveQuote, cardBillPlan,
     recordCardPayment, keptFor, ownPart, coverPurchase, addCardEmi, isPassedOn, passThroughPair, passOn, iouLeft, openIous, addIou, payIou, undoIouTx, iouSummary, iouEvents, cardEmiFromBooking, looksLikeCardBill, spendToCardPayment, convertCardBalance, answerCardDue, cardLateFee, cardRate, CARD_RATE, undoCardConvert, cardFreeDays, byCategory, DEFAULT_SPLIT,
     isLoanCredit, borrowedThisCycle, borrowCheck, rolloverOptions, setTranslator,

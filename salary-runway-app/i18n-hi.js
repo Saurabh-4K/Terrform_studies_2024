@@ -1927,4 +1927,7 @@
   "Ended {date}: not counted any more. Remove it with ✕.": "{date} को खत्म: अब गिना नहीं जाता. ✕ से हटाएं.",
   "Last one {date}. Not counted after that.": "आखिरी {date} को. उसके बाद गिना नहीं जाएगा.",
   "{amount} paid. That was the last one.": "{amount} भरे. यह आखिरी था.",
+  "last EMI {date}": "आखिरी EMI {date}",
+  "last EMI {date} ({n} left)": "आखिरी EMI {date} ({n} बाकी)",
+  "The EMI doesn’t cover the {amount} interest a month, so it never ends. Check the balance and EMI.": "EMI महीने का {amount} ब्याज भी नहीं भरती, इसलिए लोन कभी खत्म नहीं होगा. बकाया और EMI जांचें.",
 };
