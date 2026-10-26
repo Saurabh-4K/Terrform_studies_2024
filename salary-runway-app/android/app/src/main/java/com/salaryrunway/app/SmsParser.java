@@ -28,7 +28,7 @@ final class SmsParser {
     private static final int CI = Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE;
     private static final Pattern NOT_PAYMENT = Pattern.compile("\\botp\\b|one time password|verification code", CI);
     // Bank SMS with an amount that isn't money moving, as NOT_MONEY in core.js.
-    private static final Pattern NOT_MONEY = Pattern.compile("reward\\s*points?|\\b(?:rp|points)\\s+(?:credited|earned|redeemed)|\\bhas requested\\b|\\bcollect request\\b|\\bpayment request\\b|\\bwill be (?:auto[- ]?)?(?:debited|deducted|charged)\\b|\\bmandate\\b.{0,60}\\b(?:registered|created|set ?up|approved)\\b|\\bauto ?pay\\b.{0,40}\\b(?:set ?up|registered|activated)\\b|\\bbonus amount\\b|\\bdear subscriber\\b", CI);
+    private static final Pattern NOT_MONEY = Pattern.compile("reward\\s*points?|\\b(?:rp|points)\\s+(?:credited|earned|redeemed)|\\bhas requested\\b|\\bcollect request\\b|\\bpayment request\\b|\\bwill be (?:auto[- ]?)?(?:debited|deducted|charged)\\b|\\bmandate\\b.{0,60}\\b(?:registered|created|set ?up|approved)\\b|\\bauto ?pay\\b.{0,40}\\b(?:set ?up|registered|activated)\\b|\\bbonus amount\\b|\\bdear subscriber\\b|\\bpre-?approved\\b|\\blifetime free\\b|\\bper\\s*(?:rs\\.?|inr|₹)\\s*[\\d,]+|\\bt\\s*&\\s*c\\b|\\bapply now\\b|\\b(?:get|earn|win) up ?to\\b", CI);
     private static final Pattern AMOUNT = Pattern.compile("(?:rs\\.?|inr|₹)\\s*([\\d,]+(?:\\.\\d{1,2})?)", CI);
     private static final Pattern DEBIT = Pattern.compile("\\b(debited|spent|paid|sent|withdrawn|purchase|debit|payment of)\\b", CI);
     private static final Pattern CREDIT = Pattern.compile("\\b(credited|received|deposited|refund(?:ed)?)\\b", CI);

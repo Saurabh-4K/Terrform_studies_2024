@@ -1633,6 +1633,9 @@ test('bank SMS with an amount that is not money moving are skipped', () => {
   assert.equal(read('Asha M has requested Rs.500.00 from you on Google Pay. UPI collect request'), null);
   assert.equal(read('Dear Customer, Rs.6010.00 will be debited from your A/c XX4321 on 03-11-26 towards EMI.'), null);
   assert.equal(read('Your e-mandate for Rs.1499 to Netflix has been registered successfully on A/c XX4321.'), null);
+  // Offers, even with "Rs.100 spent" or "credited" in them
+  assert.equal(read('Get LIFETIME FREE pre-approved XYZ Bank Credit Card & enjoy up to 19 points per Rs.100 spent on flights https://x.bank.in/a T&C apply'), null);
+  assert.equal(read('Congratulations! You are eligible for a pre-approved loan of Rs.2,00,000 credited instantly. Apply now'), null);
   // A bonus in a DTH or shop account isn't money in the bank
   assert.equal(read('Dear Subscriber, Thank you for joining the Flexi Plan. Bonus amount of Rs. 50.00 has been credited to your a/c 1234567890. Total balance now is Rs. 900'), null);
   // An income tax refund is money in, and says so
