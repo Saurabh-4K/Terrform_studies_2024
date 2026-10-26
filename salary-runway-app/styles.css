@@ -251,6 +251,9 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
 input[type="number"]::-webkit-inner-spin-button, input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
 input[type="number"] { -moz-appearance: textfield; appearance: textfield; }
 .edit-row label.field span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ends-row { display: flex; gap: 10px; align-items: end; margin: -2px 0 6px; }
+.ends-row .field { flex: 0 0 120px; }
+.ends-row .hint { flex: 1; padding-bottom: 10px; }
 
 button {
   cursor: pointer;

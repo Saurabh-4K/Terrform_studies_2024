@@ -155,8 +155,51 @@
     return Math.min(full, billShare(b) * months);
   }
 
-  function billsMonthly(state) {
-    return sum(state.bills || [], billShare);
+  function billsMonthly(state, iso) {
+    return sum(billsFor(state, iso), billShare);
+  }
+
+  /*
+   * Payments that end: an EMI kept as a fixed payment or a bill, with a last
+   * due date (lastDue) worked out from how many payments are left. After the
+   * last one it's no longer counted, without having to remember to delete it.
+   * A bill also ends once the last one is paid (its next due date moves past
+   * the last).
+   */
+  function cycleOf(state, iso) { return iso ? cycleFor(iso, Number(state.settings.payday) || 1) : null; }
+  function billEnded(b, cycle) {
+    if (!b.lastDue) return false;
+    return (!!b.nextDue && b.nextDue > b.lastDue) || (!!cycle && b.lastDue < cycle.start);
+  }
+  function fixedEnded(f, cycle) { return !!f.lastDue && !!cycle && f.lastDue < cycle.start; }
+  function billsFor(state, iso) { const c = cycleOf(state, iso); return (state.bills || []).filter((b) => !billEnded(b, c)); }
+  function fixedFor(state, iso) { const c = cycleOf(state, iso); return (state.fixed || []).filter((f) => !fixedEnded(f, c)); }
+  function fixedTotal(state, iso) { return sum(fixedFor(state, iso), (f) => Number(f.amount) || 0); }
+
+  // The next due date of a fixed payment on or after iso.
+  function nextFixedDue(f, iso) {
+    const d = parseISO(iso);
+    let due = toISO(clampedDate(d.getFullYear(), d.getMonth(), Number(f.dueDay) || 1));
+    if (due < iso) due = toISO(clampedDate(d.getFullYear(), d.getMonth() + 1, Number(f.dueDay) || 1));
+    return due;
+  }
+
+  // How many payments are left, the next one included (null: no end set).
+  function paymentsLeft(item, isBill, iso) {
+    if (!item.lastDue) return null;
+    const first = isBill ? item.nextDue : nextFixedDue(item, iso);
+    if (!first || first > item.lastDue) return 0;
+    const every = isBill ? Math.max(1, Number(item.everyMonths) || 1) : 1;
+    const a = parseISO(first); const b = parseISO(item.lastDue);
+    return Math.floor(((b.getFullYear() - a.getFullYear()) * 12 + b.getMonth() - a.getMonth()) / every) + 1;
+  }
+
+  // The last due date from how many are left (the next one included); 0 or blank: no end.
+  function lastDueFrom(item, isBill, left, iso) {
+    const n = Math.round(Number(left) || 0);
+    if (!(n > 0)) return null;
+    const first = isBill ? item.nextDue || iso : nextFixedDue(item, iso);
+    return addMonths(first, (n - 1) * (isBill ? Math.max(1, Number(item.everyMonths) || 1) : 1));
   }
 
   function billPaidIn(state, b, cycle) {
@@ -165,7 +208,7 @@
 
   // A bill is due this cycle if its next due date is before the next payday (overdue included).
   function billDue(b, cycle) {
-    return !!b.nextDue && b.nextDue < cycle.next;
+    return !billEnded(b, cycle) && !!b.nextDue && b.nextDue < cycle.next;
   }
 
   /*
@@ -246,14 +289,14 @@
     const alloc = allocate(state, todayIso);
     const sv = alloc.savings;
     const salary = salaryFor(state, todayIso);
-    const fixedTotal = sum(state.fixed, (f) => Number(f.amount) || 0);
+    const fixedSum = fixedTotal(state, todayIso);
     const debtMin = sum(debtsThisRound(state, todayIso), (d) => Number(d.minPayment) || 0);
     const emergency = sv.emergencyMonthly;
     const invest = adj && adj.pauseInvest ? 0 : sv.investMonthly;
     const debtExtra = adj && adj.pauseDebtExtra ? 0 : sv.debtExtra;
     const sinking = sum(state.sinking, sinkingMonthly);
     const goals = goalsMonthly(state, todayIso);
-    const variableBills = billsMonthly(state);
+    const variableBills = billsMonthly(state, todayIso);
     const cut = adj ? adj.flexCutPct : 0;
     const budgets = alloc.budgets.map((b) => ({
       name: b.name,
@@ -263,9 +306,9 @@
     }));
     const flexTotal = sum(budgets, (b) => b.amount);
     const savingsTotal = emergency + invest + debtExtra + sinking + goals;
-    const allocated = fixedTotal + debtMin + variableBills + savingsTotal + flexTotal;
+    const allocated = fixedSum + debtMin + variableBills + savingsTotal + flexTotal;
     return {
-      salary, fixedTotal, debtMin, variableBills, emergency, invest, debtExtra, sinking, goals,
+      salary, fixedTotal: fixedSum, debtMin, variableBills, emergency, invest, debtExtra, sinking, goals,
       budgets, flexTotal, savingsTotal, allocated,
       unallocated: salary - allocated,
       adjustment: adj,
@@ -290,18 +333,18 @@
     });
     (state.bills || []).forEach((b) => {
       // A bill with no amount yet (just added, ₹0) has nothing to pay or set aside.
-      if (!((Number(b.estimate) || 0) > 0) || billPaidIn(state, b, cycle)) return;
+      if (!((Number(b.estimate) || 0) > 0) || billPaidIn(state, b, cycle) || billEnded(b, cycle)) return;
       if (billDue(b, cycle)) {
         let date = b.nextDue < cycle.start ? cycle.start : b.nextDue;
         if (todayIso && date < todayIso) date = todayIso;
         events.push({ date, name: b.name, amount: Math.max(0, (Number(b.estimate) || 0) - billPot(b, state, cycle.start)), kind: 'bill', billId: b.id });
-      } else if (billShare(b) > 0) {
+      } else if (billShare(b) > 0 && !(b.lastDue && b.lastDue < cycle.next)) {
         events.push({ date: cycle.start, name: tr('Set aside for {name}', { name: b.name }), amount: billShare(b), kind: 'billpot', billId: b.id });
       }
     });
     state.fixed.forEach((f) => {
       const date = occurrenceInCycle(Number(f.dueDay) || 1, cycle);
-      if (date) events.push({ date, name: f.name, amount: Number(f.amount) || 0, kind: 'fixed' });
+      if (date && !(f.lastDue && date > f.lastDue)) events.push({ date, name: f.name, amount: Number(f.amount) || 0, kind: 'fixed' });
     });
     state.debts.filter((d) => d.balance > 0).forEach((d) => {
       // Paid through a card bill: it leaves on the card's due day.
@@ -1134,9 +1177,9 @@
    */
   function autoSavings(state, todayIso) {
     const salary = salaryFor(state, todayIso);
-    const fixed = sum(state.fixed, (f) => Number(f.amount) || 0);
+    const fixed = fixedTotal(state, todayIso);
     const mins = sum(debtsThisRound(state, todayIso), (d) => Number(d.minPayment) || 0);
-    const sinking = sum(state.sinking, sinkingMonthly) + billsMonthly(state) + goalsMonthly(state, todayIso);
+    const sinking = sum(state.sinking, sinkingMonthly) + billsMonthly(state, todayIso) + goalsMonthly(state, todayIso);
     const available = salary - fixed - mins - sinking;
     const notes = [];
     if (available <= 0) {
@@ -1218,9 +1261,9 @@
       savings.investMonthly += rollover.grow;
     }
     const salary = salaryFor(state, todayIso);
-    const fixed = sum(state.fixed, (f) => Number(f.amount) || 0);
+    const fixed = fixedTotal(state, todayIso);
     const mins = sum(debtsThisRound(state, todayIso), (d) => Number(d.minPayment) || 0);
-    const sinking = sum(state.sinking, sinkingMonthly) + billsMonthly(state) + goalsMonthly(state, todayIso);
+    const sinking = sum(state.sinking, sinkingMonthly) + billsMonthly(state, todayIso) + goalsMonthly(state, todayIso);
     const pool = salary - fixed - mins - sinking - savings.emergencyMonthly - savings.investMonthly - savings.debtExtra;
     const customTotal = sum(state.budgets.filter((b) => !b.auto), (b) => Number(b.amount) || 0);
     const autoPool = Math.max(0, pool - customTotal);
@@ -1951,9 +1994,9 @@
     const borrowed = Math.round(shortfall + fromBefore + newCardDebt);
     const effective = Math.max(0, nominal - borrowed);
     const committed = Math.round(
-      sum(state.fixed, (f) => Number(f.amount) || 0) +
+      fixedTotal(state, next.start) +
       sum(state.debts.filter((d) => d.balance > 0 && !startsNext(d)), (d) => Number(d.minPayment) || 0) +
-      billsMonthly(state) + sum(state.sinking, sinkingMonthly) + goalsMonthly(state, next.start)
+      billsMonthly(state, next.start) + sum(state.sinking, sinkingMonthly) + goalsMonthly(state, next.start)
     );
     return {
       date: next.start, nominal, shortfall, fromBefore, newCardDebt, borrowed, effective,
@@ -3079,7 +3122,7 @@
     splitSmsBatch, smsKey, categorize, normalizeMerchant, sinkingMonthly, inCycle,
     spendInRange, incomeInRange, incomeKept, isIncome, isMove, isBillPayment, isFlexible, incomeOptions,
     salaryFor, salaryHistory, paydayReset, suggestUse, freedomDays, interestLeak, nextPaydayPreview,
-    billShare, billPot, billsMonthly, billPaidIn, billDue, payBill, undoBillPayment, zoneStatus, ESSENTIAL_CATEGORIES,
+    billShare, billPot, billsMonthly, billPaidIn, billDue, billEnded, fixedEnded, billsFor, fixedFor, fixedTotal, paymentsLeft, lastDueFrom, nextFixedDue, payBill, undoBillPayment, zoneStatus, ESSENTIAL_CATEGORIES,
     isCardTransfer, statementOn, dueAfter, cardOwedAt, cardReserve, cardStatus, emiQuote, revolveQuote, cardBillPlan,
     recordCardPayment, keptFor, ownPart, coverPurchase, addCardEmi, isPassedOn, passThroughPair, passOn, iouLeft, openIous, addIou, payIou, undoIouTx, iouSummary, iouEvents, cardEmiFromBooking, looksLikeCardBill, spendToCardPayment, convertCardBalance, answerCardDue, cardLateFee, cardRate, CARD_RATE, undoCardConvert, cardFreeDays, byCategory, DEFAULT_SPLIT,
     isLoanCredit, borrowedThisCycle, borrowCheck, rolloverOptions, setTranslator,

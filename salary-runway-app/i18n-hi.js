@@ -1922,4 +1922,9 @@
   "Emergency fund, goals and Grow": "आपात फंड, लक्ष्य और बढ़त",
   "Lent to someone": "किसी को उधार दिया",
   "Borrowed from someone": "किसी से उधार लिया",
+  "Payments left": "बाकी किस्तें",
+  "Blank if it doesn’t end": "खत्म नहीं होता तो खाली छोड़ें",
+  "Ended {date}: not counted any more. Remove it with ✕.": "{date} को खत्म: अब गिना नहीं जाता. ✕ से हटाएं.",
+  "Last one {date}. Not counted after that.": "आखिरी {date} को. उसके बाद गिना नहीं जाएगा.",
+  "{amount} paid. That was the last one.": "{amount} भरे. यह आखिरी था.",
 };

@@ -465,6 +465,7 @@ A transfer to savings (Jar, a SIP, an RD, typed or from SMS) goes to one place: 
 - The app **learns the usual amount** from the last three payments and moves the next due date on.
 - Overdue bills are counted today. Bill payments aren't flexible spending, so they don't eat into budgets.
 - **Move from fixed payments** converts an existing fixed entry (such as electricity) into a bill that varies.
+- **Payments left** under each fixed payment and bill, for an EMI kept there (a phone on EMI, a card bill turned into EMIs): type how many are left, the next one included, and the app works out the last date (*Last one 3 Feb 2027. Not counted after that.*). From the round after it, it's no longer in the plan, the daily limit or the payday forecast, without deleting it; a bill whose last payment is recorded ends at once (*₹6,000 paid. That was the last one.*). Blank means it doesn't end.
 - A bill without an amount yet (₹0, such as a row just added in Plan) isn't shown under *Bills to pay* and sets nothing aside.
 
 ## 10. Credit cards

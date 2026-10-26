@@ -1784,3 +1784,38 @@ test('a gift kept for a purchase stays out of daily spending, then pays for the 
   assert.equal(Core.coverPurchase(s, 'g', 'buy2'), 300);
   assert.equal(Core.keptFor(s).length, 0);
 });
+
+test('an EMI kept as a bill or fixed payment ends by itself after the last one', () => {
+  // ₹6,000 a month, 4 left, the next on 3 Nov: the last is 3 Feb
+  const s = baseState({ settings: { salary: 98000, payday: 28 }, fixed: [{ id: 'f1', name: 'Phone EMI', amount: 3750, dueDay: 3 }],
+    bills: [{ id: 'emi', name: 'Card EMI', estimate: 6000, everyMonths: 1, nextDue: '2026-11-03', history: [6000] }] });
+  const t = '2026-10-27';
+  const bill = s.bills[0];
+  bill.lastDue = Core.lastDueFrom(bill, true, 4, t);
+  assert.equal(bill.lastDue, '2027-02-03');
+  assert.equal(Core.paymentsLeft(bill, true, t), 4);
+  // Fixed: 2 left from today, the next on 3 Nov: the last is 3 Dec
+  const phone = s.fixed[0];
+  phone.lastDue = Core.lastDueFrom(phone, false, 2, t);
+  assert.equal(phone.lastDue, '2026-12-03');
+  assert.equal(Core.paymentsLeft(phone, false, '2026-11-10'), 1);
+  const due = (iso) => {
+    const c = Core.cycleFor(iso, 28);
+    const ev = Core.cycleEvents(s, c, iso);
+    const p = Core.monthlyPlan(s, iso);
+    return [ev.filter((e) => e.kind === 'bill').map((e) => e.amount), ev.filter((e) => e.kind === 'fixed').map((e) => e.amount), p.variableBills, p.fixedTotal];
+  };
+  // Counted each round up to the last one, never after (without paying it in the app)
+  assert.deepEqual(due('2026-10-28'), [[6000], [3750], 6000, 3750]);
+  assert.deepEqual(due('2026-11-28'), [[6000], [3750], 6000, 3750]);
+  assert.deepEqual(due('2026-12-28'), [[6000], [], 6000, 0]);
+  assert.deepEqual(due('2027-01-28'), [[6000], [], 6000, 0]);
+  assert.deepEqual(due('2027-02-28'), [[], [], 0, 0]);
+  // Paying the last one ends it at once
+  bill.nextDue = '2027-02-03';
+  Core.payBill(s, 'emi', 6000, 1, '2027-02-03');
+  assert.equal(Core.billEnded(bill, null), true);
+  assert.equal(Core.billDue(bill, Core.cycleFor('2027-02-03', 28)), false);
+  // Blank: no end
+  assert.equal(Core.lastDueFrom(bill, true, '', t), null);
+});

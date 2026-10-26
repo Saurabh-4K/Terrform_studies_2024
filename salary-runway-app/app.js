@@ -3231,6 +3231,24 @@
       (ask ? '<span class="hint warn">' + tr('Does this EMI show on your credit card bill? Pick the card, so it’s counted once, not again inside the card bill.') + '</span>' : '') + '</div>';
   }
 
+  /*
+   * "Payments left" under a fixed payment or bill (an EMI kept here): the app
+   * works out the last due date and stops counting it after that.
+   */
+  function endsField(list, item) {
+    const isBill = list === 'bills';
+    const t = today();
+    const left = Core.paymentsLeft(item, isBill, t);
+    const id = list + '-' + item.id + '-left';
+    const ended = left === 0 || (isBill ? Core.billEnded(item, Core.cycleFor(t, Number(state.settings.payday) || 1)) : Core.fixedEnded(item, Core.cycleFor(t, Number(state.settings.payday) || 1)));
+    const note = !item.lastDue ? tr('Blank if it doesn’t end')
+      : ended ? tr('Ended {date}: not counted any more. Remove it with ✕.', { date: fmtDate(item.lastDue, true) })
+      : tr('Last one {date}. Not counted after that.', { date: fmtDate(item.lastDue, true) });
+    return '<div class="ends-row"><label class="field" for="' + id + '"><span>' + tr('Payments left') + '</span><input id="' + id + '" type="number" inputmode="numeric" min="0" max="360" step="1" placeholder="—"' +
+      ' data-ends="' + list + '" data-id="' + esc(item.id) + '" value="' + (left ? left : '') + '"></label>' +
+      '<span class="hint' + (ended ? ' good' : '') + '">' + note + '</span></div>';
+  }
+
   function removeButton(list, item) {
     return '<button class="icon" data-action="list-remove" data-list="' + list + '" data-id="' + esc(item.id) + '" aria-label="' + esc(tr('Remove {name}', { name: item.name ? label(item.name) : tr('row') })) + '">✕</button>';
   }
@@ -3276,14 +3294,14 @@
       '<section class="card"><div class="card-head">' + titled('Fixed payments', 'fixed') + '<span class="hint">' + tr('Rent, EMIs, subscriptions') + '</span></div>' +
       '<div class="edit-rows">' + state.fixed.map((f) =>
         '<div class="edit-row">' + listField('fixed', f, 'name', 'Name', 'text') + listField('fixed', f, 'amount', 'Amount (₹)', 'number') +
-        listField('fixed', f, 'dueDay', 'Due day', 'number', ' max="31"') + removeButton('fixed', f) + '</div>').join('') + '</div>' +
+        listField('fixed', f, 'dueDay', 'Due day', 'number', ' max="31"') + removeButton('fixed', f) + '</div>' + endsField('fixed', f)).join('') + '</div>' +
       '<div><button data-action="list-add" data-list="fixed">' + tr('Add fixed payment') + '</button></div></section>' },
         { key: 'bills', group: 'Your money', icon: 'bolt', label: 'Bills that vary', tone: 'mint', badge: (state.bills || []).length ? { text: String(state.bills.length) } : null, html: () =>
       '<section class="card"><div class="card-head">' + titled('Bills that vary', 'bills') + '<span class="hint">' + tr('Electricity, gas, water, recharges') + '</span></div>' +
       '<div class="edit-rows">' + (state.bills || []).map((b) =>
         '<div class="edit-row cols-bill">' + listField('bills', b, 'name', 'Name', 'text') + listField('bills', b, 'estimate', 'About (₹)', 'number') +
         '<label class="field" for="bills-' + esc(b.id) + '-every"><span>' + tr('Paid every') + '</span><select id="bills-' + esc(b.id) + '-every" data-list="bills" data-id="' + esc(b.id) + '" data-field="everyMonths">' + periodOptions(b.everyMonths) + '</select></label>' +
-        listField('bills', b, 'nextDue', 'Next due', 'date') + removeButton('bills', b) + '</div>').join('') + '</div>' +
+        listField('bills', b, 'nextDue', 'Next due', 'date') + removeButton('bills', b) + '</div>' + endsField('bills', b)).join('') + '</div>' +
       '<div class="row"><button data-action="list-add" data-list="bills">' + tr('Add bill') + '</button>' +
       (state.fixed.length
         ? '<select id="fixed-to-bill" aria-label="' + tr('Fixed payment to move') + '">' + state.fixed.map((f) => '<option value="' + esc(f.id) + '">' + esc(f.name || tr('Unnamed')) + '</option>').join('') + '</select>' +
@@ -6183,7 +6201,9 @@
         if (amount <= 0) { toast('Enter the amount you paid'); return; }
         if (!Core.payBill(state, id, amount, months, t)) return;
         ui.payBill = null; save();
-        toast(tr('{amount} paid. Next due {date}', { amount: inr(amount), date: fmtDate(state.bills.find((x) => x.id === id).nextDue, true) }));
+        const paidBill = state.bills.find((x) => x.id === id);
+        toast(Core.billEnded(paidBill, null) ? tr('{amount} paid. That was the last one.', { amount: inr(amount) })
+          : tr('{amount} paid. Next due {date}', { amount: inr(amount), date: fmtDate(paidBill.nextDue, true) }));
         break;
       }
       case 'bill-link': {
@@ -6209,7 +6229,7 @@
         if (!f) return;
         const cyc = Core.cycleFor(t, Number(state.settings.payday) || 1);
         state.bills = state.bills || [];
-        state.bills.push({ id: uid(), name: f.name, estimate: Number(f.amount) || 0, everyMonths: 1, nextDue: Core.occurrenceInCycle(Number(f.dueDay) || 1, cyc) || t });
+        state.bills.push(Object.assign({ id: uid(), name: f.name, estimate: Number(f.amount) || 0, everyMonths: 1, nextDue: Core.occurrenceInCycle(Number(f.dueDay) || 1, cyc) || t }, f.lastDue ? { lastDue: f.lastDue } : {}));
         state.fixed = state.fixed.filter((x) => x !== f);
         save(); toast(tr('{name} moved to bills that vary', { name: f.name })); break;
       }
@@ -6468,6 +6488,15 @@
       }
       setPath(el.dataset.bind, val);
       save(); refreshAfterEdit(); return;
+    }
+    if (el.dataset.ends) {
+      const item = (state[el.dataset.ends] || []).find((x) => x.id === el.dataset.id);
+      if (!item) return;
+      const last = Core.lastDueFrom(item, el.dataset.ends === 'bills', Math.min(360, Number(el.value) || 0), today());
+      if (last) item.lastDue = last; else delete item.lastDue;
+      save(); refreshAfterEdit();
+      if (last) toast(tr('Last one {date}. Not counted after that.', { date: fmtDate(last, true) }));
+      return;
     }
     if (el.dataset.list) {
       const item = state[el.dataset.list].find((x) => x.id === el.dataset.id);
