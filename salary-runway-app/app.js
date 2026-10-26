@@ -908,7 +908,7 @@
       '</section>' +
       cardHomeNotes(cyc) +
       savedCard() +
-      iouDueCard() + passCard() + incomeCard() +
+      alertsNudge() + iouDueCard() + passCard() + incomeCard() +
       weekCard() +
       bal +
       (needsCheck().length
@@ -2668,7 +2668,7 @@
       sortCard() +
       importCard() +
       needsCheckCard() +
-      iouDueCard() + passCard() + incomeCard() +
+      alertsNudge() + iouDueCard() + passCard() + incomeCard() +
       addCard, [
         { key: 'viz-where', group: 'Your spending', icon: 'where', label: 'Where it went', tone: 'mint', viz: 'where', badge: null, html: () => vizCard() },
         { key: 'viz-when', group: 'Your spending', icon: 'when', label: 'When', tone: 'mint', viz: 'when', badge: null, html: () => vizCard() },
@@ -2711,12 +2711,7 @@
           '<div class="row"><button class="primary" data-action="sms-native"' + (ui.smsBusy ? ' disabled' : '') + '>' +
           tr(ui.smsBusy ? 'Reading…' : state.smsAuto ? 'Check for new messages' : 'Read bank SMS') + '</button>' +
           ((state.sortQueue || []).length || ui.importAsk || ui.importFound ? '' : '<button class="ghost" data-action="import-open">' + tr('Import past payments') + '</button>') + '</div>' +
-          (state.smsAuto
-            ? '<div class="callout"><b>' + tr(state.smsAlerts ? 'Notifications for new bank SMS are on' : 'Get a notification when a bank SMS arrives') + '</b>' +
-              '<div>' + (state.smsAlerts
-                ? '<button class="ghost" data-action="alerts-off">' + tr('Turn off') + '</button>'
-                : '<button class="primary" data-action="alerts-on">' + tr('Turn on notifications') + '</button>') + '</div></div>'
-            : '') +
+          (state.smsAuto ? alertsBox(false) : '') +
           smsPreview() + skippedPlaces() + '</section>'
         : '<section class="card"><div class="card-head">' + titled('Import from bank SMS', 'sms') + '</div>' +
           '<label class="field" for="sms-text">' + tr('Messages') + '<textarea id="sms-text" placeholder="Rs.450.00 debited from a/c **1234 on 21-10-26 to VPA swiggy@icici…">' + esc(ui.smsText) + '</textarea></label>' +
@@ -6024,6 +6019,12 @@
         return;
       }
       case 'alerts-on': enableAlerts(); return;
+      case 'alerts-settings': if (SmsInbox && SmsInbox.openNotificationSettings) Promise.resolve().then(() => SmsInbox.openNotificationSettings()).catch(() => {}); return;
+      case 'alerts-nudge-no': state.alertsNudged = true; save(); break;
+      case 'alerts-test':
+        Promise.resolve().then(() => SmsInbox.testNotification({ title: tr('Test from Hisab Se'), text: tr('Payment notifications reach this phone.') }))
+          .then(() => toast(tr('Sent. Check your notifications.')), () => { checkAlerts(); toast(tr('Android blocked it. Allow notifications for Hisab Se.')); });
+        return;
       case 'alerts-off':
         state.smsAlerts = false; save();
         if (SmsInbox) Promise.resolve().then(() => SmsInbox.disableAlerts()).catch(() => {});
@@ -6845,6 +6846,7 @@
       state.smsAlerts = true;
       alertsSent = '';
       save();
+      checkAlerts();
       toast(res && res.notifications === false
         ? 'On. Notifications are off for this app in Android settings, so payments will wait here.'
         : 'You’ll get a notification for each new bank SMS');
@@ -6853,6 +6855,58 @@
   }
 
   let alertsSent = '';
+
+  /*
+   * Whether a notification can really come for a new bank SMS: on in the app,
+   * the permission for new messages given, and notifications allowed by
+   * Android. Each of these fails without a sound otherwise, so the app says which.
+   * ui.alerts: { enabled, receive, notifications } | null (not known yet).
+   */
+  function checkAlerts() {
+    if (!SmsInbox || !SmsInbox.alertsStatus) return;
+    Promise.resolve().then(() => SmsInbox.alertsStatus()).then((st) => {
+      const before = JSON.stringify(ui.alerts);
+      ui.alerts = st || null;
+      // On in the data but off on the phone (a restored backup, a reinstall): the phone is right.
+      if (st && state.smsAlerts && !st.enabled) { state.smsAlerts = false; save(true); }
+      if (JSON.stringify(ui.alerts) !== before) rerenderKeepScroll();
+    }).catch(() => {});
+  }
+
+  // What's stopping payment notifications, if anything: 'off', 'permission', 'blocked' or ''.
+  function alertsProblem() {
+    if (!NATIVE || !state.smsAuto) return '';
+    const st = ui.alerts;
+    if (!state.smsAlerts || (st && !st.enabled)) return 'off';
+    if (!st) return '';
+    if (!st.receive) return 'permission';
+    if (!st.notifications) return 'blocked';
+    return '';
+  }
+
+  // On Runway and Spend, when notifications are meant to work but can't (or were never turned on).
+  function alertsNudge() {
+    const box = alertsBox(true);
+    return box ? '<section class="card alerts-nudge">' + box + '</section>' : '';
+  }
+
+  function alertsBox(nudge) {
+    const p = alertsProblem();
+    if (nudge && (!p || (p === 'off' && state.alertsNudged))) return '';
+    if (!p) {
+      return '<div class="callout"><b>' + tr('Notifications for new bank SMS are on') + '</b>' +
+        '<span class="hint">' + tr('Each payment shows up as it happens, to sort it right away. Nothing coming? On Samsung, keep Hisab Se out of Sleeping apps (Settings → Battery).') + '</span>' +
+        '<div class="row"><button data-action="alerts-test">' + tr('Send a test notification') + '</button><button class="ghost" data-action="alerts-off">' + tr('Turn off') + '</button></div></div>';
+    }
+    const msg = {
+      off: ['Get a notification for each bank payment', 'Reading SMS when you open the app is on, but notifications are off, so payments wait until you open it. Turn them on to sort each one as it happens.', 'Turn on notifications', 'alerts-on'],
+      permission: ['Notifications need the SMS permission for new messages', 'Reading old messages is allowed, but not new ones as they arrive. Allow it so each payment comes as a notification.', 'Allow', 'alerts-on'],
+      blocked: ['Android is blocking Hisab Se’s notifications', 'Payment notifications are on in the app, but Android doesn’t show them. Allow notifications for Hisab Se (and its Bank SMS channel).', 'Open notification settings', 'alerts-settings'],
+    }[p];
+    return '<div class="callout warn"><b>' + tr(msg[0]) + '</b><span class="hint">' + tr(msg[1]) + '</span>' +
+      '<div class="row"><button class="primary" data-action="' + msg[3] + '">' + tr(msg[2]) + '</button>' +
+      (nudge && p === 'off' ? '<button class="ghost" data-action="alerts-nudge-no">' + tr('Not now') + '</button>' : '') + '</div></div>';
+  }
 
   // Gives the notification pop-up the same categories and learned shops as the app.
   function syncAlerts() {
@@ -6922,6 +6976,7 @@
 
   // Everything to pick up when the app opens or comes back to the front.
   function collectNative() {
+    checkAlerts();
     return collectWidgetExpenses().then(collectAlerts).then(() => {
       pruneSmsRows();
       if (state.smsAuto && !ui.smsRows) readNativeSms(true);

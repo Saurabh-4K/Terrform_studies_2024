@@ -573,6 +573,7 @@ Small habits that quietly cost a lot: cigarettes, liquor, tea and snacks, food d
   - **+ Add** opens a small window over the home screen (amount, category, note) to record an expense **without opening the app**. The widget's amount drops straight away, and the app saves the expense next time it opens.
   - After midnight it shows "Open app" until the app works out the new day.
 - **Notifications for new bank SMS** (turn on in the Spend tab; asks for SMS and notification permission):
+  - **Says what's stopping them.** Reading SMS when the app opens and a notification for each new SMS are separate. If notifications can't come, Runway, Spend and the Bank SMS page say why, with one tap to fix: *Get a notification for each bank payment* (never turned on, or off on the phone after a restore: **Turn on notifications**, or *Not now*), *Notifications need the SMS permission for new messages* (**Allow**), or *Android is blocking Hisab Se's notifications* (**Open notification settings**). When all is well: **Send a test notification**, and a tip for Samsung's Sleeping apps.
   - A payment shows *₹450 paid to Swiggy · Tap to check the category*. On a card: *₹750 paid via HDFC card · Borrowed money: tap to verify the category*.
   - Tapping opens **Check this payment**: the SMS text, category, **Paid from**, a note, and *Save* or *Not a payment*.
   - Payments you don't check are recorded anyway and wait under **Needs your check**.

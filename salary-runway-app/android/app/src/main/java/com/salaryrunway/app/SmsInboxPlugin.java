@@ -1,10 +1,17 @@
 package com.salaryrunway.app;
 
 import android.Manifest;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import android.app.PendingIntent;
+import android.content.Intent;
 import android.database.Cursor;
+import android.net.Uri;
 import android.os.Build;
+import android.provider.Settings;
 import android.provider.Telephony;
 
+import androidx.core.app.NotificationCompat;
 import androidx.core.app.NotificationManagerCompat;
 
 import com.getcapacitor.JSArray;
@@ -76,6 +83,69 @@ public class SmsInboxPlugin extends Plugin {
         result.put("enabled", true);
         result.put("notifications", NotificationManagerCompat.from(getContext()).areNotificationsEnabled());
         call.resolve(result);
+    }
+
+    /**
+     * Why a payment notification might not come: alerts off in the app, the
+     * permission for new SMS missing, or notifications blocked for the app or
+     * its bank SMS channel. Each one fails silently otherwise.
+     */
+    @PluginMethod
+    public void alertsStatus(PluginCall call) {
+        JSObject result = new JSObject();
+        result.put("enabled", SmsAlertStore.enabled(getContext()));
+        result.put("receive", getPermissionState("receive") == PermissionState.GRANTED);
+        boolean notify = NotificationManagerCompat.from(getContext()).areNotificationsEnabled();
+        if (notify && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            NotificationManager manager = getContext().getSystemService(NotificationManager.class);
+            NotificationChannel channel = manager != null ? manager.getNotificationChannel(SmsReceiver.CHANNEL) : null;
+            if (channel != null && channel.getImportance() == NotificationManager.IMPORTANCE_NONE) notify = false;
+        }
+        result.put("notifications", notify);
+        call.resolve(result);
+    }
+
+    /** Opens Android's notification settings for this app. */
+    @PluginMethod
+    public void openNotificationSettings(PluginCall call) {
+        Intent intent = new Intent();
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            intent.setAction(Settings.ACTION_APP_NOTIFICATION_SETTINGS);
+            intent.putExtra(Settings.EXTRA_APP_PACKAGE, getContext().getPackageName());
+        } else {
+            intent.setAction(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+            intent.setData(Uri.fromParts("package", getContext().getPackageName(), null));
+        }
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        getContext().startActivity(intent);
+        call.resolve();
+    }
+
+    /** title, text: shown on the bank SMS channel, to check notifications reach the phone. */
+    @PluginMethod
+    public void testNotification(PluginCall call) {
+        NotificationManagerCompat manager = NotificationManagerCompat.from(getContext());
+        if (!manager.areNotificationsEnabled()) {
+            call.reject("Notifications are off for this app", "NOTIFICATIONS_OFF");
+            return;
+        }
+        SmsReceiver.ensureChannel(getContext());
+        Intent open = new Intent(getContext(), MainActivity.class).setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        PendingIntent tap = PendingIntent.getActivity(getContext(), 7001, open,
+            PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+        NotificationCompat.Builder n = new NotificationCompat.Builder(getContext(), SmsReceiver.CHANNEL)
+            .setSmallIcon(R.drawable.ic_stat_runway)
+            .setColor(0xFF0C3B3D)
+            .setContentTitle(call.getString("title", "Hisab Se"))
+            .setContentText(call.getString("text", ""))
+            .setContentIntent(tap)
+            .setAutoCancel(true);
+        try {
+            manager.notify(7001, n.build());
+            call.resolve();
+        } catch (SecurityException e) {
+            call.reject("Notifications are off for this app", "NOTIFICATIONS_OFF");
+        }
     }
 
     @PluginMethod

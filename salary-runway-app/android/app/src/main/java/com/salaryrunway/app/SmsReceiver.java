@@ -51,17 +51,22 @@ public class SmsReceiver extends BroadcastReceiver {
         return key.hashCode();
     }
 
+    /** The bank SMS channel, named in the app's language. */
+    static void ensureChannel(Context app) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
+        Context context = Lang.wrap(app);
+        NotificationChannel channel = new NotificationChannel(
+            CHANNEL, context.getString(R.string.sms_channel), NotificationManager.IMPORTANCE_DEFAULT);
+        channel.setDescription(context.getString(R.string.sms_channel_description));
+        app.getSystemService(NotificationManager.class).createNotificationChannel(channel);
+    }
+
     private static void notify(Context app, String key, SmsParser.Result r) {
         NotificationManagerCompat manager = NotificationManagerCompat.from(app);
         // Text in the app's language; everything else uses the app's own context.
         Context context = Lang.wrap(app);
         if (!manager.areNotificationsEnabled()) return;
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            NotificationChannel channel = new NotificationChannel(
-                CHANNEL, context.getString(R.string.sms_channel), NotificationManager.IMPORTANCE_DEFAULT);
-            channel.setDescription(context.getString(R.string.sms_channel_description));
-            app.getSystemService(NotificationManager.class).createNotificationChannel(channel);
-        }
+        ensureChannel(app);
 
         boolean statement = "statement".equals(r.type) || r.salary;
         boolean debit = "debit".equals(r.type);
