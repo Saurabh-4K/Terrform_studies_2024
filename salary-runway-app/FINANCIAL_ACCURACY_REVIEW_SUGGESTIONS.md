@@ -121,7 +121,70 @@ These projects may be useful as design references, not as code to copy wholesale
 Please review current licences and compatibility requirements before reusing any third-party code. For this local-first app, the goal is to adopt clear accounting rules and strong tests without adding a server or unnecessary architectural complexity.
 
 
+Reference Repositories — For Further Study
 
+The following open-source projects may offer useful ideas for improving financial accuracy, transaction modelling, budgeting, and testing. These are references for exploration, not instructions to copy their implementation.
+
+1. Actual Budget
+
+Repository: https://github.com/actualbudget/actual
+
+Useful areas to explore:
+
+- Envelope budgeting and allocating available income.
+- Handling returns and reimbursements.
+- Credit-card budgeting and category balances.
+- Keeping budgeted amounts consistent with available funds.
+
+Suggested application: Review whether Hisab Se's salary allocation and refund handling could benefit from similarly explicit budgeting rules.
+
+2. Firefly III
+
+Repository: https://github.com/firefly-iii/firefly-iii
+
+Useful areas to explore:
+
+- Double-entry accounting concepts.
+- Consistent treatment of transfers, expenses, income, and liabilities.
+- Transaction rules and financial reporting.
+- Data integrity and reconciliation.
+
+Suggested application: Identify accounting invariants that can be tested in Hisab Se without introducing unnecessary architectural complexity or requiring a server.
+
+3. MoneyMatter
+
+Repository: https://github.com/letehaha/moneymatter
+
+Useful areas to explore:
+
+- Relationships between refunds and original transactions.
+- Explicit modelling of transfers between accounts.
+- Refund validation and transaction consistency.
+- Edge cases involving transaction relationships.
+
+Suggested application: Review how Hisab Se can represent refunds, transfers, and their original transactions more clearly, with appropriate validation and regression tests.
+
+4. Awesome Open Source Boilerplates
+
+Repository: https://github.com/EinGuterWaran/awesome-opensource-boilerplates
+
+Useful areas to explore:
+
+- Potentially relevant open-source project structures and development patterns.
+- Testing, maintainability, and tooling ideas from suitable projects in the collection.
+
+Suggested application: Use this as a discovery resource only if a specific project addresses a current engineering need. It is not a financial-accounting authority.
+
+Guidance for Using These References
+
+- Study the relevant source code and documentation before drawing conclusions.
+- Prefer learning from established accounting concepts and adapting them to Hisab Se's requirements.
+- Do not assume another project's behaviour is automatically correct for this app.
+- Check each repository's current licence and compatibility requirements before copying or adapting code.
+- Prefer independently implemented, well-tested solutions where that is simpler and safer.
+- Document the accounting rule, expected behaviour, and regression test for any adopted idea.
+
+These repositories are intended to support engineering judgement. Their presence here does not imply that Hisab Se has the same defects, that their implementations are error-free, or that any particular change is required.
 
 Closing note
 
