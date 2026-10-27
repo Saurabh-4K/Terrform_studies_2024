@@ -120,6 +120,9 @@ These projects may be useful as design references, not as code to copy wholesale
 
 Please review current licences and compatibility requirements before reusing any third-party code. For this local-first app, the goal is to adopt clear accounting rules and strong tests without adding a server or unnecessary architectural complexity.
 
+
+
+
 Closing note
 
 This document is a set of suggestions for investigation, not an authoritative audit or a substitute for developer verification. AI-assisted analysis can be incomplete or mistaken. Please independently confirm each point against the current source, reproduce any suspected issue, and use the project's intended accounting rules before implementing a change.
