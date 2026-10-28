@@ -68,6 +68,10 @@ Everything the app can do today, screen by screen, with the rules it follows. Fo
   - Change *Saved so far* or the date any time; this month's amount stays and the new one counts from next payday.
   - If the date passes before it's reached, nothing more is put aside and the goal asks for a new date (the tile shows a warning badge).
   - Goals show in the plan summary, the payday screen and Grow's set-asides.
+- **Reimbursements (Spend → Reimbursements):** a payment your office or a client pays back (work cab, client lunch). Open it and tap *Paid for work? Mark it reimbursable*: set how much comes back (all of it by default), who pays and a claim number. The payment still leaves the balance, but the part paid back isn't your spending (budgets, today's limit, reports), and until it comes back it counts as *Owed back on work expenses* in net worth.
+  - When money comes in, its card asks *Is this a reimbursement?* and lists the open claims. Matching it marks each claim *Paid back*, *Partly paid back* (the rest still owed) or, after *Close: the rest is mine*, closed: what didn't come back becomes your spending in the month it was paid.
+  - Paid back more than you spent: the extra counts once. Each claim chooses where it goes: *This month's spending* (adds to today's limit) or the *Side vault* (kept apart from daily money, counted in net worth). Switching back and forth never counts it twice. Money left over across several claims shows as *not matched to a claim*.
+  - Deleting the payment removes its claim; deleting or unmatching the money in makes the claim owed again; changing an amount keeps every link right. An earlier month stays as it was when the money comes later.
 - **Net worth (Runway → Net worth):** what you own minus what you owe: money in the account and wallets, the emergency fund and Grow savings, less loans and card dues from before the card was added. Below zero it shows in coral with *You owe more than you own*. Kept once per round (about two years), with a chart of the last 12 rounds, the change since last round, and a table of the numbers.
 
 ## Checking with the bank, smarter SMS, reports, quick budgets, what-if

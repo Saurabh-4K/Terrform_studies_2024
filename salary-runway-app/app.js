@@ -288,6 +288,7 @@
 
   // Older saves had no automatic budgets: budgets left at ₹0 become automatic.
   function migrate(s) {
+    if (s.reimb) Core.syncReimb(s);
     s.budgets.forEach((b) => { if (b.auto === undefined) b.auto = !(Number(b.amount) > 0); });
     if (s.savings.auto === undefined) {
       s.savings.auto = !(s.savings.emergencyMonthly || s.savings.investMonthly || s.savings.debtExtra);
@@ -569,6 +570,11 @@
       'One call at a time, with a script, a 5-minute prep list and what the call can change, in rupees.',
       'First an easy call: moving a due date or asking for a late fee back. After 60 days of logged spending, Hisab Se writes a request for a lower rate, backed by your real numbers.',
       'Making the call is the win, whatever the answer. The next day the app asks how it went and updates your loan if something changed.',
+    ]],
+    reimb: ['Reimbursements', [
+      'A payment your office or a client pays back (a work trip, a client lunch). It leaves your account like any payment, but the part that comes back isn’t your spending, so budgets and reports leave it out. Until it’s paid back it counts as money owed to you.',
+      'When the money comes in, match it to the claims it pays. Paid back in parts: the claim waits for the rest. Closed with something still missing: what didn’t come back becomes your spending.',
+      'Paid back more than you spent: the extra counts once. This month’s spending: it’s added to your budget. Side vault: it’s kept apart from daily spending but counted in your net worth.',
     ]],
     people: ['People', [
       'Money between you and friends or family. No EMI and no fixed dates: paid back all at once or in parts, by a date only if one was promised.',
@@ -1842,6 +1848,8 @@
       (n.loans ? line('Loans', '−' + inr(n.loans)) : '') + (n.cards ? line('Card dues from before', '−' + inr(n.cards)) : '') +
       (n.owedPeople ? line('Owed to people', '−' + inr(n.owedPeople)) : '') +
       (n.newLoans ? line('Loan money not in Debts yet', '−' + inr(n.newLoans)) : '') +
+      (n.reimbOwed ? line('Owed back on work expenses', inr(n.reimbOwed)) : '') +
+      (n.vault ? line('Side vault', inr(n.vault)) : '') +
       line('Net worth', signed(n.value), n.value < 0 ? 'bad' : '') + '</div>' +
       (keys.length > 1
         ? '<div class="nw-grid">' + bars + '</div><p class="viz-tip" aria-live="polite">' + tr('Tap a round to see its number.') + '</p>' +
@@ -2305,7 +2313,7 @@
         '<span class="choice-detail">' + esc(opt.detail) + '</span>' +
         (opt.badge ? '<span class="choice-badge">' + esc(opt.badge) + '</span>' : '') + '</button>').join('') + '</div>' +
       '<p class="hint"><b>' + tr('Why the suggestion:') + '</b> ' + esc(o.reason) + ' ' + tr('The choice is yours.') + '</p>' +
-      (ui.iouStart && ui.iouStart.txId === tx.id ? iouStartForm() : iouActions(tx)) + '</section>';
+      (ui.iouStart && ui.iouStart.txId === tx.id ? iouStartForm() : iouActions(tx)) + reimbMatchBox(tx) + '</section>';
   }
 
   // Applies a choice for money received: moves it to a fund or a loan.
@@ -2795,6 +2803,8 @@
         { key: 'viz-trend', group: 'Your spending', icon: 'trend', label: 'Month by month', tone: 'mint', viz: 'trend', badge: null, html: () => vizCard() },
         { key: 'leaks', group: 'Your spending', icon: 'drop', label: 'Little leaks', tone: 'mint',
           badge: leakAsks ? { text: tr('{n} new', { n: leakAsks }), tone: 'bad' } : leaks.perMonth ? { text: shortInr(leaks.perMonth) } : null, html: () => leaksCard() },
+        { key: 'reimb', group: 'Records', icon: 'repeat', label: 'Reimbursements', tone: 'teal',
+          badge: (() => { const p = Core.reimbView(state).pendingFloat; return p ? { text: shortInr(p) } : null; })(), html: () => reimbPage() },
         { key: 'payments', group: 'Records', icon: 'list', label: 'Payments', tone: 'teal', badge: { text: String(list.filter((x) => Core.inCycle(x.date, cyc)).length) },
           html: () => {
             // Money out / in / saved, and search by shop or category.
@@ -2969,6 +2979,7 @@
     // For a problem report: which readings were wrong, so the SMS reader can learn.
     logEvent('notpayment', { shop: logText(tx.note), amount: tx.amount, kind: tx.kind || 'spend', category: tx.category, skipShop: !!skipShop });
     if (Core.isIncome(tx) || Core.isMove(tx)) undoIncomeUse(tx);
+    if (tx.claimId || tx.payoutId) Core.reimbForget(state, tx);
     if (tx.smsKey) state.smsIgnored = (state.smsIgnored || []).concat(tx.smsKey).slice(-500);
     const shop = skipKey(tx.note);
     if (skipShop && shop && (state.smsSkip || []).indexOf(shop) === -1) {
@@ -3608,6 +3619,81 @@
       '<span class="hint">' + tr('A refund to the card makes the purchase smaller, so it isn’t counted as income.') + '</span></div>';
   }
 
+  // ---------- reimbursable expenses and the side vault ----------
+
+  const REIMB_STATUS = { PENDING: 'Waiting to be paid back', PARTIALLY_REIMBURSED: 'Partly paid back', SETTLED: 'Paid back', CLOSED: 'Closed' };
+
+  function routeOptions(v) {
+    return [['daily', 'This month’s spending'], ['vault', 'Side vault']].map(([k, l]) => '<option value="' + k + '"' + (v === k ? ' selected' : '') + '>' + tr(l) + '</option>').join('');
+  }
+
+  // On a payment: mark it as paid for work, or what its claim stands at. On money in: match it to claims.
+  function reimbBox(x) {
+    const flex = Core.isFlexible(x);
+    if (flex && x.claimId) {
+      const c = Core.reimbView(state).claims.find((y) => y.id === x.claimId);
+      if (!c) return '';
+      const detail = c.status === 'PENDING' ? tr('{amount} to come back', { amount: inr(c.outstanding) })
+        : c.status === 'PARTIALLY_REIMBURSED' ? tr('{back} back, {left} to come', { back: inr(c.allocated), left: inr(c.outstanding) })
+        : c.status === 'SETTLED' ? tr('{back} back', { back: inr(c.allocated) }) + (c.margin ? ' · ' + tr('{amount} more than paid', { amount: inr(c.margin) }) : '')
+        : tr('{amount} didn’t come back: counted as your spending', { amount: inr(c.shortfall) });
+      return '<div class="callout reimb"><b>' + tr('Reimbursable: {amount}', { amount: inr(c.eligible) }) + (c.who ? ' · ' + esc(c.who) : '') + '</b>' +
+        '<span class="hint">' + tr(REIMB_STATUS[c.status]) + ': ' + detail + (c.ref ? ' · ' + esc(c.ref) : '') + '</span>' +
+        '<label class="field" for="rt-' + esc(c.id) + '"><span>' + tr('Anything paid back beyond it goes to') + '</span><select id="rt-' + esc(c.id) + '" data-reimb-route="' + esc(c.id) + '">' + routeOptions(c.routing) + '</select></label>' +
+        '<div class="row">' + (c.status === 'CLOSED'
+          ? '<button class="ghost small" data-action="reimb-reopen" data-id="' + esc(c.id) + '">' + tr('Reopen') + '</button>'
+          : c.status !== 'SETTLED' ? '<button class="ghost small" data-action="reimb-close" data-id="' + esc(c.id) + '">' + tr('Close: the rest is mine') + '</button>' : '') +
+        '<button class="ghost small" data-action="reimb-remove" data-id="' + esc(c.id) + '">' + tr('Not reimbursable') + '</button></div></div>';
+    }
+    if (flex && !x.iouId && !x.passedOn && !x.splitOf) {
+      if (ui.reimbForm !== x.id) return '<button class="link" data-action="reimb-open" data-id="' + esc(x.id) + '">' + tr('Paid for work? Mark it reimbursable') + '</button>';
+      return '<div class="callout reimb"><b>' + tr('Paid for work') + '</b><span class="hint">' + tr('Your office or a client pays it back. It stays a payment from your account, but it isn’t your spending.') + '</span>' +
+        '<div class="form-grid"><label class="field" for="rb-eligible"><span>' + tr('Paid back (₹)') + '</span><input id="rb-eligible" type="number" inputmode="numeric" min="1" max="' + x.amount + '" step="1" value="' + x.amount + '"></label>' +
+        '<label class="field" for="rb-who"><span>' + tr('Who pays it (optional)') + '</span><input id="rb-who" type="text" maxlength="40"></label>' +
+        '<label class="field" for="rb-ref"><span>' + tr('Claim number (optional)') + '</span><input id="rb-ref" type="text" maxlength="40"></label>' +
+        '<label class="field" for="rb-route"><span>' + tr('Anything paid back beyond it goes to') + '</span><select id="rb-route">' + routeOptions(state.reimbRouting || 'daily') + '</select></label></div>' +
+        (ui.reimbError ? '<p class="bad" role="alert">' + esc(ui.reimbError) + '</p>' : '') +
+        '<div class="row"><button class="primary" data-action="reimb-save" data-id="' + esc(x.id) + '">' + tr('Save') + '</button><button class="ghost" data-action="reimb-cancel">' + tr('Cancel') + '</button></div></div>';
+    }
+    if (Core.isIncome(x) && x.payoutId) {
+      const v = Core.reimbView(state);
+      const p = v.payouts.find((y) => y.id === x.payoutId);
+      const names = ((p && p.allocations) || []).map((a) => { const c = v.claims.find((y) => y.id === a.claimId); const t = c && state.transactions.find((y) => y.id === c.txId); return esc((t && t.note) || tr('a claim')) + ' ' + inr(a.amount); }).join(', ');
+      return '<div class="callout reimb"><b>' + tr('Reimbursement') + '</b><span class="hint">' + tr('For: {claims}', { claims: names || '—' }) +
+        (p && p.excess ? ' · ' + tr('{amount} not matched to a claim', { amount: inr(p.excess) }) : '') + '</span>' +
+        '<div><button class="ghost small" data-action="reimb-unpay" data-id="' + esc(x.id) + '">' + tr('It isn’t a reimbursement') + '</button></div></div>';
+    }
+    return Core.isIncome(x) ? reimbMatchBox(x) : '';
+  }
+
+  // Money in that may be a reimbursement: pick the claims it pays.
+  function reimbMatchBox(tx) {
+    if (!Core.isIncome(tx) || tx.payoutId || tx.iouId || tx.iouPay || tx.passedOn || tx.borrowed) return '';
+    const open = Core.reimbView(state).claims.filter((c) => c.status === 'PENDING' || c.status === 'PARTIALLY_REIMBURSED');
+    if (!open.length) return '';
+    return '<div class="callout reimb"><b>' + tr('Is this a reimbursement?') + '</b>' +
+      open.slice(0, 6).map((c) => { const t = state.transactions.find((y) => y.id === c.txId) || {};
+        return '<label class="check-row"><input type="checkbox" data-reimb-claim="' + esc(c.id) + '"' + (open.length === 1 ? ' checked' : '') + '> ' +
+          esc(t.note || tr('Payment')) + ' · ' + fmtDate(c.date) + ' · ' + tr('{amount} to come', { amount: inr(c.outstanding) }) + '</label>'; }).join('') +
+      '<div><button class="ghost small" data-action="reimb-match" data-id="' + esc(tx.id) + '">' + tr('Match to these claims') + '</button></div></div>';
+  }
+
+  // Spend → Reimbursements: what's owed back, the side vault, and each claim.
+  function reimbPage() {
+    const v = Core.reimbView(state);
+    const line = (name, val) => '<div class="line"><span>' + tr(name) + '</span><span>' + val + '</span></div>';
+    return '<section class="card"><div class="card-head">' + titled('Reimbursements', 'reimb') + '</div>' +
+      (!v.claims.length ? '<p class="hint">' + tr('Paid for something your office or a client pays back? Open the payment and tap Paid for work. It stays out of your spending until the money comes back.') + '</p>' : '') +
+      '<div class="summary">' + line('Owed back to you', inr(v.pendingFloat)) + line('Side vault', inr(v.vault)) +
+      (v.unallocated ? line('Paid back, not matched to a claim', inr(v.unallocated)) : '') + '</div>' +
+      '<label class="field" for="reimb-default"><span>' + tr('Extra paid back goes to, for new claims') + '</span><select id="reimb-default" data-reimb-default="1">' + routeOptions(state.reimbRouting || 'daily') + '</select></label>' +
+      '<p class="hint">' + tr('Side vault: kept apart from daily spending, but counted in your net worth.') + '</p>' +
+      (v.claims.length ? '<div class="list">' + v.claims.slice().reverse().map((c) => { const t = state.transactions.find((y) => y.id === c.txId) || {};
+        return '<div class="list-item"><div class="grow"><div class="title">' + esc(t.note || tr('Payment')) + (c.who ? ' · ' + esc(c.who) : '') + '</div>' +
+          '<div class="meta">' + fmtDate(c.date) + ' · ' + tr(REIMB_STATUS[c.status]) + (c.outstanding ? ' · ' + tr('{amount} to come', { amount: inr(c.outstanding) }) : '') + (c.margin ? ' · +' + inr(c.margin) : '') + '</div></div>' +
+          '<button class="ghost small" data-action="tx-edit" data-id="' + esc(c.txId) + '">' + inr(c.eligible) + '</button></div>'; }).join('') + '</div>' : '') + '</section>';
+  }
+
   function notPaymentBox(x, can) {
     if (!can || !(x.smsKey || x.source === 'sms')) return '';
     const shop = Core.normalizeMerchant(x.note) && x.note !== 'Bank payment' ? x.note : '';
@@ -3656,6 +3742,7 @@
         '<button class="ghost small" data-action="keep-use" data-id="' + esc(k.tx.id) + '" data-buy="' + esc(x.id) + '">' + tr('Paid from {name} ({left} left)', { name: esc(k.name), left: inr(k.left) }) + '</button>').join('') + '</div>' : '') +
       (x.covered ? '<p class="hint">' + tr('{amount} of it was paid from money kept for it, so it doesn’t use your budgets.', { amount: inr(x.covered) }) + '</p>' : '') +
       refundsBox(x) +
+      reimbBox(x) +
       notPaymentBox(x, flex || isIn || saved) +
       '</div></div>';
   }
@@ -3664,6 +3751,7 @@
   function saveEdit() {
     const x = state.transactions.find((t) => t.id === ui.editTx);
     if (!x) { ui.editTx = null; render(); return; }
+    const amountBefore = x.amount;
     const val = (id) => { const el = document.getElementById(id); return el ? el.value : null; };
     const before = JSON.stringify(state);
     const note = (val('edit-note') || '').trim();
@@ -3750,6 +3838,14 @@
     const from = val('edit-from');
     if (from !== null) setFrom(x, from);
     x.needsReview = Core.isMove(x) && !x.useFor;
+    // A reimbursable payment's claim, and a reimbursement's matching, follow a new amount.
+    if (x.claimId) Core.reimbAmount(state, x);
+    if (x.payoutId && x.amount !== amountBefore) {
+      const p = (state.reimb.payouts || []).find((y) => y.id === x.payoutId);
+      const ids = p ? p.allocations.map((a) => a.claimId) : [];
+      Core.reimbForget(state, x);
+      if (ids.length) Core.recordPayout(state, x.id, ids);
+    }
     ui.editTx = null; ui.editError = '';
     save();
     rerenderKeepScroll();
@@ -3843,6 +3939,8 @@
       (x.splitOf ? ' · <span class="chip">' + tr('Split') + '</span>' : '') +
       (x.passedOn ? ' · <span class="chip">' + tr('Passed on') + '</span>' : '') +
       (x.iouId || x.iouPay ? ' · <span class="chip">' + tr('People') + '</span>' : '') +
+      (x.claimId ? ' · <span class="chip">' + tr('Reimbursable') + '</span>' : '') +
+      (x.payoutId ? ' · <span class="chip">' + tr('Reimbursement') + '</span>' : '') +
       (x.matched ? ' · <span class="chip">' + tr('Bank SMS ✓') + '</span>' : '') +
       ((x.refunds || []).length ? ' · <span class="chip">' + tr('{amount} refunded', { amount: inr(x.refunds.reduce((a, r) => a + r.amount, 0)) }) + '</span>' : '');
     const extra = edit && isIn
@@ -5838,6 +5936,58 @@
         save(); rerenderKeepScroll(); offerUndo(tr('Refund taken off. Read your SMS again to add it as money in.'), before);
         return;
       }
+      case 'reimb-open': ui.reimbForm = btn.dataset.id; ui.reimbError = ''; break;
+      case 'reimb-cancel': ui.reimbForm = null; ui.reimbError = ''; break;
+      case 'reimb-save': {
+        const x = state.transactions.find((y) => y.id === btn.dataset.id);
+        if (!x) return;
+        const eligible = Math.round(Number((document.getElementById('rb-eligible') || {}).value) || 0);
+        if (!(eligible > 0) || eligible > x.amount) { ui.reimbError = tr('Enter what’s paid back: above ₹0 and up to {amount}.', { amount: inr(x.amount) }); break; }
+        const before = JSON.stringify(state);
+        const routing = (document.getElementById('rb-route') || {}).value === 'vault' ? 'vault' : 'daily';
+        Core.addClaim(state, x.id, { eligible, routing, who: ((document.getElementById('rb-who') || {}).value || '').trim(), ref: ((document.getElementById('rb-ref') || {}).value || '').trim() }, new Date().toISOString());
+        ui.reimbForm = null; ui.reimbError = '';
+        save(); rerenderKeepScroll();
+        offerUndo(tr('{amount} to be paid back. It’s out of your spending.', { amount: inr(eligible) }), before);
+        return;
+      }
+      case 'reimb-match': {
+        const ids = [...document.querySelectorAll('[data-reimb-claim]:checked')].map((e) => e.dataset.reimbClaim);
+        if (!ids.length) { toast(tr('Pick the claims this pays back')); return; }
+        const before = JSON.stringify(state);
+        const p = Core.recordPayout(state, btn.dataset.id, ids);
+        if (!p) return;
+        const v = Core.reimbView(state);
+        const pv = v.payouts.find((y) => y.id === p.id) || {};
+        save(); rerenderKeepScroll();
+        offerUndo(pv.excess ? tr('Matched. {amount} wasn’t for these claims.', { amount: inr(pv.excess) })
+          : pv.marginVault ? tr('Matched. {amount} extra went to the side vault.', { amount: inr(pv.marginVault) })
+          : pv.marginDaily ? tr('Matched. {amount} extra added to this month’s spending.', { amount: inr(pv.marginDaily) }) : tr('Matched to the claim'), before);
+        return;
+      }
+      case 'reimb-unpay': {
+        const x = state.transactions.find((y) => y.id === btn.dataset.id);
+        if (!x) return;
+        const before = JSON.stringify(state);
+        Core.reimbForget(state, x);
+        save(); rerenderKeepScroll(); offerUndo(tr('No longer a reimbursement'), before);
+        return;
+      }
+      case 'reimb-close': case 'reimb-reopen': {
+        const before = JSON.stringify(state);
+        Core.claimSet(state, btn.dataset.id, { closed: btn.dataset.action === 'reimb-close' }, new Date().toISOString());
+        save(); rerenderKeepScroll(); offerUndo(tr(btn.dataset.action === 'reimb-close' ? 'Closed. What didn’t come back is your spending.' : 'Reopened'), before);
+        return;
+      }
+      case 'reimb-remove': {
+        const c = ((state.reimb || {}).claims || []).find((y) => y.id === btn.dataset.id);
+        const x = c && state.transactions.find((y) => y.id === c.txId);
+        if (!x) return;
+        const before = JSON.stringify(state);
+        Core.reimbForget(state, x);
+        save(); rerenderKeepScroll(); offerUndo(tr('Not reimbursable: it’s your spending again'), before);
+        return;
+      }
       case 'iou-start': ui.iouStart = { txId: btn.dataset.id }; break;
       case 'iou-start-cancel': ui.iouStart = null; break;
       case 'iou-start-save': {
@@ -6081,6 +6231,7 @@
         if (tx && tx.fromFund) state.savings.emergencyBalance = (Number(state.savings.emergencyBalance) || 0) + tx.amount;
         if (tx && tx.kind === 'cardconvert') Core.undoCardConvert(state, tx);
         if (tx && (tx.iouId || tx.iouPay)) Core.undoIouTx(state, tx);
+        if (tx && (tx.claimId || tx.payoutId)) Core.reimbForget(state, tx);
         // A purchase paid from kept money: that money is kept again.
         if (tx && tx.coveredFrom) {
           const k = state.transactions.find((y) => y.id === tx.coveredFrom);
@@ -6648,6 +6799,12 @@
       if (panel && c) panel.innerHTML = cardPlanPanel(c);
       return;
     }
+    if (el.dataset.reimbRoute) {
+      Core.claimSet(state, el.dataset.reimbRoute, { routing: el.value === 'vault' ? 'vault' : 'daily' }, new Date().toISOString());
+      save(); rerenderKeepScroll(); toast(tr(el.value === 'vault' ? 'Extra goes to the side vault' : 'Extra goes to this month’s spending'));
+      return;
+    }
+    if (el.dataset.reimbDefault) { state.reimbRouting = el.value === 'vault' ? 'vault' : 'daily'; save(); return; }
     if (el.dataset.txCat) {
       const tx = state.transactions.find((x) => x.id === el.dataset.txCat);
       if (!tx) return;

@@ -585,7 +585,147 @@
   }
 
   // What a spending entry costs your own budgets: less what a gift kept for it paid.
-  function ownPart(t) { return Math.max(0, (Number(t.amount) || 0) - (Number(t.covered) || 0)); }
+  // Spending that's yours in reports: less what's claimed back from work (a gift-kept purchase is still shown).
+  function personalAmt(t) { return (Number(t.amount) || 0) - (Number(t.reimbExcluded) || 0); }
+  function ownPart(t) { return Math.max(0, (Number(t.amount) || 0) - (Number(t.covered) || 0) - (Number(t.reimbExcluded) || 0)); }
+
+  // ---------- reimbursable expenses and the side vault ----------
+
+  /*
+   * Paid for work (a bus ticket the office pays back): the payment is real
+   * cash out, but the eligible part isn't your spending. It's owed back to you
+   * (pending float, an asset) until a payout comes in. No second ledger: a
+   * claim points at the spending entry, a payout at the money-in entry, and
+   * everything else is worked out from those links (reimbView), then written
+   * onto the two entries by syncReimb so every number reads it the same way:
+   *   spending entry: reimbExcluded = what isn't your spending
+   *   payout entry:   reimbDaily = the margin it adds to this month's budget
+   * state.reimb = { version: 1, claims: [{ id, txId, actual, eligible, date, who, ref,
+   *   closed, routing: 'daily' | 'vault', created, updated }],
+   *   payouts: [{ id, txId, amount, date, allocations: [{ claimId, amount }] }] }
+   * Status: PENDING (nothing back), PARTIALLY_REIMBURSED, SETTLED (all of the
+   * eligible amount back), CLOSED (closed by hand: what didn't come back is yours).
+   * Margin = paid back beyond the eligible amount, counted once, by the payout
+   * that crosses it; daily: added to the month's budget; vault: kept apart.
+   */
+  function reimbOf(state) {
+    if (!state.reimb || typeof state.reimb !== 'object') state.reimb = { version: 1, claims: [], payouts: [] };
+    state.reimb.claims = state.reimb.claims || [];
+    state.reimb.payouts = state.reimb.payouts || [];
+    return state.reimb;
+  }
+
+  function reimbView(state) {
+    const R = reimbOf(state);
+    const claims = R.claims.map((c) => Object.assign({}, c, { allocated: 0, margin: 0 }));
+    const byId = {};
+    claims.forEach((c) => { byId[c.id] = c; });
+    const payouts = R.payouts.slice().sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.id < b.id ? -1 : 1)).map((p) => {
+      let daily = 0, vault = 0, used = 0;
+      (p.allocations || []).forEach((a) => {
+        const c = byId[a.claimId];
+        if (!c) return;
+        const before = Math.max(0, c.allocated - c.eligible);
+        c.allocated += a.amount;
+        used += a.amount;
+        const add = Math.max(0, c.allocated - c.eligible) - before;
+        if (c.routing === 'vault') vault += add; else daily += add;
+      });
+      return Object.assign({}, p, { marginDaily: daily, marginVault: vault, excess: Math.max(0, p.amount - used) });
+    });
+    claims.forEach((c) => {
+      c.outstanding = c.closed ? 0 : Math.max(0, c.eligible - c.allocated);
+      c.margin = Math.max(0, c.allocated - c.eligible);
+      c.shortfall = c.closed ? Math.max(0, c.eligible - c.allocated) : 0;
+      c.status = c.closed ? 'CLOSED' : c.allocated >= c.eligible ? 'SETTLED' : c.allocated > 0 ? 'PARTIALLY_REIMBURSED' : 'PENDING';
+    });
+    return {
+      claims, payouts,
+      pendingFloat: sum(claims.filter((c) => c.status === 'PENDING' || c.status === 'PARTIALLY_REIMBURSED'), (c) => c.outstanding),
+      vault: sum(payouts, (p) => p.marginVault),
+      unallocated: sum(payouts, (p) => p.excess),
+    };
+  }
+
+  // Writes the worked-out effects onto the linked entries; safe to run any number of times.
+  function syncReimb(state) {
+    const v = reimbView(state);
+    const claimOf = {};
+    v.claims.forEach((c) => { claimOf[c.txId] = c; });
+    const payOf = {};
+    v.payouts.forEach((p) => { payOf[p.txId] = p; });
+    state.transactions.forEach((t) => {
+      const c = claimOf[t.id];
+      if (c) { t.claimId = c.id; t.reimbExcluded = c.closed ? Math.min(c.eligible, c.allocated) : c.eligible; }
+      else if (t.claimId) { delete t.claimId; delete t.reimbExcluded; }
+      const p = payOf[t.id];
+      if (p) { t.payoutId = p.id; t.reimbDaily = p.marginDaily; t.useFor = 'reimb'; }
+      else if (t.payoutId) { delete t.payoutId; delete t.reimbDaily; if (t.useFor === 'reimb') t.useFor = null; }
+    });
+    return v;
+  }
+
+  // A spending entry marked as paid for work: eligible defaults to all of it.
+  function addClaim(state, txId, o, nowIso) {
+    const tx = state.transactions.find((t) => t.id === txId);
+    if (!tx || !isFlexible(tx) || tx.claimId) return null;
+    const R = reimbOf(state);
+    const eligible = Math.round(Number(o && o.eligible) || tx.amount);
+    if (!(eligible > 0) || eligible > tx.amount) return null;
+    const c = { id: newId('clm'), txId, actual: tx.amount, eligible, date: tx.date, who: (o && o.who) || '', ref: (o && o.ref) || '',
+      closed: false, routing: o && o.routing === 'vault' ? 'vault' : 'daily', created: nowIso, updated: nowIso };
+    R.claims.push(c);
+    syncReimb(state);
+    return c;
+  }
+
+  /*
+   * A money-in entry that is a reimbursement, for the chosen claims. Each gets
+   * what it's still owed, oldest first; with one claim, anything beyond is its
+   * margin; with several, anything beyond is left unallocated (flagged), never
+   * made into profit on a claim it wasn't for.
+   */
+  function recordPayout(state, txId, claimIds) {
+    const tx = state.transactions.find((t) => t.id === txId);
+    if (!tx || !isIncome(tx) || tx.payoutId || tx.iouId || tx.iouPay || tx.passedOn) return null;
+    const v = reimbView(state);
+    const chosen = v.claims.filter((c) => claimIds.indexOf(c.id) !== -1 && !c.closed).sort((a, b) => (a.date < b.date ? -1 : 1));
+    if (!chosen.length) return null;
+    let left = tx.amount;
+    const allocations = chosen.map((c) => { const a = Math.min(left, c.outstanding); left -= a; return { claimId: c.id, amount: a }; });
+    if (chosen.length === 1 && left > 0) { allocations[0].amount += left; left = 0; }
+    const p = { id: newId('pay'), txId, amount: tx.amount, date: tx.date, allocations: allocations.filter((a) => a.amount > 0) };
+    reimbOf(state).payouts.push(p);
+    syncReimb(state);
+    return p;
+  }
+
+  function claimSet(state, claimId, fields, nowIso) {
+    const c = reimbOf(state).claims.find((x) => x.id === claimId);
+    if (!c) return null;
+    Object.assign(c, fields, { updated: nowIso });
+    syncReimb(state);
+    return c;
+  }
+
+  // Unlinks everything a deleted entry took part in (a claim's payouts stay, now unallocated).
+  function reimbForget(state, tx) {
+    const R = reimbOf(state);
+    if (tx.claimId) {
+      R.claims = R.claims.filter((c) => c.id !== tx.claimId);
+      R.payouts.forEach((p) => { p.allocations = (p.allocations || []).filter((a) => a.claimId !== tx.claimId); });
+    }
+    if (tx.payoutId) R.payouts = R.payouts.filter((p) => p.id !== tx.payoutId);
+    syncReimb(state);
+  }
+
+  // The amount of a claimed spending entry changed: the claim follows (eligible never above what was paid).
+  function reimbAmount(state, tx) {
+    const R = reimbOf(state);
+    const c = R.claims.find((x) => x.id === tx.claimId);
+    if (c) { c.actual = tx.amount; c.eligible = Math.min(c.eligible, tx.amount); }
+    syncReimb(state);
+  }
 
   // Pays a purchase from money kept for it, as far as it goes. Returns the amount covered.
   function coverPurchase(state, keepId, spendId) {
@@ -614,6 +754,7 @@
    * spending money, except any part larger than the loan.
    */
   function incomeKept(t) {
+    if (t.payoutId) return Number(t.reimbDaily) || 0;
     if (!t.useFor || t.useFor === 'spend') return t.amount;
     // Kept for something to buy (a Diwali gift for a purchase): never spending money; it pays for that purchase.
     if (t.useFor === 'keep') return 0;
@@ -623,7 +764,7 @@
 
   function byCategory(transactions) {
     const out = {};
-    transactions.forEach((t) => { out[t.category] = (out[t.category] || 0) + t.amount; });
+    transactions.forEach((t) => { out[t.category] = (out[t.category] || 0) + personalAmt(t); });
     return out;
   }
 
@@ -670,7 +811,8 @@
     txns.forEach((t) => { spendByDate[t.date] = (spendByDate[t.date] || 0) + t.amount; });
     const incomes = incomeInRange(state.transactions, cycle).filter((t) => t.date <= todayIso);
     // Money kept for something stays in the account: all of it counts in the balance.
-    incomes.forEach((t) => { spendByDate[t.date] = (spendByDate[t.date] || 0) - (t.useFor === 'keep' ? t.amount : incomeKept(t)); });
+    // A reimbursement is all cash in; only its margin (daily routing) adds to the budget, through incomeKept.
+    incomes.forEach((t) => { spendByDate[t.date] = (spendByDate[t.date] || 0) - (t.useFor === 'keep' || t.payoutId ? t.amount : incomeKept(t)); });
     /*
      * Money with friends and family (borrowed, lent, paid back) and money
      * passed on: not income or spending, but it moves the balance, so it
@@ -776,7 +918,9 @@
     const billsAhead = sum(events.filter((e) => e.date > todayIso), (e) => e.amount);
     // Today's amount is fixed for the day: what spending and saving today don't change.
     // Money kept for something to buy is in the account but not to spend.
-    const kept = sum(state.transactions.filter((t) => isIncome(t) && t.useFor === 'keep' && t.date <= todayIso), (t) => Math.max(0, t.amount - (Number(t.keepUsed) || 0)));
+    // Kept apart: money kept for a purchase, and the side vault (margins routed there).
+    const kept = sum(state.transactions.filter((t) => isIncome(t) && t.useFor === 'keep' && t.date <= todayIso), (t) => Math.max(0, t.amount - (Number(t.keepUsed) || 0))) +
+      (state.reimb ? reimbView(state).vault : 0);
     const byMoney = Math.max(0, bal - kept + spentToday + savedToday - billsAhead) / (remainingDays + 1);
     // Never below zero: a limit of -₹50 means nothing, ₹0 says it.
     const byBudget = anchor
@@ -2395,7 +2539,7 @@
     const share = anchor ? (cyc.days - daysBetween(cyc.start, anchor.date)) / cyc.days : 1;
     const from = anchor ? anchor.date : cyc.start;
     const spent = byCategory(spendInRange(state.transactions, cyc).filter((t) => t.date >= from && t.date <= todayIso)
-      .map((t) => (t.covered ? Object.assign({}, t, { amount: ownPart(t) }) : t)));
+      .map((t) => (t.covered ? Object.assign({}, t, { amount: t.amount - (Number(t.covered) || 0) }) : t)));
     const moves = (state.budgetMoves || []).filter((m) => m.cycle === cyc.start);
     const own = {};
     (state.budgets || []).forEach((b) => { own[b.name] = b; });
@@ -2431,7 +2575,9 @@
     const r = projectRunway(state, todayIso);
     // Money owed to a friend that's due today is still in the account until paid: it counts once, as owed.
     const iouDue = sum(iouEvents(state, r.cycle, todayIso).filter((e) => e.date <= todayIso), (e) => e.amount);
-    const money = Math.max(0, (Number(r.balanceToday) || 0) + iouDue);
+    // The side vault is in the account; it's shown with the funds instead. Money owed back on claims is yours too.
+    const rv = state.reimb ? reimbView(state) : { vault: 0, pendingFloat: 0 };
+    const money = Math.max(0, (Number(r.balanceToday) || 0) + iouDue - rv.vault);
     const sv = state.savings || {};
     // Money moved out of the account into a goal (Jar for a bike) is still yours; set-asides for goals stay in the account.
     // Money received and given to a goal stays in the account but outside the balance shown, like the emergency fund.
@@ -2451,9 +2597,11 @@
     const people = iouSummary(state, todayIso);
     // Loan money received (Pay Later, a bank loan) that isn't in Debts yet: owed all the same.
     const newLoans = sum(state.transactions.filter((t) => isIncome(t) && t.borrowed && !t.debtId && t.date <= todayIso), (t) => t.amount);
-    return { money, funds, loans, cards, owedPeople: people.oweTotal, lentPeople: people.lentTotal, newLoans,
-      owe: loans + cards + people.oweTotal + newLoans, own: money + funds + people.lentTotal,
-      value: Math.round(money + funds + people.lentTotal - loans - cards - people.oweTotal - newLoans) };
+    const vault = rv.vault;
+    const reimbOwed = rv.pendingFloat;
+    return { money, funds, loans, cards, owedPeople: people.oweTotal, lentPeople: people.lentTotal, newLoans, vault, reimbOwed,
+      owe: loans + cards + people.oweTotal + newLoans, own: money + funds + people.lentTotal + vault + reimbOwed,
+      value: Math.round(money + funds + people.lentTotal + vault + reimbOwed - loans - cards - people.oweTotal - newLoans) };
   }
 
   // ---------- weekly plan: fraud checks, readiness, goals ----------
@@ -2525,7 +2673,7 @@
     const txs = state.transactions.filter((t) => t.date >= from && t.date <= to);
     const amount = Number(goal.amount) || 0;
     let value;
-    if (goal.type === 'spend_cap') value = sum(txs.filter((t) => isFlexible(t) && !t.gap), (t) => t.amount);
+    if (goal.type === 'spend_cap') value = sum(txs.filter((t) => isFlexible(t) && !t.gap), personalAmt);
     else if (goal.type === 'save') value = sum(txs.filter((t) => isMove(t) && !t.setAside && t.useFor !== 'debt'), (t) => t.amount);
     else if (goal.type === 'extra_loan') value = extraToLoans(state, from, to);
     else if (goal.type === 'no_card') value = sum(txs.filter((t) => isFlexible(t) && t.paidFrom && t.paidFrom !== 'account'), (t) => t.amount);
@@ -2729,7 +2877,7 @@
     const slip = (state.payslips || {})[c.start];
     const pay = { planned: slip ? Number(slip.usual) || 0 : Number(state.settings.salary) || 0, actual: slip ? Number(slip.amount) || 0 : Number(state.settings.salary) || 0 };
     const txs = state.transactions.filter((t) => inCycle(t.date, c));
-    const flexSpent = sum(txs.filter((t) => isFlexible(t) && t.category !== 'Emergency'), (t) => t.amount);
+    const flexSpent = sum(txs.filter((t) => isFlexible(t) && t.category !== 'Emergency'), personalAmt);
     const saved = sum(txs.filter((t) => isMove(t)), (t) => t.amount);
     const borrowed = borrowedIn(state, c.start, last);
     const rows = [
@@ -2842,6 +2990,7 @@
       if (k in s && !Array.isArray(s[k])) delete s[k];
     });
     if (!s.savings || typeof s.savings !== 'object') delete s.savings;
+    if (s.reimb != null && (typeof s.reimb !== 'object' || !Array.isArray(s.reimb.claims || []) || !Array.isArray(s.reimb.payouts || []))) delete s.reimb;
     ['fixed', 'debts'].forEach((k) => (s[k] || []).forEach((x) => {
       ['amount', 'balance', 'minPayment', 'rate'].forEach((f) => { if (x[f] != null) x[f] = Number(x[f]) || 0; });
     }));
@@ -2950,7 +3099,7 @@
     const byDate = {};
     flex.forEach((t) => {
       const d = byDate[t.date] || (byDate[t.date] = { amount: 0, card: false });
-      d.amount += t.amount;
+      d.amount += personalAmt(t);
       if (t.paidFrom && t.paidFrom !== 'account') d.card = true;
     });
     const days = [];
@@ -2989,7 +3138,7 @@
         start: cyc.start,
         current: i === 0,
         salary: 0,
-        spent: sum(txs.filter((t) => isFlexible(t) || isBillPayment(t)), (t) => t.amount),
+        spent: sum(txs.filter((t) => isFlexible(t) || isBillPayment(t)), personalAmt),
         saved: sum(txs.filter(isMove), (t) => t.amount),
         borrowed: sum(txs.filter((t) => isFlexible(t) && t.paidFrom && t.paidFrom !== 'account'), (t) => t.amount) +
           sum(txs.filter((t) => isIncome(t) && t.borrowed), (t) => t.amount),
@@ -3040,8 +3189,8 @@
     const leaks = leakNames(state).map((name) => {
       const mine = flex.filter((t) => leakOf(state, t) === name);
       const now = mine.filter((t) => inCycle(t.date, cyc) && t.date <= todayIso);
-      const last = sum(mine.filter((t) => inCycle(t.date, prev)), (t) => t.amount);
-      const thisRound = sum(now, (t) => t.amount);
+      const last = sum(mine.filter((t) => inCycle(t.date, prev)), personalAmt);
+      const thisRound = sum(now, personalAmt);
       // A month's worth: last round, or this round's pace if that's higher.
       const perMonth = Math.max(last, Math.round((thisRound / days) * cyc.days));
       const g = goals[name] && goals[name].cycle === cyc.start ? goals[name] : null;
@@ -3345,7 +3494,7 @@
     salaryFor, salaryHistory, looksLikeSalary, paydayReset, suggestUse, freedomDays, interestLeak, nextPaydayPreview,
     billShare, billPot, billsMonthly, billPaidIn, billDue, billEnded, fixedEnded, loanEnd, billsFor, fixedFor, fixedTotal, paymentsLeft, lastDueFrom, nextFixedDue, payBill, undoBillPayment, zoneStatus, ESSENTIAL_CATEGORIES,
     isCardTransfer, statementOn, dueAfter, cardOwedAt, cardReserve, cardStatus, emiQuote, revolveQuote, cardBillPlan,
-    recordCardPayment, keptFor, ownPart, coverPurchase, refundToPurchase, undoRefund, earmarkedIn, cleanState, accuracyStats, addCardEmi, isPassedOn, passThroughPair, passOn, iouLeft, openIous, addIou, payIou, undoIouTx, iouSummary, iouEvents, cardEmiFromBooking, looksLikeCardBill, spendToCardPayment, convertCardBalance, answerCardDue, cardLateFee, cardRate, CARD_RATE, undoCardConvert, cardFreeDays, byCategory, DEFAULT_SPLIT,
+    recordCardPayment, keptFor, ownPart, coverPurchase, refundToPurchase, undoRefund, earmarkedIn, cleanState, accuracyStats, reimbView, syncReimb, addClaim, recordPayout, claimSet, reimbForget, reimbAmount, addCardEmi, isPassedOn, passThroughPair, passOn, iouLeft, openIous, addIou, payIou, undoIouTx, iouSummary, iouEvents, cardEmiFromBooking, looksLikeCardBill, spendToCardPayment, convertCardBalance, answerCardDue, cardLateFee, cardRate, CARD_RATE, undoCardConvert, cardFreeDays, byCategory, DEFAULT_SPLIT,
     isLoanCredit, borrowedThisCycle, borrowCheck, rolloverOptions, setTranslator,
     payoffOrder, tickDebts, debtJourney, lenderTasks, lastBorrowed,
     encryptBackup, openBackup, backupInfo, toB64, fromB64, isTransfer, walletBalances, goalStatus, goalsMonthly, budgetEnvelopes, netWorth, reportRange, budgetHistory, aiFacts, planFacts, fraudSignals, investReady, goalResult, weekStart,
