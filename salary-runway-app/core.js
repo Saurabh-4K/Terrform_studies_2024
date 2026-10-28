@@ -1616,8 +1616,10 @@
     const when = (sim) => ({ months: sim.months, interest: sim.totalInterest, never: sim.neverPaysOff, date: sim.neverPaysOff ? null : addMonths(todayIso, sim.months) });
     const now = when(simulateDebts(debts, 0, 'avalanche', false));
     const plan = when(simulateDebts(debts, extra, payoffOrder(state), true));
+    // Minimums only: each EMI paid, and a finished loan's EMI goes back to daily spending.
+    // The plan: the extra set aside, and each finished loan's EMI moved to the next loan (rollover).
     return {
-      now, plan, extra,
+      now, plan, extra, rollover: debts.length > 1,
       minimums: sum(debts, (d) => Number(d.minPayment) || 0),
       sooner: now.never || plan.never ? 0 : now.months - plan.months,
       saved: now.never || plan.never ? 0 : Math.max(0, now.interest - plan.interest),
@@ -2412,9 +2414,11 @@
     });
     // Friends and family: what you owe them, and what they owe you.
     const people = iouSummary(state, todayIso);
-    return { money, funds, loans, cards, owedPeople: people.oweTotal, lentPeople: people.lentTotal,
-      owe: loans + cards + people.oweTotal, own: money + funds + people.lentTotal,
-      value: Math.round(money + funds + people.lentTotal - loans - cards - people.oweTotal) };
+    // Loan money received (Pay Later, a bank loan) that isn't in Debts yet: owed all the same.
+    const newLoans = sum(state.transactions.filter((t) => isIncome(t) && t.borrowed && !t.debtId && t.date <= todayIso), (t) => t.amount);
+    return { money, funds, loans, cards, owedPeople: people.oweTotal, lentPeople: people.lentTotal, newLoans,
+      owe: loans + cards + people.oweTotal + newLoans, own: money + funds + people.lentTotal,
+      value: Math.round(money + funds + people.lentTotal - loans - cards - people.oweTotal - newLoans) };
   }
 
   // ---------- weekly plan: fraud checks, readiness, goals ----------

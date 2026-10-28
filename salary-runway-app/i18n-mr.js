@@ -1939,4 +1939,7 @@
   "A refund to the card makes the purchase smaller, so it isn’t counted as income.": "कार्डवर आलेला परतावा खरेदी कमी करतो, म्हणून तो उत्पन्न म्हणून मोजला जात नाही.",
   "{amount} refunded": "{amount} परत",
   "Refund taken off. Read your SMS again to add it as money in.": "परतावा काढला. पैसे आले म्हणून जोडण्यासाठी SMS पुन्हा वाचा.",
+  "With {amount} extra a month, and each finished loan’s EMI moved to the next loan.": "महिन्याला {amount} जास्त भरून, आणि संपलेल्या कर्जाचा EMI पुढच्या कर्जाकडे वळवून.",
+  "From moving each finished loan’s EMI to the next loan instead of spending it. No extra needed.": "संपलेल्या कर्जाचा EMI खर्च न करता पुढच्या कर्जाकडे वळवल्यामुळे. जास्त पैसे लागत नाहीत.",
+  "Loan money not in Debts yet": "कर्जाचे पैसे, अजून कर्जांमध्ये नाहीत",
 };

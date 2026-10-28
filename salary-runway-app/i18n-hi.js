@@ -1939,4 +1939,7 @@
   "A refund to the card makes the purchase smaller, so it isn’t counted as income.": "कार्ड पर आया रिफंड खरीद को कम करता है, इसलिए इसे आमदनी नहीं गिना जाता.",
   "{amount} refunded": "{amount} रिफंड",
   "Refund taken off. Read your SMS again to add it as money in.": "रिफंड हटाया. पैसे आए के रूप में जोड़ने के लिए SMS फिर से पढ़ें.",
+  "With {amount} extra a month, and each finished loan’s EMI moved to the next loan.": "महीने में {amount} ज्यादा देकर, और खत्म हुए लोन की EMI अगले लोन में लगाकर.",
+  "From moving each finished loan’s EMI to the next loan instead of spending it. No extra needed.": "खत्म हुए लोन की EMI खर्च करने के बजाय अगले लोन में लगाने से. ज्यादा पैसे नहीं चाहिए.",
+  "Loan money not in Debts yet": "लोन का पैसा, अभी लोन में नहीं जोड़ा",
 };

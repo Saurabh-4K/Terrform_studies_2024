@@ -1880,3 +1880,38 @@ test('the extra in this month\'s pay is counted once', () => {
   s.transactions[0].useFor = 'emergency';
   assert.equal(Core.projectRunway(s, t).balanceToday, 107857 - 9689);
 });
+
+test('debt-free dates: what makes the plan sooner is said, never assumed', () => {
+  const t = '2026-10-27';
+  const one = baseState({ debts: [{ id: 'a', name: 'Car', balance: 100000, rate: 9, minPayment: 5000, dueDay: 5 }] });
+  // One loan, nothing extra: the same date, no saving claimed
+  let d = Core.debtFreeDates(one, t);
+  assert.equal(d.sooner, 0);
+  assert.equal(d.saved, 0);
+  // Two loans, nothing extra: sooner only by moving the first one's EMI to the second, and it says so
+  const two = baseState({ debts: [{ id: 'a', name: 'Car', balance: 50000, rate: 9, minPayment: 5000, dueDay: 5 },
+    { id: 'b', name: 'Personal', balance: 300000, rate: 14, minPayment: 7000, dueDay: 7 }] });
+  d = Core.debtFreeDates(two, t);
+  assert.equal(d.extra, 0);
+  assert.equal(d.rollover, true);
+  assert.ok(d.sooner > 0 && d.saved > 0);
+  // A loan the minimum can't clear: never, and no saving claimed
+  const never = baseState({ debts: [{ id: 'a', name: 'Card loan', balance: 100000, rate: 36, minPayment: 2000, dueDay: 5 }] });
+  d = Core.debtFreeDates(never, t);
+  assert.equal(d.now.never, true);
+  assert.equal(d.saved, 0);
+});
+
+test('loan money received counts as owed until it is in Debts', () => {
+  const t = '2026-10-26';
+  const s = baseState({ settings: { salary: 50000, payday: 1 }, balanceCheck: { date: '2026-10-23', amount: 1000 } });
+  const before = Core.netWorth(s, t).value;
+  s.transactions.push({ id: 'l', kind: 'in', date: t, amount: 10000, category: 'Loan or Pay Later', note: 'KreditBee', useFor: 'spend', borrowed: true });
+  assert.equal(Core.netWorth(s, t).value, before);
+  assert.equal(Core.netWorth(s, t).newLoans, 10000);
+  // Added to Debts: it's counted there instead, once
+  s.debts.push({ id: 'd', name: 'KreditBee', balance: 10000, rate: 30, minPayment: 1000, dueDay: 5 });
+  s.transactions[0].debtId = 'd';
+  assert.equal(Core.netWorth(s, t).value, before);
+  assert.equal(Core.netWorth(s, t).newLoans, 0);
+});

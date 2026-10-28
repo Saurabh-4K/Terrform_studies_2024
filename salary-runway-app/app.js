@@ -1424,7 +1424,10 @@
       '<div class="debtfree-cols"><div><span class="hint">' + tr('Minimums only') + '</span><b>' + date(d.now) + '</b></div>' +
       '<div class="plan"><span class="hint">' + tr('With your plan') + '</span><b>' + date(d.plan) + '</b></div></div>' +
       (d.now.never ? '<p class="hint bad">' + tr('At the minimums the interest grows faster than the payments.') + '</p>' : '') +
-      (d.sooner > 0 ? '<p class="good">' + tr('{months} sooner, saving about {amount} in interest.', { months: plural(d.sooner, 'month'), amount: inr(d.saved) }) + '</p>'
+      (d.sooner > 0 ? '<p class="good">' + tr('{months} sooner, saving about {amount} in interest.', { months: plural(d.sooner, 'month'), amount: inr(d.saved) }) + '</p>' +
+        '<p class="hint">' + (d.extra > 0
+          ? tr('With {amount} extra a month, and each finished loan’s EMI moved to the next loan.', { amount: inr(d.extra) })
+          : tr('From moving each finished loan’s EMI to the next loan instead of spending it. No extra needed.')) + '</p>'
         : '<p class="hint">' + tr('Set aside an extra amount for loans in Plan to bring this date closer.') + '</p>') +
       '<button class="explain-link" data-action="explain" data-explain="debtfree">' + tr('How is this calculated?') + '</button></section>';
   }
@@ -1838,6 +1841,7 @@
       (n.lentPeople ? line('Owed to you by people', inr(n.lentPeople)) : '') +
       (n.loans ? line('Loans', '−' + inr(n.loans)) : '') + (n.cards ? line('Card dues from before', '−' + inr(n.cards)) : '') +
       (n.owedPeople ? line('Owed to people', '−' + inr(n.owedPeople)) : '') +
+      (n.newLoans ? line('Loan money not in Debts yet', '−' + inr(n.newLoans)) : '') +
       line('Net worth', signed(n.value), n.value < 0 ? 'bad' : '') + '</div>' +
       (keys.length > 1
         ? '<div class="nw-grid">' + bars + '</div><p class="viz-tip" aria-live="polite">' + tr('Tap a round to see its number.') + '</p>' +

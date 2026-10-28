@@ -189,3 +189,16 @@ These repositories are intended to support engineering judgement. Their presence
 Closing note
 
 This document is a set of suggestions for investigation, not an authoritative audit or a substitute for developer verification. AI-assisted analysis can be incomplete or mistaken. Please independently confirm each point against the current source, reproduce any suspected issue, and use the project's intended accounting rules before implementing a change.
+
+Review outcome (28 Oct 2026)
+
+Each point was traced through the code and real use (a backup and problem report, not committed). Rules are in tests/money-map.test.js and tests/core.test.js.
+
+1. Debt payoff estimates: confirmed. With ₹0 extra, "months sooner" came only from the plan moving each finished loan's EMI to the next one, which the screen didn't say. Kept as the plan (the app asks to roll a finished EMI over), now stated on the card ("From moving each finished loan's EMI to the next loan… No extra needed" / "With ₹X extra a month, and…"). Tests: one loan with ₹0 extra claims nothing; two loans name the rollover; a loan the minimum can't clear claims no saving.
+2. Money map:
+   - Refund to card: changed. A refund for a purchase on that card this cycle makes the purchase smaller (budget, reports, card bill, limit), not income; with no such purchase it stays money in. Undo: "Not for this purchase". Refunds to the bank account are money in (the owner's rule).
+   - Bank loan credit: confirmed. Net worth rose by the loan. Now counted as owed ("Loan money not in Debts yet") until it is added to Debts or marked as already there.
+   - Own transfers, card repayments, People: already held (map rows: ATM cash to wallet, card bill paid, old card bill paid, borrowed / lent / paid back / passed on). Found and fixed on 26 Oct with the map: an EMI conversion counted twice, an old card bill paid early didn't lower the balance.
+3. Salary vs plan: confirmed a double count from real use: overtime recorded at payday was added again on top of a bank balance entered that day (and again when the usual pay was raised). Fixed, with a test. A salary SMS without the word "salary" was counted as income; credits close to the usual pay within 3 days of payday are now the salary. IOU promises before payday were already cash-flow events.
+4. Reimbursements: not built. Proposed to the owner as a feature (mark a payment as reimbursable; link the reimbursement when it comes).
+5. SMS duplicates: already keyed by message (smsKey, smsIgnored); deleting or "not a payment" keeps an SMS from coming back. Parser tests use made-up messages.

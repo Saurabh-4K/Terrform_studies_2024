@@ -23,7 +23,7 @@ const MAP = {
   'money in → goal': { worth: 2000, goal: 2000 },
   'money in → loan': { worth: 2000, loans: -2000 },
   'money in → keep': { bank: 2000, worth: 2000, kept: 2000 },
-  'bank loan credit': { bank: 10000, income: 10000, worth: 10000 },
+  'bank loan credit': { bank: 10000, income: 10000 },
   'save → emergency': { bank: -100, fund: 100 },
   'save → grow': { bank: -100, grow: 100 },
   'save → goal': { bank: -100, goal: 100 },
@@ -67,6 +67,6 @@ for (const [name, k] of Object.entries(kinds)) {
 
 test('money map: moving your own money never changes net worth', () => {
   const own = ['ATM cash to wallet', 'save → emergency', 'save → grow', 'save → goal', 'save → loan prepay', 'save, undecided', 'card bill paid (its EMI part)',
-    'old card bill paid early', 'old card bill paid in full', 'borrowed from friend', 'lent to friend', 'friend pays back', 'you pay friend back', 'passed on (in+out)', 'card spend → EMI (6 months)'];
+    'old card bill paid early', 'old card bill paid in full', 'borrowed from friend', 'lent to friend', 'friend pays back', 'you pay friend back', 'passed on (in+out)', 'card spend → EMI (6 months)', 'bank loan credit'];
   own.forEach((name) => assert.equal(MAP[name].worth, undefined, name));
 });
