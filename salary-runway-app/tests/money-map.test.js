@@ -34,6 +34,8 @@ const MAP = {
   // Paid from the money held for it: in reports, not daily spending; the hold is released.
   'likely cost came (₹6,000 paid)': { bank: -6000, reports: 6000, worth: -6000, held: -5000 },
   'likely cost didn’t come': { held: -5000 },
+  // Paid before payday for the 28th: it leaves today, and the 28th's assumed payment is dropped.
+  'fixed payment recorded (rent, 2 days early)': { bank: -22000, worth: -22000 },
   'save, undecided': { bank: -100 },
   'bill paid (electricity)': { bank: -1200, worth: -1200 },
   'card bill paid (its EMI part)': { cardOwed: -6010 },

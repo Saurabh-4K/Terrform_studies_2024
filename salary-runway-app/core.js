@@ -176,6 +176,71 @@
   function fixedFor(state, iso) { const c = cycleOf(state, iso); return (state.fixed || []).filter((f) => !fixedEnded(f, c)); }
   function fixedTotal(state, iso) { return sum(fixedFor(state, iso), (f) => Number(f.amount) || 0); }
 
+  /*
+   * Recording a fixed payment as paid. The payment covers one due date
+   * (forDue): the first one not yet paid, from the month of the payment on, so
+   * paying early (the 28th for the 1st) or late (the 5th for the 1st) both
+   * work. That due date's assumed payment is then dropped, and the money
+   * leaves on the day it really did, at the amount really paid.
+   */
+  function fixedPaidFor(state, f, due) {
+    return state.transactions.some((t) => t.fixedId === f.id && t.forDue === due);
+  }
+  // The due date a payment on iso covers: the nearest one not yet recorded as paid (a later one on a tie).
+  function fixedDueFor(state, f, iso) {
+    const payday = Number(state.settings.payday) || 1;
+    const here = cycleFor(iso, payday);
+    const dues = [previousCycle(here, payday), here, cycleFor(here.next, payday)]
+      .map((c) => occurrenceInCycle(Number(f.dueDay) || 1, c))
+      .filter((due) => due && !(f.lastDue && due > f.lastDue) && !fixedPaidFor(state, f, due));
+    dues.sort((a, b) => Math.abs(daysBetween(iso, a)) - Math.abs(daysBetween(iso, b)) || (a < b ? 1 : -1));
+    return dues[0] || null;
+  }
+  // txId: an entry already recorded (an SMS, say) becomes this payment; otherwise a new one is added.
+  function payFixed(state, fixedId, opts) {
+    const f = (state.fixed || []).find((x) => x.id === fixedId);
+    if (!f) return null;
+    const o = opts || {};
+    let tx = o.txId ? state.transactions.find((x) => x.id === o.txId) : null;
+    if (o.txId && (!tx || !isFlexible(tx) || (tx.paidFrom && tx.paidFrom !== 'account') || tx.claimId || tx.maybeId || tx.covered || tx.iouId || tx.splitOf)) return null;
+    const due = fixedDueFor(state, f, tx ? tx.date : o.date);
+    if (!due) return null;
+    if (!tx) {
+      const amount = Math.round(Number(o.amount));
+      if (!(amount > 0) || amount > 1e9 || !o.date) return null;
+      tx = { id: 'f' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), date: o.date, amount, category: 'Bills', note: f.name, source: 'manual', fixedNew: true };
+      state.transactions.push(tx);
+    }
+    tx.fixedId = f.id;
+    tx.forDue = due;
+    return tx;
+  }
+  // Not a fixed payment after all: an added one goes, a recorded one is ordinary spending again.
+  function unpayFixed(state, tx) {
+    if (!tx || !tx.fixedId) return;
+    if (tx.fixedNew) { state.transactions = state.transactions.filter((x) => x !== tx); return; }
+    delete tx.fixedId; delete tx.forDue;
+  }
+  /*
+   * Payments that look like a fixed payment not yet recorded: the same amount
+   * (within 2%), from the account, in the 10 days before its due date or up
+   * to 15 days after.
+   */
+  function fixedMatches(state, todayIso) {
+    const out = [];
+    state.transactions.forEach((t) => {
+      if (!isFlexible(t) || t.notFixed || (t.paidFrom && t.paidFrom !== 'account') || t.claimId || t.maybeId || t.covered || t.iouId || t.splitOf) return;
+      if (t.date > todayIso || t.date < addDays(todayIso, -20)) return;
+      (state.fixed || []).forEach((f) => {
+        const amt = Number(f.amount) || 0;
+        if (!(amt > 0) || Math.abs(t.amount - amt) > amt * 0.02) return;
+        const due = fixedDueFor(state, f, t.date);
+        if (due && daysBetween(t.date, due) <= 10 && daysBetween(due, t.date) <= 15) out.push({ tx: t, fixed: f, due });
+      });
+    });
+    return out;
+  }
+
   // The next due date of a fixed payment on or after iso.
   function nextFixedDue(f, iso) {
     const d = parseISO(iso);
@@ -366,7 +431,7 @@
     });
     state.fixed.forEach((f) => {
       const date = occurrenceInCycle(Number(f.dueDay) || 1, cycle);
-      if (date && !(f.lastDue && date > f.lastDue)) events.push({ date, name: f.name, amount: Number(f.amount) || 0, kind: 'fixed' });
+      if (date && !(f.lastDue && date > f.lastDue) && !fixedPaidFor(state, f, date)) events.push({ date, name: f.name, amount: Number(f.amount) || 0, kind: 'fixed', fixedId: f.id });
     });
     state.debts.filter((d) => d.balance > 0).forEach((d) => {
       // Paid through a card bill: it leaves on the card's due day.
@@ -388,6 +453,8 @@
   function isIncome(t) { return t.kind === 'in'; }
   function isMove(t) { return t.kind === 'move'; }
   function isBillPayment(t) { return !!t.billId; }
+  // A fixed payment recorded as paid (rent, a class fee): it leaves on its own day, and that month's assumed payment is dropped.
+  function isFixedPayment(t) { return !!t.fixedId; }
   // Paying a card bill, or moving a card balance to a loan, only moves money
   // between your account and the card: the spending was counted when it happened.
   function isCardTransfer(t) { return t.kind === 'cardpay' || t.kind === 'cardconvert'; }
@@ -395,7 +462,7 @@
   function isTransfer(t) { return t.kind === 'transfer'; }
   // Money passed on (₹26,000 from a friend straight to a brother): neither income nor spending.
   function isPassedOn(t) { return !!t.passedOn || !!t.iouId || !!t.iouPay; }
-  function isFlexible(t) { return !isIncome(t) && !isMove(t) && !isBillPayment(t) && !isCardTransfer(t) && !isTransfer(t) && !isPassedOn(t); }
+  function isFlexible(t) { return !isIncome(t) && !isMove(t) && !isBillPayment(t) && !isFixedPayment(t) && !isCardTransfer(t) && !isTransfer(t) && !isPassedOn(t); }
 
   function spendInRange(transactions, cycle) {
     return transactions.filter((t) => isFlexible(t) && inCycle(t.date, cycle));
@@ -944,7 +1011,7 @@
     }
     // Bill payments leave the account (less what the pot covers); moves to savings leave too.
     // Set-aside moves (t.setAside) record money already taken out on payday, so they're skipped here.
-    const others = state.transactions.filter((t) => (isBillPayment(t) || (isMove(t) && !t.setAside)) && inCycle(t.date, cycle) && t.date <= todayIso);
+    const others = state.transactions.filter((t) => (isBillPayment(t) || isFixedPayment(t) || (isMove(t) && !t.setAside)) && inCycle(t.date, cycle) && t.date <= todayIso);
     others.forEach((t) => {
       const out = isBillPayment(t) ? t.amount - (Number(t.fromPot) || 0) : t.amount;
       spendByDate[t.date] = (spendByDate[t.date] || 0) + out;
@@ -2935,7 +3002,7 @@
         if (isPassedOn(t)) { bal += isIncome(t) ? t.amount : -t.amount; return; }
         if (isIncome(t)) bal += t.useFor === 'keep' ? t.amount : incomeKept(t);
         else if (isFlexible(t) && !(t.paidFrom && t.paidFrom !== 'account')) bal -= t.amount;
-        else if (isMove(t) || isBillPayment(t) || t.kind === 'cardpay') bal -= t.amount;
+        else if (isMove(t) || isBillPayment(t) || isFixedPayment(t) || t.kind === 'cardpay') bal -= t.amount;
       });
       return { id: w.id, name: w.name, kind: w.kind, last4: w.last4 || '', balance: Math.round(bal) };
     });
@@ -3264,7 +3331,7 @@
         start: cyc.start,
         current: i === 0,
         salary: 0,
-        spent: sum(txs.filter((t) => isFlexible(t) || isBillPayment(t)), personalAmt),
+        spent: sum(txs.filter((t) => isFlexible(t) || isBillPayment(t) || isFixedPayment(t)), personalAmt),
         saved: sum(txs.filter(isMove), (t) => t.amount),
         borrowed: sum(txs.filter((t) => isFlexible(t) && t.paidFrom && t.paidFrom !== 'account'), (t) => t.amount) +
           sum(txs.filter((t) => isIncome(t) && t.borrowed), (t) => t.amount),
@@ -3623,7 +3690,7 @@
     occurrenceInCycle, monthlyPlan, cycleEvents, projectRunway, autoSavings, allocate,
     insights, simulateDebts, compareDebtPlans, debtFreeDates, emergencyPlan, parseSms,
     splitSmsBatch, smsKey, categorize, normalizeMerchant, sinkingMonthly, inCycle,
-    spendInRange, incomeInRange, incomeKept, isIncome, isMove, isBillPayment, isFlexible, incomeOptions,
+    spendInRange, incomeInRange, incomeKept, isIncome, isMove, isBillPayment, isFixedPayment, fixedPaidFor, fixedDueFor, payFixed, unpayFixed, fixedMatches, isFlexible, incomeOptions,
     salaryFor, salaryHistory, looksLikeSalary, paydayReset, suggestUse, freedomDays, interestLeak, nextPaydayPreview,
     billShare, billPot, billsMonthly, billPaidIn, billDue, billEnded, fixedEnded, loanEnd, billsFor, fixedFor, fixedTotal, paymentsLeft, lastDueFrom, nextFixedDue, payBill, undoBillPayment, zoneStatus, ESSENTIAL_CATEGORIES,
     isCardTransfer, statementOn, dueAfter, cardOwedAt, cardReserve, cardStatus, emiQuote, revolveQuote, cardBillPlan,

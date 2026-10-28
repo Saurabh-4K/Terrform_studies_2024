@@ -68,6 +68,11 @@ Everything the app can do today, screen by screen, with the rules it follows. Fo
   - Change *Saved so far* or the date any time; this month's amount stays and the new one counts from next payday.
   - If the date passes before it's reached, nothing more is put aside and the goal asks for a new date (the tile shows a warning badge).
   - Goals show in the plan summary, the payday screen and Grow's set-asides.
+- **Fixed payments, recorded as paid:** a fixed payment (rent, a class fee) is expected on its due day. Paid early, late or a different amount? Record it, and it counts once, on the day it really left, at the amount really paid; that due date isn't counted again. Three ways:
+  - *Runway → Coming up*: **Mark paid** on the item (amount and date).
+  - An SMS payment with the same amount (within 2%) from 10 days before to 15 days after the due date: the Runway and Spend tabs ask *Is ₹9,000 on 28 Oct your "Data science class" payment?* **Yes** links it, **No** stops asking.
+  - Any account payment's edit view: *Was this a fixed payment?* Pick which one.
+  - It covers the nearest due date not yet recorded (paid on the 28th for the 1st, or on the 5th for the 1st). Next month's is still expected. Card payments aren't offered (the card bill pays them). *Not a fixed payment* in the edit view undoes it.
 - **Maybe expenses (Runway → Maybe expenses):** costs that may come, like a wedding gift, a bike repair or a doctor's visit. Add what, about how much, roughly when (*Next week*, *Next month* or a date) and how likely.
   - *Likely*: the money is held from today's limit until payday, so you're ready if it comes. The balance and net worth don't change; *How is this calculated?* shows what's held. A likely cost next round lowers next payday's free money instead.
   - *Maybe*: nothing changes, but the page shows today's limit if the maybe ones come.

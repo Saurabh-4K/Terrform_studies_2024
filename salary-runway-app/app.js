@@ -936,7 +936,7 @@
       '</section>' +
       cardHomeNotes(cyc) +
       savedCard() +
-      alertsNudge() + iouDueCard() + maybeDueCard() + passCard() + incomeCard() +
+      alertsNudge() + iouDueCard() + maybeDueCard() + fixedMatchCard() + passCard() + incomeCard() +
       weekCard() +
       bal +
       (needsCheck().length
@@ -973,7 +973,8 @@
           (upcoming.length
             ? '<div class="list">' + upcoming.map((e) =>
               '<div class="list-item"><div class="date-badge"><b>' + Core.parseISO(e.date).getDate() + '</b>' + monthName(Core.parseISO(e.date).getMonth()) + '</div>' +
-              '<div class="grow"><div class="title">' + esc(e.name) + '</div><div class="meta">' + tr(e.kind === 'debt' ? 'Minimum payment' : e.kind === 'bill' ? 'Estimate · amount varies' : e.kind === 'iou' ? 'Promised back' : 'Fixed payment') + '</div></div>' +
+              '<div class="grow"><div class="title">' + esc(e.name) + '</div><div class="meta">' + tr(e.kind === 'debt' ? 'Minimum payment' : e.kind === 'bill' ? 'Estimate · amount varies' : e.kind === 'iou' ? 'Promised back' : 'Fixed payment') + '</div>' +
+              (e.kind === 'fixed' ? fixedPayForm(e) : '') + '</div>' +
               '<div class="amt">' + inr(e.amount) + '</div></div>').join('') + '</div>'
             : '<p class="hint">' + tr('No more fixed payments this cycle.') + '</p>') + '</section>' },
       { key: 'payday', group: 'This month', icon: 'payday', label: 'Next payday', tone: 'mint', badge: { text: fmtDate(cyc.next) }, html: () => paydayPreviewCard() },
@@ -2771,7 +2772,7 @@
     const cyc = Core.cycleFor(t, Number(state.settings.payday) || 1);
     const list = (ui.txFilter === 'cycle' ? state.transactions.filter((x) => Core.inCycle(x.date, cyc)) : state.transactions.slice())
       .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
-    const spent = list.filter((x) => Core.isFlexible(x) || Core.isBillPayment(x)).reduce((s, x) => s + x.amount, 0);
+    const spent = list.filter((x) => Core.isFlexible(x) || Core.isBillPayment(x) || Core.isFixedPayment(x)).reduce((s, x) => s + x.amount, 0);
     const received = list.filter(Core.isIncome).reduce((s, x) => s + x.amount, 0);
     const moneyIn = ui.txKind === 'in';
     const saving = ui.txKind === 'save';
@@ -2804,7 +2805,7 @@
       sortCard() +
       importCard() +
       needsCheckCard() +
-      alertsNudge() + iouDueCard() + passCard() + incomeCard() +
+      alertsNudge() + iouDueCard() + fixedMatchCard() + passCard() + incomeCard() +
       addCard, [
         { key: 'viz-where', group: 'Your spending', icon: 'where', label: 'Where it went', tone: 'mint', viz: 'where', badge: null, html: () => vizCard() },
         { key: 'viz-when', group: 'Your spending', icon: 'when', label: 'When', tone: 'mint', viz: 'when', badge: null, html: () => vizCard() },
@@ -3628,6 +3629,42 @@
       '<span class="hint">' + tr('A refund to the card makes the purchase smaller, so it isn’t counted as income.') + '</span></div>';
   }
 
+  // ---------- fixed payments, recorded as paid ----------
+
+  // In "Coming up": paid already (early, or a different amount)? Record it.
+  function fixedPayForm(e) {
+    const t = today();
+    if (ui.fixedPay !== e.fixedId) return '<button class="link" data-action="fixed-pay-open" data-id="' + esc(e.fixedId) + '">' + tr('Mark paid') + '</button>';
+    return '<div class="form-grid"><label class="field" for="fp-amount"><span>' + tr('Paid (₹)') + '</span><input id="fp-amount" type="number" inputmode="numeric" min="1" max="1000000000" step="any" value="' + e.amount + '"></label>' +
+      '<label class="field" for="fp-date"><span>' + tr('Date') + '</span><input id="fp-date" type="date" max="' + t + '" value="' + t + '"></label></div>' +
+      '<div class="row"><button class="primary" data-action="fixed-pay-save" data-id="' + esc(e.fixedId) + '">' + tr('Save') + '</button><button class="ghost" data-action="fixed-pay-cancel">' + tr('Cancel') + '</button></div>';
+  }
+
+  // A payment with a fixed payment's amount near its due date: is it that one?
+  function fixedMatchCard() {
+    const m = Core.fixedMatches(state, today())[0];
+    if (!m) return '';
+    return '<section class="card income-card"><div class="card-head"><h2>' + tr('Is {amount} on {date} your “{name}” payment?', { amount: inr(m.tx.amount), date: fmtDate(m.tx.date), name: esc(m.fixed.name) }) + '</h2></div>' +
+      '<p class="hint">' + tr('It’s due {date}. If this is it, it counts once: now, not again on the due date.', { date: fmtDate(m.due) }) + '</p>' +
+      '<div class="row"><button class="primary" data-action="fixed-link" data-tx="' + esc(m.tx.id) + '" data-id="' + esc(m.fixed.id) + '">' + tr('Yes, it is') + '</button>' +
+      '<button data-action="fixed-not" data-tx="' + esc(m.tx.id) + '">' + tr('No') + '</button></div></section>';
+  }
+
+  // In a payment's edit view: mark it as a fixed payment, or see which one it paid.
+  function fixedTxBox(x) {
+    if (x.fixedId) {
+      const f = (state.fixed || []).find((y) => y.id === x.fixedId);
+      return '<div class="callout"><b>' + tr('Fixed payment: {name}', { name: esc(f ? f.name : tr('removed')) }) + '</b><span class="hint">' +
+        tr('For the one due {date}. It isn’t counted again that day.', { date: fmtDate(x.forDue) }) + '</span>' +
+        '<div><button class="ghost small" data-action="fixed-unpay" data-tx="' + esc(x.id) + '">' + tr(x.fixedNew ? 'Remove this payment' : 'Not a fixed payment') + '</button></div></div>';
+    }
+    if (!Core.isFlexible(x) || (x.paidFrom && x.paidFrom !== 'account') || x.claimId || x.maybeId || x.covered || x.iouId || x.splitOf || !(state.fixed || []).length) return '';
+    return '<div class="callout"><b>' + tr('Was this a fixed payment?') + '</b>' +
+      '<div class="row"><select id="fx-which" aria-label="' + tr('Fixed payment') + '">' + state.fixed.map((f) => '<option value="' + esc(f.id) + '"' + (Math.abs((Number(f.amount) || 0) - x.amount) <= (Number(f.amount) || 0) * 0.02 ? ' selected' : '') + '>' +
+        esc(f.name || tr('Unnamed')) + ' · ' + inr(Number(f.amount) || 0) + '</option>').join('') + '</select>' +
+      '<button class="ghost small" data-action="fixed-link" data-tx="' + esc(x.id) + '">' + tr('Yes, mark it') + '</button></div></div>';
+  }
+
   // ---------- maybe expenses ----------
 
   const MAYBE_LABEL = { likely: 'Likely', maybe: 'Maybe', unlikely: 'Unlikely' };
@@ -3845,7 +3882,7 @@
         '<button class="ghost small" data-action="keep-use" data-id="' + esc(k.tx.id) + '" data-buy="' + esc(x.id) + '">' + tr('Paid from {name} ({left} left)', { name: esc(k.name), left: inr(k.left) }) + '</button>').join('') + '</div>' : '') +
       (x.covered ? '<p class="hint">' + tr('{amount} of it was paid from money kept for it, so it doesn’t use your budgets.', { amount: inr(x.covered) }) + '</p>' : '') +
       refundsBox(x) +
-      reimbBox(x) + maybeTxBox(x) +
+      reimbBox(x) + maybeTxBox(x) + fixedTxBox(x) +
       notPaymentBox(x, flex || isIn || saved) +
       '</div></div>';
   }
@@ -4031,6 +4068,7 @@
     const saved = Core.isMove(x);
     const onCard = x.paidFrom && x.paidFrom !== 'account' ? (state.cards || []).find((c) => c.id === x.paidFrom) : null;
     const cat = Core.isTransfer(x) ? esc(walletName(x.from)) + ' → ' + esc(walletName(x.to))
+      : x.fixedId ? esc(tr('Fixed payment'))
       : edit && !saved && !Core.isBillPayment(x) && !Core.isCardTransfer(x)
       ? '<select data-tx-cat="' + esc(x.id) + '" aria-label="' + tr('Category') + '">' + (isIn ? incomeCategoryOptions(x.category) : categoryOptions(x.category)) + peopleOptionsFor(x) + '</select>'
       : saved ? esc(x.useFor ? tr('Saved → {place}', { place: savedWhere(x) }) : tr('Saved: choose where it goes'))
@@ -6038,6 +6076,40 @@
         // The SMS can come in again, as money in.
         if (r && r.smsKey) state.smsIgnored = (state.smsIgnored || []).filter((k) => k !== r.smsKey);
         save(); rerenderKeepScroll(); offerUndo(tr('Refund taken off. Read your SMS again to add it as money in.'), before);
+        return;
+      }
+      case 'fixed-pay-open': ui.fixedPay = btn.dataset.id; break;
+      case 'fixed-pay-cancel': ui.fixedPay = null; break;
+      case 'fixed-pay-save': {
+        const amount = Math.round(Number((document.getElementById('fp-amount') || {}).value));
+        const date = (document.getElementById('fp-date') || {}).value || t;
+        if (!(amount > 0) || amount > 1e9 || date > t) { toast(tr('Enter what you paid.')); return; }
+        const before = JSON.stringify(state);
+        if (!Core.payFixed(state, btn.dataset.id, { amount, date })) { toast(tr('Already recorded as paid')); return; }
+        ui.fixedPay = null;
+        save(); rerenderKeepScroll(); offerUndo(tr('Recorded as paid. It won’t be counted again on its due date.'), before);
+        return;
+      }
+      case 'fixed-link': {
+        const fid = btn.dataset.id || (document.getElementById('fx-which') || {}).value;
+        const before = JSON.stringify(state);
+        if (!Core.payFixed(state, fid, { txId: btn.dataset.tx })) { toast(tr('Already recorded as paid')); return; }
+        ui.editTx = null;
+        save(); rerenderKeepScroll(); offerUndo(tr('Recorded as paid. It won’t be counted again on its due date.'), before);
+        return;
+      }
+      case 'fixed-not': {
+        const x = state.transactions.find((y) => y.id === btn.dataset.tx);
+        if (x) { x.notFixed = true; save(); }
+        break;
+      }
+      case 'fixed-unpay': {
+        const x = state.transactions.find((y) => y.id === btn.dataset.tx);
+        if (!x) return;
+        const before = JSON.stringify(state);
+        Core.unpayFixed(state, x);
+        ui.editTx = null;
+        save(); rerenderKeepScroll(); offerUndo(tr('Not a fixed payment any more'), before);
         return;
       }
       case 'maybe-form': ui.maybeForm = true; ui.maybeError = ''; break;

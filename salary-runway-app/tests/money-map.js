@@ -68,6 +68,7 @@
     'card spend → EMI (6 months)': { pre: (s) => X(s, { id: 'cs', amount: 12000, category: 'Shopping', note: 'Phone', paidFrom: 'c1', date: '2026-10-21' }),
       apply: (s) => Core.convertCardBalance(s, 'c1', 12000, { kind: 'emi', months: 6, rate: 16 }, T) },
     'spend Emergency': (s) => X(s, { amount: 500, category: 'Emergency', note: 'Hospital' }),
+    'fixed payment recorded (rent, 2 days early)': { pre: (s) => { s.balanceCheck = Object.assign({ date: T }, s.balanceCheck, { amount: 50000 }); }, apply: (s) => Core.payFixed(s, 'rent', { amount: 22000, date: T }) },
     'maybe cost, likely': (s) => Core.addMaybe(s, { name: 'Wedding gift', amount: 5000, date: '2026-10-27', likely: 'likely' }, T),
     'maybe cost, maybe': (s) => Core.addMaybe(s, { name: 'Bike repair', amount: 5000, date: '2026-10-27', likely: 'maybe' }, T),
     'likely cost came (₹6,000 paid)': { pre: (s) => Core.addMaybe(s, { name: 'Wedding gift', amount: 5000, date: '2026-10-26', likely: 'likely' }, T),
