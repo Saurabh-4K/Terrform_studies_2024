@@ -2076,7 +2076,7 @@
     const t = today();
     const top = state.debts.filter((d) => d.balance > 0).sort((a, b) => b.rate - a.rate)[0];
     return '<form id="save-tx" class="form-grid" autocomplete="off">' +
-      '<label class="field">' + tr('Amount (₹)') + '<input id="sv-amount" type="number" inputmode="decimal" min="1" step="1" required placeholder="58"></label>' +
+      '<label class="field">' + tr('Amount (₹)') + '<input id="sv-amount" type="number" inputmode="decimal" min="1" max="1000000000" step="any" required placeholder="58"></label>' +
       '<label class="field">' + tr('Goes to') + '<select id="sv-use">' + savingPlaces().map((p) => '<option value="' + p.use + '"' +
         (p.debtId ? ' data-debt="' + esc(p.debtId) + '"' : '') + (p.goalId ? ' data-goal="' + esc(p.goalId) + '"' : '') + '>' + esc(p.label) + '</option>').join('') + '</select></label>' +
       '<label class="field">' + tr('Date') + '<input id="sv-date" type="date" value="' + t + '" max="' + t + '" required></label>' +
@@ -2209,7 +2209,7 @@
     const shop = Core.normalizeMerchant(i.name);
     const match = state.transactions.find((x) => !x.iouId && !x.iouPay && !x.passedOn && Math.round(x.amount) === amount &&
       Math.abs(Core.daysBetween(x.date, date)) <= 5 && (isIn ? Core.isIncome(x) : Core.isFlexible(x)) &&
-      (!shop || !Core.normalizeMerchant(x.note) || Core.normalizeMerchant(x.note) === shop || Math.round(x.amount) === Core.iouLeft(i)));
+      !!shop && Core.normalizeMerchant(x.note) === shop);
     let tx = match;
     if (!tx) {
       tx = isIn ? { id: uid(), kind: 'in', date, amount, category: 'Money returned', note: i.name, source: 'manual', useFor: 'spend' }
@@ -2746,7 +2746,7 @@
       '<button data-action="tx-kind" data-kind="save" aria-pressed="' + saving + '">' + tr('Saved') + '</button></div></div>' +
       (saving ? savedForm() :
       '<form id="add-tx" class="form-grid" autocomplete="off">' +
-      '<label class="field">' + tr('Amount (₹)') + '<input id="tx-amount" type="number" inputmode="decimal" min="1" step="1" required placeholder="' + (moneyIn ? '2000' : '250') + '"></label>' +
+      '<label class="field">' + tr('Amount (₹)') + '<input id="tx-amount" type="number" inputmode="decimal" min="1" max="1000000000" step="any" required placeholder="' + (moneyIn ? '2000' : '250') + '"></label>' +
       (moneyIn ? '' : '<p id="tx-big-warn" class="borrow-warn wide" hidden></p>') +
       '<label class="field">' + tr('Category') + '<select id="tx-category">' + (moneyIn ? incomeCategoryOptions('Money received') : categoryOptions('Food & dining')) + '</select></label>' +
       '<label class="field">' + tr('Date') + '<input id="tx-date" type="date" value="' + t + '" max="' + t + '" required></label>' +
@@ -3617,7 +3617,7 @@
       '<div class="form-grid">' +
       // A card bill payment keeps its amount, but its date can be put right (the day the money really left).
       (locked && x.kind === 'cardpay' ? field('edit-date', 'Paid on', '<input id="edit-date" type="date" max="' + t + '" value="' + esc(x.date) + '">') : '') +
-      (locked ? '' : field('edit-amount', 'Amount (₹)', '<input id="edit-amount" type="number" inputmode="decimal" min="1" step="1" value="' + esc(x.amount) + '">') +
+      (locked ? '' : field('edit-amount', 'Amount (₹)', '<input id="edit-amount" type="number" inputmode="decimal" min="1" max="1000000000" step="any" value="' + esc(x.amount) + '">') +
         field('edit-date', 'Date', '<input id="edit-date" type="date" max="' + t + '" value="' + esc(x.date) + '">')) +
       field('edit-note', isIn ? 'From' : 'Where / what', '<input id="edit-note" type="text" value="' + esc(x.note || '') + '">') +
       (flex || isIn ? field('edit-cat', 'Category', '<select id="edit-cat">' + (isIn ? incomeCategoryOptions(x.category) : categoryOptions(x.category)) + '</select>') : '') +
@@ -4542,15 +4542,18 @@
     const r = ui.restore || {};
     const text = r.paste ? ((document.getElementById('restore-text') || {}).value || '') : r.text;
     const pass = (document.getElementById('restore-pass') || {}).value || '';
+    // Nothing changes until the backup has opened and been checked in full.
     Core.openBackup(text, pass).then((data) => {
-      state = migrate(Object.assign(emptyState(), data));
+      const fresh = emptyState();
+      const next = migrate(Object.assign(fresh, data, { savings: data.savings || fresh.savings, budgets: data.budgets || fresh.budgets }));
+      state = next;
       if (r.info && r.info.date) state.lastBackup = r.info.date;
       ui.restore = null;
       save();
       toast(tr('Backup restored'));
       setTab('home');
-    }, (e) => {
-      ui.restore = Object.assign({}, r, { error: e.message === 'password'
+    }).catch((e) => {
+      ui.restore = Object.assign({}, r, { error: e && e.message === 'password'
         ? tr('That password doesn’t open this backup. Check for typos: capitals count.')
         : tr('That isn’t a Hisab Se backup.') });
       render();
@@ -6567,7 +6570,7 @@
       if (!item) return;
       const f = el.dataset.field;
       if (f === 'name') item.name = el.dataset.list === 'budgets' ? fromLabel(el.value.trim(), BUILT_IN_CATEGORIES) : el.value.trim();
-      else if (f === 'nextDue') item.nextDue = el.value || today();
+      else if (f === 'nextDue') { item.nextDue = el.value || today(); delete item.day; }
       else {
         let v = Math.max(0, Number(el.value) || 0);
         if (f === 'dueDay') v = Math.min(31, Math.max(1, Math.round(v) || 1));

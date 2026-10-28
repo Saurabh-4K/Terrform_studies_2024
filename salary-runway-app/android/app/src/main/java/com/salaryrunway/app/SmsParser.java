@@ -28,10 +28,12 @@ final class SmsParser {
     private static final int CI = Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE;
     private static final Pattern NOT_PAYMENT = Pattern.compile("\\botp\\b|one time password|verification code", CI);
     // Bank SMS with an amount that isn't money moving, as NOT_MONEY in core.js.
-    private static final Pattern NOT_MONEY = Pattern.compile("reward\\s*points?|\\b(?:rp|points)\\s+(?:credited|earned|redeemed)|\\bhas requested\\b|\\bcollect request\\b|\\bpayment request\\b|\\bwill be (?:auto[- ]?)?(?:debited|deducted|charged)\\b|\\bmandate\\b.{0,60}\\b(?:registered|created|set ?up|approved)\\b|\\bauto ?pay\\b.{0,40}\\b(?:set ?up|registered|activated)\\b|\\bbonus amount\\b|\\bdear subscriber\\b|\\bpre-?approved\\b|\\blifetime free\\b|\\bper\\s*(?:rs\\.?|inr|₹)\\s*[\\d,]+|\\bt\\s*&\\s*c\\b|\\bapply now\\b|\\b(?:get|earn|win) up ?to\\b", CI);
+    private static final Pattern NOT_MONEY = Pattern.compile("reward\\s*points?|\\b(?:rp|points)\\s+(?:credited|earned|redeemed)|\\bhas requested\\b|\\bcollect request\\b|\\bpayment request\\b|\\bwill be (?:auto[- ]?)?(?:debited|deducted|charged)\\b|\\bmandate\\b.{0,60}\\b(?:registered|created|set ?up|approved)\\b|\\bauto ?pay\\b.{0,40}\\b(?:set ?up|registered|activated)\\b|\\bbonus amount\\b|\\bdear subscriber\\b|\\bpre-?approved\\b|\\blifetime free\\b|\\bper\\s*(?:rs\\.?|inr|₹)\\s*[\\d,]+|\\bt\\s*&\\s*c\\b|\\bapply now\\b|\\b(?:get|earn|win) up ?to\\b|\\bfailed\\b|\\bdeclined\\b|\\bunsuccessful\\b", CI);
     private static final Pattern AMOUNT = Pattern.compile("(?:rs\\.?|inr|₹)\\s*([\\d,]+(?:\\.\\d{1,2})?)", CI);
-    private static final Pattern DEBIT = Pattern.compile("\\b(debited|spent|paid|sent|withdrawn|purchase|debit|payment of)\\b", CI);
-    private static final Pattern CREDIT = Pattern.compile("\\b(credited|received|deposited|refund(?:ed)?)\\b", CI);
+    private static final Pattern DEBIT = Pattern.compile("\\b(debited|spent|paid|sent|withdrawn|purchase|debit|payment of|charged|transferred\\s+from)\\b", CI);
+    private static final Pattern CREDIT = Pattern.compile("\\b(credited|received|deposited|refund(?:ed)?|disbursed|reversed)\\b", CI);
+    private static final Pattern REVERSED = Pattern.compile("\\breversed\\b|\\breversal\\b", CI);
+    private static final Pattern FEE_GST = Pattern.compile("\\b(?:fee|charges?)\\b.*\\bgst\\b|\\bgst\\b.*\\b(?:fee|charges?)\\b", CI);
     // "Txn Rs.68.26 On HDFC Bank Card 6645 At …": HDFC's card and UPI payments.
     private static final Pattern TXN = Pattern.compile("\\btxn\\s+(?:of\\s+)?(?:rs\\.?|inr|₹)", CI);
     // The shop in a UPI ID, as in core.js: payment gateways and QR codes aren't the shop.
@@ -43,7 +45,7 @@ final class SmsParser {
     private static final Pattern VPA = Pattern.compile("(?:^|[^a-z0-9._*-])(\\*?[a-z0-9._-]+@[a-z]+)\\b", CI);
 
     // Credit cards, as in core.js.
-    private static final Pattern CARD_HINT = Pattern.compile("credit card|\\bcc\\b|card\\s*(?:no\\.?|number|ending|xx|\\*{2})|avl\\.?\\s*limit|available\\s*limit|avail\\.?\\s*lmt", CI);
+    private static final Pattern CARD_HINT = Pattern.compile("credit card|\\bcc\\b|card\\s*(?:no\\.?|number|ending|xx|\\*{2})|bank card\\s*\\d{4}\\b|avl\\.?\\s*limit|available\\s*limit|avail\\.?\\s*lmt", CI);
     private static final Pattern DEBIT_CARD = Pattern.compile("debit card", CI);
     private static final Pattern STATEMENT = Pattern.compile("\\b(?:statement|stmt)\\b", CI);
     private static final Pattern TOTAL_DUE = Pattern.compile("total\\s*(?:amount|amt\\.?)?\\s*due\\s*(?:is|of|:|-)?\\s*(?:rs\\.?|inr|₹)\\s*([\\d,]+(?:\\.\\d{1,2})?)", CI);
@@ -96,7 +98,15 @@ final class SmsParser {
         } catch (NumberFormatException e) {
             return null;
         }
-        if (value <= 0) return null;
+        // More than ₹100 crore in one SMS is a misread, not a payment.
+        if (value <= 0 || value > 1_000_000_000L) return null;
+        // A card fee and its GST: the card is charged both.
+        if (FEE_GST.matcher(t).find()) {
+            long total = 0;
+            Matcher all = AMOUNT.matcher(t);
+            while (all.find()) total += Math.round(Double.parseDouble(all.group(1).replace(",", "")));
+            value = total;
+        }
 
         boolean card = HAS_CARD.matcher(t).find();
         if (card && STATEMENT.matcher(t).find() && (TOTAL_DUE.matcher(t).find() || MIN_DUE.matcher(t).find())) {
@@ -126,11 +136,14 @@ final class SmsParser {
 
         Result r = new Result();
         r.amount = value;
-        r.type = debit ? "debit" : "credit";
+        r.type = REVERSED.matcher(t).find() && credit ? "credit" : debit ? "debit" : "credit";
+        debit = "debit".equals(r.type);
         boolean onCard = CARD_HINT.matcher(t).find() && !DEBIT_CARD.matcher(t).find();
         r.paidFrom = onCard ? "card" : "account";
         r.last4 = onCard ? last4(t) : null;
-        String merchant = findMerchant(t, debit ? DEBIT_TO : CREDIT_FROM);
+        String merchant = REVERSED.matcher(t).find() ? findMerchant(t, DEBIT_TO) : "";
+        if (merchant.isEmpty()) merchant = findMerchant(t, debit ? DEBIT_TO : CREDIT_FROM);
+        if (merchant.matches("\\d{1,2}[-/.]\\d{1,2}([-/.]\\d{2,4})?")) merchant = "";
         if (debit) {
             r.merchant = merchant.isEmpty() ? "Bank payment" : merchant;
             r.category = categorize(merchant.isEmpty() ? t : merchant, rules);

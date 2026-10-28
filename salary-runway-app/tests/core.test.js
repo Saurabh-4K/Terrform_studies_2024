@@ -1915,3 +1915,54 @@ test('loan money received counts as owed until it is in Debts', () => {
   assert.equal(Core.netWorth(s, t).value, before);
   assert.equal(Core.netWorth(s, t).newLoans, 0);
 });
+
+test('audit fixes: earmarks, debts, bills, quotes, IOUs, restore', () => {
+  const T = '2026-10-26';
+  // Money received to the emergency fund stays in the account: a balance entered later isn't counted twice
+  const s = baseState({ settings: { salary: 98000, payday: 28 }, fixed: [], balanceCheck: { date: '2026-10-23', amount: 20000 } });
+  s.savings.emergencyBalance = 6000;
+  s.transactions.push({ id: 'g', kind: 'in', date: '2026-10-24', amount: 5000, category: 'Gift', note: 'Dad', useFor: 'emergency' });
+  s.balanceCheck = { date: T, amount: 25000 };
+  assert.equal(Core.projectRunway(s, T).balanceToday, 20000);
+  assert.equal(Core.netWorth(s, T).value, 26000);
+  // Minimums only: a finishing loan's spare EMI isn't passed on (car alone ends in 71 months)
+  const two = [{ name: 'P', balance: 1011703, rate: 11, minPayment: 24547 }, { name: 'C', balance: 1151603, rate: 7.35, minPayment: 20230 }];
+  assert.equal(Core.simulateDebts(two, 0, 'avalanche', false).months, 71);
+  // A bill due on the 31st keeps its day after February
+  const b = baseState({ bills: [{ id: 'b', name: 'X', estimate: 1000, everyMonths: 1, nextDue: '2027-01-31', history: [1000] }] });
+  Core.payBill(b, 'b', 1000, 1, '2027-01-31');
+  Core.payBill(b, 'b', 1000, 1, '2027-02-28');
+  assert.equal(b.bills[0].nextDue, '2027-03-31');
+  // A quoted EMI clears the loan in the quoted months
+  const q = Core.emiQuote(500000, 11, 60, 0);
+  assert.deepEqual([q.emi, Core.simulateDebts([{ name: 'L', balance: 500000, rate: 11, minPayment: q.emi }], 0, 'avalanche', false).months], [10872, 60]);
+  // Never more paid back than owed
+  const st = baseState();
+  const i = Core.addIou(st, { name: 'R', dir: 'owe', amount: 3000 }, T);
+  Core.payIou(st, i.id, 5000, T, null);
+  assert.equal(i.paid, 3000);
+  // Restore: text amounts become numbers, broken lists are dropped, nonsense is refused
+  const c = Core.cleanState({ settings: {}, transactions: [{ id: 'a', date: T, amount: '700' }], budgets: null, savings: null });
+  assert.deepEqual([c.transactions[0].amount, 'budgets' in c, 'savings' in c], [700, false, false]);
+  assert.throws(() => Core.cleanState({ settings: {}, transactions: [{ id: 'a', date: T, amount: -400 }] }));
+  assert.throws(() => Core.cleanState({ settings: {}, transactions: [{ id: 'a', date: '2026-02-31', amount: 5 }] }));
+});
+
+test('audit fixes: SMS that were misread', () => {
+  const T = '2026-10-26';
+  const read = (x) => Core.parseSms(x, {}, T);
+  assert.equal(read('UPI txn of Rs.500.00 to ACME STORE failed. Amount will be refunded if debited.'), null);
+  let p = read('Loan amount of Rs.50,000.00 disbursed to your A/c XX1234 on 24-10-26. EMI Rs.4,500 from 05-11-26.');
+  assert.deepEqual([p.type, p.amount, p.merchant, Core.isLoanCredit(p.raw)], ['credit', 50000, 'Money received', true]);
+  p = read('Your transaction of Rs.750.00 at SWIGGY on HDFC Bank Credit Card XX6645 has been reversed on 22-10-26.');
+  assert.deepEqual([p.type, p.amount, p.merchant, p.paidFrom, p.category], ['credit', 750, 'Swiggy', 'card', 'Refund']);
+  p = read('Rs.10,000.00 transferred from A/c XX1234 to A/c XX9876 (self) on 23-10-26 via IMPS');
+  assert.deepEqual([p.type, p.merchant, p.category], ['debit', 'Own account', 'Savings']);
+  assert.equal(read('Rs.2,000.00 credited to A/c XX1234 on 26-10-26 IMPS from own account XX9876 (self transfer)').merchant, 'Own account');
+  assert.equal(read('Rs. 1,234 debited from A/c XX1234 on 31-02-26 to ACME STORE').date, T);
+  assert.equal(read('Rs.99999999999.00 debited from a/c XX1234 on 25-10-26 to ACME'), null);
+  p = read('Txn Rs.499.00 On HDFC Bank Card 6645 At AMAZON PAY INDIA by UPI 612345678903 On 21-10');
+  assert.deepEqual([p.paidFrom, p.last4], ['card', '6645']);
+  p = read('Late payment fee of Rs.500.00 + GST Rs.90.00 charged to your HDFC Bank Credit Card XX6645.');
+  assert.deepEqual([p.type, p.amount, p.paidFrom], ['debit', 590, 'card']);
+});

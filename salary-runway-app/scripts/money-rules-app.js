@@ -168,6 +168,24 @@ async function edits(browser, B) {
   return bad;
 }
 
+// A repayment to someone never takes over an unrelated purchase of the same amount.
+async function iouLink(browser, B) {
+  const data = household();
+  data.transactions.push({ id: 'croma', date: '2026-10-25', amount: 3000, category: 'Shopping', note: 'Croma' });
+  data.iou = [{ id: 'iou1', name: 'Rahul', dir: 'owe', amount: 3000, paid: 0, promised: '2026-10-26', created: '2026-10-20', payments: [] }];
+  const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+  await page.clock.setFixedTime(new Date('2026-10-26T10:00:00+05:30'));
+  await page.goto(B + '#home');
+  await page.evaluate((d) => { localStorage.clear(); localStorage.setItem('salary-runway-lang', 'en'); localStorage.setItem('salary-runway-tour', '1'); localStorage.setItem('salary-runway-v1', JSON.stringify(d)); }, data);
+  await page.reload(); await page.waitForTimeout(500);
+  await page.evaluate(() => document.querySelector('[data-action=iou-all][data-iou=iou1]').click()); await page.waitForTimeout(200);
+  const s = await page.evaluate(() => JSON.parse(localStorage.getItem('salary-runway-v1')));
+  const ok = !s.transactions.find((t) => t.id === 'croma').iouPay && s.transactions.some((t) => t.iouPay === 'iou1' && t.note === 'Rahul');
+  console.log((ok ? 'OK   ' : 'FAIL ') + 'repaying Rahul ₹3,000 leaves a ₹3,000 Croma purchase as spending');
+  await page.close();
+  return ok ? 0 : 1;
+}
+
 /*
  * Categories picked in the notification pop-up: the app saves them when it
  * opens, and each must land where the same choice in the app does (People,
@@ -302,6 +320,8 @@ async function notifications(browser, B) {
     bad += await edits(browser, B);
     console.log('Notification pop-up:');
     bad += await notifications(browser, B);
+    console.log('People:');
+    bad += await iouLink(browser, B);
   } finally { await browser.close(); server.close(); }
   process.exit(bad ? 1 : 0);
 })();

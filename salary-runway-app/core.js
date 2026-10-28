@@ -234,7 +234,10 @@
     b.everyMonths = months;
     b.estimate = Math.round((sum(b.history) / b.history.length) * months);
     const near = b.nextDue && Math.abs(daysBetween(b.nextDue, dateIso)) <= 15;
-    b.nextDue = addMonths(near ? b.nextDue : dateIso, months);
+    // The bill's own day (the 31st), so a short month doesn't move it for good.
+    if (!b.day && b.nextDue) b.day = parseISO(b.nextDue).getDate();
+    const from = parseISO(near ? b.nextDue : dateIso);
+    b.nextDue = toISO(clampedDate(from.getFullYear(), from.getMonth() + months, near && b.day ? b.day : from.getDate()));
     state.transactions.push(tx);
     return tx;
   }
@@ -464,8 +467,9 @@
   // A repayment, of any size: ties the entry that moved the money (if any) to the IOU.
   function payIou(state, iouId, amount, dateIso, txId) {
     const i = (state.iou || []).find((x) => x.id === iouId);
-    const a = Math.round(Number(amount) || 0);
-    if (!i || !(a > 0)) return null;
+    if (!i) return null;
+    const a = Math.min(Math.round(Number(amount) || 0), iouLeft(i));
+    if (!(a > 0)) return null;
     i.paid = (Number(i.paid) || 0) + a;
     i.payments = (i.payments || []).concat({ date: dateIso, amount: a, txId: txId || null });
     if (txId) {
@@ -549,6 +553,20 @@
     buy.refunds = buy.refunds.filter((x, j) => j !== i);
     if (!buy.refunds.length) delete buy.refunds;
     return r;
+  }
+
+  /*
+   * Money received and given to the emergency fund, a goal or Grow stays in
+   * the account (it isn't moved anywhere): a bank balance entered later holds
+   * it, so it's taken out of that balance, as far as the fund still has it.
+   * Savings moved out (Jar, a SIP) aren't in the account and don't count.
+   */
+  function earmarkedIn(state, iso) {
+    const ins = state.transactions.filter((t) => isIncome(t) && t.date <= iso && !isPassedOn(t));
+    const of = (use, id) => sum(ins.filter((t) => t.useFor === use && (!id || t.goalId === id)), (t) => t.amount);
+    const sv = state.savings || {};
+    return Math.min(of('emergency'), Number(sv.emergencyBalance) || 0) + Math.min(of('grow'), Number(sv.investSaved) || 0) +
+      sum(state.goals || [], (g) => Math.min(of('goal', g.id), Number(g.saved) || 0));
   }
 
   // What a spending entry costs your own budgets: less what a gift kept for it paid.
@@ -721,7 +739,7 @@
       const date = addDays(cycle.start, i);
       const out = eventsByDate[date] || 0;
       if (i <= idxToday) {
-        if (anchor && i === aIdx) bal = (Number(anchor.amount) || 0) - cardReserve(state, anchor.date);
+        if (anchor && i === aIdx) bal = (Number(anchor.amount) || 0) - cardReserve(state, anchor.date) - earmarkedIn(state, anchor.date);
         bal -= out + (spendByDate[date] || 0);
         pace = planned = bal;
         if (i === idxToday) pace -= todayRest;
@@ -1073,7 +1091,7 @@
     const n = Math.max(1, Number(months) || 1);
     const emi = i > 0 ? (P * i * Math.pow(1 + i, n)) / (Math.pow(1 + i, n) - 1) : P / n;
     const interest = emi * n - P;
-    return { emi: Math.round(emi), months: n, interest: Math.round(interest), fee: Math.round(Number(fee) || 0), cost: Math.round(interest + (Number(fee) || 0)) };
+    return { emi: Math.ceil(emi - 1e-9), months: n, interest: Math.round(interest), fee: Math.round(Number(fee) || 0), cost: Math.round(interest + (Number(fee) || 0)) };
   }
 
   // Leaving P on the card and paying `monthly` each month at the card's rate.
@@ -1588,6 +1606,8 @@
         // A loan with a set number of EMIs ends with the last one.
         if (d.left > 0 && pay >= d.min && --d.left === 0) d.bal = 0;
       });
+      // Minimums only: what a finishing loan's last EMI didn't need stays with you; only the extra goes on.
+      if (!rollover) budget = Math.min(budget, Number(extra) || 0);
       active.filter((d) => d.bal > 0).sort(order).forEach((d) => {
         const pay = Math.min(budget, d.bal);
         d.bal -= pay;
@@ -2790,11 +2810,34 @@
     return null;
   }
 
+  /*
+   * Restored data, made safe: amounts are whole rupees (a "700" typed into a
+   * file becomes 700), dates are real days, and lists are lists. Anything that
+   * can't be made right refuses the file (Error('format')) rather than
+   * loading half of it.
+   */
+  function cleanState(s) {
+    const okDate = (d) => typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d) && toISO(parseISO(d)) === d;
+    s.transactions = s.transactions.map((t) => {
+      const amount = Math.round(Number(t && t.amount));
+      if (!t || !Number.isFinite(amount) || amount < 0 || amount > 1e10 || !okDate(t.date)) throw new Error('format');
+      return Object.assign({}, t, { amount });
+    });
+    ['fixed', 'debts', 'budgets', 'bills', 'sinking', 'goals', 'cards', 'wallets', 'iou', 'emergencies'].forEach((k) => {
+      if (k in s && !Array.isArray(s[k])) delete s[k];
+    });
+    if (!s.savings || typeof s.savings !== 'object') delete s.savings;
+    ['fixed', 'debts'].forEach((k) => (s[k] || []).forEach((x) => {
+      ['amount', 'balance', 'minPayment', 'rate'].forEach((f) => { if (x[f] != null) x[f] = Number(x[f]) || 0; });
+    }));
+    return s;
+  }
+
   // Resolves to the saved app data; rejects with Error('format') or Error('password').
   function openBackup(text, password) {
     let o;
     try { o = JSON.parse(String(text || '').trim()); } catch (e) { return Promise.reject(new Error('format')); }
-    const check = (s) => { if (!s || !s.settings || !Array.isArray(s.transactions)) throw new Error('format'); return s; };
+    const check = (s) => { if (!s || !s.settings || !Array.isArray(s.transactions)) throw new Error('format'); return cleanState(s); };
     if (o && o.settings) return Promise.resolve().then(() => check(o));
     if (!o || o.kind !== 'backup') return Promise.reject(new Error('format'));
     return backupKey(password || '', fromB64(o.salt), Number(o.rounds) || BACKUP_ROUNDS)
@@ -3136,7 +3179,7 @@
    * transactions (OTPs, offers) or have no amount.
    */
   // Credit card SMS. Kept in step with SmsParser.java.
-  const CARD_HINT = /credit card|\bcc\b|card\s*(?:no\.?|number|ending|xx|\*{2})|avl\.?\s*limit|available\s*limit|avail\.?\s*lmt/i;
+  const CARD_HINT = /credit card|\bcc\b|card\s*(?:no\.?|number|ending|xx|\*{2})|bank card\s*\d{4}\b|avl\.?\s*limit|available\s*limit|avail\.?\s*lmt/i;
   const DEBIT_CARD = /debit card/i;
   const STATEMENT = /\b(?:statement|stmt)\b/i;
   const TOTAL_DUE = /total\s*(?:amount|amt\.?)?\s*due\s*(?:is|of|:|-)?\s*(?:rs\.?|inr|₹)\s*([\d,]+(?:\.\d{1,2})?)/i;
@@ -3154,7 +3197,7 @@
    * - a bonus in a shop's or DTH account ("Dear Subscriber … Bonus amount of Rs. 114.45")
    * - offers ("LIFETIME FREE pre-approved … Credit Card … 19 BluChips per Rs.100 spent … T&C apply")
    */
-  const NOT_MONEY = /reward\s*points?|\b(?:rp|points)\s+(?:credited|earned|redeemed)|\bhas requested\b|\bcollect request\b|\bpayment request\b|\bwill be (?:auto[- ]?)?(?:debited|deducted|charged)\b|\bmandate\b.{0,60}\b(?:registered|created|set ?up|approved)\b|\bauto ?pay\b.{0,40}\b(?:set ?up|registered|activated)\b|\bbonus amount\b|\bdear subscriber\b|\bpre-?approved\b|\blifetime free\b|\bper\s*(?:rs\.?|inr|₹)\s*[\d,]+|\bt\s*&\s*c\b|\bapply now\b|\b(?:get|earn|win) up ?to\b/i;
+  const NOT_MONEY = /reward\s*points?|\b(?:rp|points)\s+(?:credited|earned|redeemed)|\bhas requested\b|\bcollect request\b|\bpayment request\b|\bwill be (?:auto[- ]?)?(?:debited|deducted|charged)\b|\bmandate\b.{0,60}\b(?:registered|created|set ?up|approved)\b|\bauto ?pay\b.{0,40}\b(?:set ?up|registered|activated)\b|\bbonus amount\b|\bdear subscriber\b|\bpre-?approved\b|\blifetime free\b|\bper\s*(?:rs\.?|inr|₹)\s*[\d,]+|\bt\s*&\s*c\b|\bapply now\b|\b(?:get|earn|win) up ?to\b|\bfailed\b|\bdeclined\b|\bunsuccessful\b/i;
 
   // Bill amounts round up, so paying them clears the bill.
   function money(m) { return m ? Math.ceil(parseFloat(m[1].replace(/,/g, ''))) : 0; }
@@ -3190,8 +3233,15 @@
     if (!t || /\botp\b|one time password|verification code/i.test(t) || NOT_MONEY.test(t)) return null;
     const amt = t.match(/(?:rs\.?|inr|₹)\s*([\d,]+(?:\.\d{1,2})?)/i);
     if (!amt) return null;
-    const amount = Math.round(parseFloat(amt[1].replace(/,/g, '')));
-    if (!amount) return null;
+    let amount = Math.round(parseFloat(amt[1].replace(/,/g, '')));
+    // More than ₹100 crore in one SMS is a misread, not a payment.
+    if (!amount || amount > 1e9) return null;
+    // A card fee and its GST ("fee of Rs.500 + GST Rs.90"): the card is charged both.
+    if (/\b(?:fee|charges?)\b/i.test(t) && /\bgst\b/i.test(t)) {
+      amount = (t.match(/(?:rs\.?|inr|₹)\s*[\d,]+(?:\.\d{1,2})?/gi) || []).reduce((a, m) => a + Math.round(parseFloat(m.replace(/^\D+/, '').replace(/,/g, ''))), 0);
+    }
+    // A date that doesn't exist (31-02) is a misread: the day the SMS came instead.
+    const dateOf = (x) => { const d = parseSmsDate(x, todayIso); return d && toISO(parseISO(d)) === d ? d : todayIso; };
     const card = /card/i.test(t);
     if (card && STATEMENT.test(t) && (TOTAL_DUE.test(t) || MIN_DUE.test(t))) {
       const due = t.match(DUE_DATE);
@@ -3208,17 +3258,23 @@
       };
     }
     if (card && CARD_PAYMENT.test(t)) {
-      return { type: 'cardpayment', amount, last4: cardLast4(t), merchant: 'Card bill payment', category: 'Bills', date: parseSmsDate(t, todayIso), raw: t };
+      return { type: 'cardpayment', amount, last4: cardLast4(t), merchant: 'Card bill payment', category: 'Bills', date: dateOf(t), raw: t };
     }
-    const isCredit = /\b(credited|received|deposited|refund(?:ed)?)\b/i.test(t);
+    const isCredit = /\b(credited|received|deposited|refund(?:ed)?|disbursed|reversed)\b/i.test(t);
+    // A reversal is money coming back, even when the SMS also says "debited".
+    const reversed = /\breversed\b|\breversal\b/i.test(t);
+    // Between your own accounts ("(self)", "own account"): out is a saving to place, in is your own money back.
+    const self = /\(self\)|\bself[- ]?transfer\b|\bown (?:a\/?c|account)\b/i.test(t);
     // "Txn Rs.68.26 On HDFC Bank Card 6645 At …": HDFC's card and UPI payments.
-    const isDebit = /\b(debited|spent|paid|sent|withdrawn|purchase|debit|payment of)\b/i.test(t) || (!isCredit && /\btxn\s+(?:of\s+)?(?:rs\.?|inr|₹)/i.test(t));
+    const isDebit = /\b(debited|spent|paid|sent|withdrawn|purchase|debit|payment of|charged|transferred\s+from)\b/i.test(t) || (!isCredit && /\btxn\s+(?:of\s+)?(?:rs\.?|inr|₹)/i.test(t));
     // Cash taken out at an ATM, and the account it came from (a/c XX1234), so it lands in the right wallet.
     const atm = /\batm\b|cash\s*withdraw|cash\s*wdl|withdrawn\s+at/i.test(t);
     const acct = (t.match(/\ba\/?c(?:count)?\.?\s*(?:no\.?\s*)?[x*.]*\s*[x*.]*(\d{3,4})\b/i) || [])[1] || null;
     if (!isDebit && !isCredit) return null;
-    const type = isDebit ? 'debit' : 'credit';
-    const merchant = findMerchant(t, type);
+    const type = reversed && isCredit ? 'credit' : isDebit ? 'debit' : 'credit';
+    // A reversal names the shop the way the payment did ("at SWIGGY"); a date is never a name.
+    let merchant = self ? 'Own account' : (reversed && findMerchant(t, 'debit')) || findMerchant(t, type);
+    if (/^\d{1,2}[-/.]\d{1,2}(?:[-/.]\d{2,4})?$/.test(merchant || '')) merchant = '';
     const onCard = CARD_HINT.test(t) && !DEBIT_CARD.test(t);
     const paidFrom = onCard ? 'card' : 'account';
     const last4 = onCard ? cardLast4(t) : null;
@@ -3227,7 +3283,7 @@
         type,
         amount,
         merchant: /\b(?:it|itr|income[- ]tax) refund\b/i.test(t) ? 'Income tax refund' : merchant || 'Money received',
-        date: parseSmsDate(t, todayIso),
+        date: dateOf(t),
         category: /refund|reversal|reversed|cashback/i.test(t) ? 'Refund' : 'Money received',
         salary: /\bsal(ary)?\b|payroll/i.test(t),
         paidFrom, last4, acct,
@@ -3238,8 +3294,8 @@
       type,
       amount,
       merchant: merchant || 'Bank payment',
-      date: parseSmsDate(t, todayIso),
-      category: atm ? 'Cash' : categorize(merchant || t, rules),
+      date: dateOf(t),
+      category: self ? 'Savings' : atm ? 'Cash' : categorize(merchant || t, rules),
       paidFrom, last4, acct, atm: atm && !onCard,
       raw: t,
     };
@@ -3274,7 +3330,7 @@
     salaryFor, salaryHistory, looksLikeSalary, paydayReset, suggestUse, freedomDays, interestLeak, nextPaydayPreview,
     billShare, billPot, billsMonthly, billPaidIn, billDue, billEnded, fixedEnded, loanEnd, billsFor, fixedFor, fixedTotal, paymentsLeft, lastDueFrom, nextFixedDue, payBill, undoBillPayment, zoneStatus, ESSENTIAL_CATEGORIES,
     isCardTransfer, statementOn, dueAfter, cardOwedAt, cardReserve, cardStatus, emiQuote, revolveQuote, cardBillPlan,
-    recordCardPayment, keptFor, ownPart, coverPurchase, refundToPurchase, undoRefund, addCardEmi, isPassedOn, passThroughPair, passOn, iouLeft, openIous, addIou, payIou, undoIouTx, iouSummary, iouEvents, cardEmiFromBooking, looksLikeCardBill, spendToCardPayment, convertCardBalance, answerCardDue, cardLateFee, cardRate, CARD_RATE, undoCardConvert, cardFreeDays, byCategory, DEFAULT_SPLIT,
+    recordCardPayment, keptFor, ownPart, coverPurchase, refundToPurchase, undoRefund, earmarkedIn, cleanState, addCardEmi, isPassedOn, passThroughPair, passOn, iouLeft, openIous, addIou, payIou, undoIouTx, iouSummary, iouEvents, cardEmiFromBooking, looksLikeCardBill, spendToCardPayment, convertCardBalance, answerCardDue, cardLateFee, cardRate, CARD_RATE, undoCardConvert, cardFreeDays, byCategory, DEFAULT_SPLIT,
     isLoanCredit, borrowedThisCycle, borrowCheck, rolloverOptions, setTranslator,
     payoffOrder, tickDebts, debtJourney, lenderTasks, lastBorrowed,
     encryptBackup, openBackup, backupInfo, toB64, fromB64, isTransfer, walletBalances, goalStatus, goalsMonthly, budgetEnvelopes, netWorth, reportRange, budgetHistory, aiFacts, planFacts, fraudSignals, investReady, goalResult, weekStart,
