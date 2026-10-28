@@ -569,6 +569,21 @@
       sum(state.goals || [], (g) => Math.min(of('goal', g.id), Number(g.saved) || 0));
   }
 
+  /*
+   * The accuracy meter: each time the bank balance is entered, what the app
+   * had counted against what the bank says. Accuracy over the last checks is
+   * 100% less the gaps as a share of the money: (1 − Σ|gap| ÷ Σ bank balance).
+   * { pct, checks, avgGap, list } or null with no checks yet.
+   */
+  function accuracyStats(log, n) {
+    const list = (log || []).filter((x) => Number.isFinite(Number(x.expected)) && Number.isFinite(Number(x.actual))).slice(-(n || 10));
+    if (!list.length) return null;
+    const gaps = sum(list, (x) => Math.abs(Number(x.expected) - Number(x.actual)));
+    const money = sum(list, (x) => Math.max(Math.abs(Number(x.actual)), Math.abs(Number(x.expected))));
+    const pct = money > 0 ? Math.max(0, Math.min(100, Math.round((1 - gaps / money) * 1000) / 10)) : 100;
+    return { pct, checks: list.length, avgGap: Math.round(gaps / list.length), list: list.map((x) => Object.assign({}, x, { gap: Math.round(Number(x.expected) - Number(x.actual)) })) };
+  }
+
   // What a spending entry costs your own budgets: less what a gift kept for it paid.
   function ownPart(t) { return Math.max(0, (Number(t.amount) || 0) - (Number(t.covered) || 0)); }
 
@@ -2823,7 +2838,7 @@
       if (!t || !Number.isFinite(amount) || amount < 0 || amount > 1e10 || !okDate(t.date)) throw new Error('format');
       return Object.assign({}, t, { amount });
     });
-    ['fixed', 'debts', 'budgets', 'bills', 'sinking', 'goals', 'cards', 'wallets', 'iou', 'emergencies'].forEach((k) => {
+    ['fixed', 'debts', 'budgets', 'bills', 'sinking', 'goals', 'cards', 'wallets', 'iou', 'emergencies', 'accuracy'].forEach((k) => {
       if (k in s && !Array.isArray(s[k])) delete s[k];
     });
     if (!s.savings || typeof s.savings !== 'object') delete s.savings;
@@ -3330,7 +3345,7 @@
     salaryFor, salaryHistory, looksLikeSalary, paydayReset, suggestUse, freedomDays, interestLeak, nextPaydayPreview,
     billShare, billPot, billsMonthly, billPaidIn, billDue, billEnded, fixedEnded, loanEnd, billsFor, fixedFor, fixedTotal, paymentsLeft, lastDueFrom, nextFixedDue, payBill, undoBillPayment, zoneStatus, ESSENTIAL_CATEGORIES,
     isCardTransfer, statementOn, dueAfter, cardOwedAt, cardReserve, cardStatus, emiQuote, revolveQuote, cardBillPlan,
-    recordCardPayment, keptFor, ownPart, coverPurchase, refundToPurchase, undoRefund, earmarkedIn, cleanState, addCardEmi, isPassedOn, passThroughPair, passOn, iouLeft, openIous, addIou, payIou, undoIouTx, iouSummary, iouEvents, cardEmiFromBooking, looksLikeCardBill, spendToCardPayment, convertCardBalance, answerCardDue, cardLateFee, cardRate, CARD_RATE, undoCardConvert, cardFreeDays, byCategory, DEFAULT_SPLIT,
+    recordCardPayment, keptFor, ownPart, coverPurchase, refundToPurchase, undoRefund, earmarkedIn, cleanState, accuracyStats, addCardEmi, isPassedOn, passThroughPair, passOn, iouLeft, openIous, addIou, payIou, undoIouTx, iouSummary, iouEvents, cardEmiFromBooking, looksLikeCardBill, spendToCardPayment, convertCardBalance, answerCardDue, cardLateFee, cardRate, CARD_RATE, undoCardConvert, cardFreeDays, byCategory, DEFAULT_SPLIT,
     isLoanCredit, borrowedThisCycle, borrowCheck, rolloverOptions, setTranslator,
     payoffOrder, tickDebts, debtJourney, lenderTasks, lastBorrowed,
     encryptBackup, openBackup, backupInfo, toB64, fromB64, isTransfer, walletBalances, goalStatus, goalsMonthly, budgetEnvelopes, netWorth, reportRange, budgetHistory, aiFacts, planFacts, fraudSignals, investReady, goalResult, weekStart,

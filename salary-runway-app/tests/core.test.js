@@ -1966,3 +1966,15 @@ test('audit fixes: SMS that were misread', () => {
   p = read('Late payment fee of Rs.500.00 + GST Rs.90.00 charged to your HDFC Bank Credit Card XX6645.');
   assert.deepEqual([p.type, p.amount, p.paidFrom], ['debit', 590, 'card']);
 });
+
+test('accuracy meter: how close the app was to the bank', () => {
+  assert.equal(Core.accuracyStats([], 10), null);
+  // App counted ₹20,000, bank ₹19,800: ₹200 off = 99%
+  let a = Core.accuracyStats([{ date: '2026-10-10', expected: 20000, actual: 19800 }], 10);
+  assert.deepEqual([a.pct, a.checks, a.avgGap, a.list[0].gap], [99, 1, 200, 200]);
+  // Three checks: gaps 200, 0, 500 against 19,800 + 10,000 + 30,500 → 1 − 700/60,300 = 98.8%
+  a = Core.accuracyStats([{ date: '1', expected: 20000, actual: 19800 }, { date: '2', expected: 10000, actual: 10000 }, { date: '3', expected: 30000, actual: 30500 }], 10);
+  assert.deepEqual([a.pct, a.avgGap, a.list[2].gap], [98.8, 233, -500]);
+  // Only the last n count
+  assert.equal(Core.accuracyStats([{ date: '0', expected: 100, actual: 0 }, { date: '1', expected: 1000, actual: 1000 }], 1).pct, 100);
+});

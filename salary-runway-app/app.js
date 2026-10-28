@@ -975,7 +975,7 @@
         html: () => '<section class="card"><h2>' + tr('What your spending says') + '</h2><div>' +
           ins.map((i) => '<div class="insight lvl-' + i.level + '"><div><h3>' + esc(i.title) + '</h3><p>' + esc(i.body) + '</p></div></div>').join('') + '</div></section>' },
       { key: 'balance', group: 'Money', icon: 'wallet', label: 'Balance', tone: 'teal', badge: { text: shortInr(r.balanceToday) },
-        html: () => reconcileCard() + (ui.balanceOpen ? balanceForm(false) : '') + '<section class="tiles">' +
+        html: () => reconcileCard() + (ui.balanceOpen ? balanceForm(false) : '') + accuracyCard() + '<section class="tiles">' +
           tile('Balance now', inr(r.balanceToday),
             (r.anchor ? tr('From your balance on {date}', { date: fmtDate(r.anchor.date) }) : tr('Worked out from your plan')) +
             ' · <button class="link" data-action="balance-open">' + tr('Update') + '</button>') +
@@ -2012,9 +2012,30 @@
     if (!exp) return;
     state.reconciledTo = Core.addDays(today(), -1);
     const gap = Math.round(exp.amount - actual);
+    // The accuracy meter: one check a day (a second balance the same day replaces the first).
+    const t = today();
+    state.accuracy = (state.accuracy || []).filter((x) => x.date !== t).concat({ date: t, since: exp.since, expected: Math.round(exp.amount), actual: Math.round(actual) }).slice(-24);
     // Small differences are rounding, interest or charges: not worth a question.
     if (Math.abs(gap) < Math.max(100, actual * 0.01)) { ui.reconcile = { ok: true, since: exp.since }; return; }
     ui.reconcile = { gap, since: exp.since, expected: exp.amount, actual };
+  }
+
+  // How close the app's count has been to the bank each time the balance was entered.
+  function accuracyCard() {
+    const a = Core.accuracyStats(state.accuracy, 10);
+    if (!a) {
+      return '<section class="card accuracy"><h2>' + tr('How accurate the app is') + '</h2>' +
+        '<p class="hint">' + tr('Each time you enter your bank balance, the app compares it with what it counted and shows how close it was. Enter it a few times a month to see this.') + '</p></section>';
+    }
+    const tone = a.pct >= 98 ? 'good' : a.pct >= 90 ? 'warn' : 'bad';
+    const row = (x) => '<div class="line"><span>' + fmtDate(x.date) + '</span><span>' +
+      (Math.abs(x.gap) < 1 ? tr('exact') : tr(x.gap > 0 ? '{amount} less in the bank' : '{amount} more in the bank', { amount: inr(Math.abs(x.gap)) })) +
+      (x.noted ? ' · ' + tr('noted') : '') + '</span></div>';
+    return '<section class="card accuracy"><div class="card-head"><h2>' + tr('How accurate the app is') + '</h2>' +
+      '<span class="chip ' + (tone === 'good' ? 'chip-freedom' : 'chip-caution') + '">' + a.pct + '%</span></div>' +
+      '<p class="hint">' + tr(a.checks === 1 ? 'From your last bank balance check: the app had counted within {gap} of your bank.' : 'From your last {n} bank balance checks: on average the app was {gap} off your bank.', { n: a.checks, gap: inr(a.avgGap) }) + '</p>' +
+      '<div class="summary">' + a.list.slice().reverse().slice(0, 5).map(row).join('') + '</div>' +
+      (a.pct < 98 ? '<p class="hint">' + tr('A gap usually means cash, a bank charge or a payment without an SMS. Noting it when the app asks keeps budgets right.') + '</p>' : '') + '</section>';
   }
 
   function reconcileCard() {
@@ -5608,6 +5629,8 @@
         if (r.gap > 0) tx.category = cat || 'Misc';
         else Object.assign(tx, { kind: 'in', category: cat || 'Refund', useFor: 'spend' });
         state.transactions.push(tx);
+        const last = (state.accuracy || []).slice(-1)[0];
+        if (last && last.date === today()) last.noted = true;
         ui.reconcile = null;
         save(); rerenderKeepScroll();
         offerUndo(tr('{amount} noted', { amount: inr(tx.amount) }), before);

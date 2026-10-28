@@ -1942,4 +1942,13 @@
   "With {amount} extra a month, and each finished loan’s EMI moved to the next loan.": "महिन्याला {amount} जास्त भरून, आणि संपलेल्या कर्जाचा EMI पुढच्या कर्जाकडे वळवून.",
   "From moving each finished loan’s EMI to the next loan instead of spending it. No extra needed.": "संपलेल्या कर्जाचा EMI खर्च न करता पुढच्या कर्जाकडे वळवल्यामुळे. जास्त पैसे लागत नाहीत.",
   "Loan money not in Debts yet": "कर्जाचे पैसे, अजून कर्जांमध्ये नाहीत",
+  "How accurate the app is": "अ‍ॅप किती अचूक आहे",
+  "Each time you enter your bank balance, the app compares it with what it counted and shows how close it was. Enter it a few times a month to see this.": "तुम्ही बँक शिल्लक टाकता तेव्हा अ‍ॅप ती आपल्या मोजणीशी तुलना करते आणि किती जवळ होती ते दाखवते. हे पाहण्यासाठी महिन्यातून काही वेळा ती टाका.",
+  "exact": "अचूक",
+  "{amount} less in the bank": "बँकेत {amount} कमी",
+  "{amount} more in the bank": "बँकेत {amount} जास्त",
+  "noted": "नोंदवले",
+  "From your last bank balance check: the app had counted within {gap} of your bank.": "शेवटच्या बँक शिल्लक तपासणीनुसार: अ‍ॅपची मोजणी बँकेपासून {gap} च्या आत होती.",
+  "From your last {n} bank balance checks: on average the app was {gap} off your bank.": "शेवटच्या {n} बँक शिल्लक तपासण्यांनुसार: सरासरी अ‍ॅप बँकेपासून {gap} दूर होते.",
+  "A gap usually means cash, a bank charge or a payment without an SMS. Noting it when the app asks keeps budgets right.": "फरक म्हणजे सहसा रोख, बँक शुल्क किंवा SMS न आलेला व्यवहार. अ‍ॅप विचारते तेव्हा नोंदवल्यास बजेट बरोबर राहते.",
 };
