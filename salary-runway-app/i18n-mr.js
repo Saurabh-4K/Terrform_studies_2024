@@ -1932,4 +1932,11 @@
   "The EMI doesn’t cover the {amount} interest a month, so it never ends. Check the balance and EMI.": "EMI महिन्याचे {amount} व्याजही भरत नाही, त्यामुळे कर्ज कधीच संपणार नाही. बाकी रक्कम आणि EMI तपासा.",
   "Only {max} was left to pay back with {name}. Make it {max} or less, and add the rest as its own entry.": "{name} सोबत फक्त {max} परत द्यायचे बाकी होते. {max} किंवा कमी करा, आणि उरलेली रक्कम वेगळी नोंद म्हणून जोडा.",
   "Refund to {card}": "{card} वर परतावा",
+  "{amount} refunded: {shop} now costs {left}": "{amount} परत आले: {shop} आता {left}",
+  "Refunded": "परत आले",
+  "{amount} on {date}": "{date} ला {amount}",
+  "Not for this purchase": "या खरेदीसाठी नाही",
+  "A refund to the card makes the purchase smaller, so it isn’t counted as income.": "कार्डवर आलेला परतावा खरेदी कमी करतो, म्हणून तो उत्पन्न म्हणून मोजला जात नाही.",
+  "{amount} refunded": "{amount} परत",
+  "Refund taken off. Read your SMS again to add it as money in.": "परतावा काढला. पैसे आले म्हणून जोडण्यासाठी SMS पुन्हा वाचा.",
 };

@@ -15,6 +15,7 @@ const MAP = {
   'spend from cash wallet': { bank: -500, spentCycle: 500, reports: 500, worth: -500, cash: -500 },
   'ATM cash to wallet': { cash: 500 },
   'refund to card': { bank: 500, income: 500, worth: 500, cardOwed: -500 },
+  'refund to card for this month’s purchase': { bank: 500, spentCycle: -500, reports: -500, worth: 500, cardOwed: -500 },
   'money in, undecided': { bank: 2000, income: 2000, worth: 2000 },
   'money in → spend': { bank: 2000, income: 2000, worth: 2000 },
   'money in → emergency': { worth: 2000, fund: 2000 },

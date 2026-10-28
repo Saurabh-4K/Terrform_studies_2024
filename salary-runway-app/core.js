@@ -252,6 +252,25 @@
    * amount is what the month is planned on; anything above the usual pay is
    * recorded as money received, so the user decides what it does.
    */
+  /*
+   * A credit that is the salary even without the word in the SMS ("NEFT
+   * credited by ACME PVT LTD"): close to the usual pay (80% to 150% of it),
+   * within 3 days of payday (early when payday falls on a holiday), and the
+   * first one this month. A loan credit never is.
+   */
+  function looksLikeSalary(state, p) {
+    if (!p || p.type !== 'credit') return false;
+    if (p.salary) return true;
+    const usual = Number(state.settings.salary) || 0;
+    const amount = Number(p.amount) || 0;
+    if (!(usual > 0) || amount < usual * 0.8 || amount > usual * 1.5 || isLoanCredit(p.raw || '')) return false;
+    const payday = Number(state.settings.payday) || 1;
+    const cyc = cycleFor(p.date, payday);
+    const near = daysBetween(cyc.start, p.date) <= 3 ? cyc : daysBetween(p.date, cyc.next) <= 3 ? cycleFor(cyc.next, payday) : null;
+    if (!near) return false;
+    return !(state.salarySeen && state.salarySeen.cycle === near.start);
+  }
+
   function salaryFor(state, todayIso) {
     const usual = Number(state.settings.salary) || 0;
     if (!todayIso) return usual;
@@ -500,6 +519,38 @@
       .filter((e) => e.amount > 0);
   }
 
+  /*
+   * A refund to a card for something bought on it this month (same shop,
+   * not more than was paid): the purchase gets smaller, so it cancels the
+   * spending in its budget, the reports and the card bill instead of
+   * counting as income. Returns the purchase, or null when there's none
+   * (bought last month or before the app): then it's money in, as before.
+   */
+  function refundToPurchase(state, cardId, refund, todayIso) {
+    const amount = Math.round(Number(refund.amount) || 0);
+    const shop = normalizeMerchant(refund.merchant || '');
+    if (!cardId || !(amount > 0) || !shop) return null;
+    const cyc = cycleFor(refund.date || todayIso, Number(state.settings.payday) || 1);
+    const buy = state.transactions
+      .filter((t) => isFlexible(t) && t.paidFrom === cardId && inCycle(t.date, cyc) && t.date <= (refund.date || todayIso) &&
+        normalizeMerchant(t.note || '') === shop && t.amount >= amount && !(t.covered > 0))
+      .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0))[0];
+    if (!buy) return null;
+    buy.refunds = (buy.refunds || []).concat({ date: refund.date || todayIso, amount, smsKey: refund.key || null });
+    buy.amount -= amount;
+    return buy;
+  }
+
+  // Takes a refund back off a purchase (the purchase costs what it did again).
+  function undoRefund(state, buy, i) {
+    const r = (buy.refunds || [])[i];
+    if (!r) return null;
+    buy.amount += r.amount;
+    buy.refunds = buy.refunds.filter((x, j) => j !== i);
+    if (!buy.refunds.length) delete buy.refunds;
+    return r;
+  }
+
   // What a spending entry costs your own budgets: less what a gift kept for it paid.
   function ownPart(t) { return Math.max(0, (Number(t.amount) || 0) - (Number(t.covered) || 0)); }
 
@@ -603,8 +654,21 @@
     const flows = state.transactions.filter((t) => isPassedOn(t) && inCycle(t.date, cycle) && t.date <= todayIso);
     const flowOf = (t) => (isIncome(t) ? t.amount : -t.amount);
     flows.forEach((t) => { spendByDate[t.date] = (spendByDate[t.date] || 0) - flowOf(t); });
-    const extraIn = sum(incomes.filter((t) => !anchor || t.date >= anchor.date), incomeKept) +
+    let extraIn = sum(incomes.filter((t) => !anchor || t.date >= anchor.date), incomeKept) +
       sum(flows.filter((t) => !anchor || t.date >= anchor.date), flowOf);
+    /*
+     * The extra in this month's pay (₹1,07,689 against a usual ₹98,000) is
+     * part of the salary: a bank balance entered on or after that day already
+     * holds it, and so does a usual pay raised to cover it. Then it isn't
+     * added again; only a part given a place (the emergency fund, say) comes
+     * off.
+     */
+    const slip = (state.payslips || {})[cycle.start];
+    const extra = slip && slip.extraTx && incomes.find((t) => t.id === slip.extraTx);
+    if (extra && ((anchor && anchor.date >= extra.date) || (Number(state.settings.salary) || 0) >= (Number(slip.amount) || 0))) {
+      spendByDate[extra.date] = (spendByDate[extra.date] || 0) + extra.amount;
+      if (!anchor || extra.date >= anchor.date) extraIn -= extra.amount;
+    }
     // Bill payments leave the account (less what the pot covers); moves to savings leave too.
     // Set-aside moves (t.setAside) record money already taken out on payday, so they're skipped here.
     const others = state.transactions.filter((t) => (isBillPayment(t) || (isMove(t) && !t.setAside)) && inCycle(t.date, cycle) && t.date <= todayIso);
@@ -3203,10 +3267,10 @@
     insights, simulateDebts, compareDebtPlans, debtFreeDates, emergencyPlan, parseSms,
     splitSmsBatch, smsKey, categorize, normalizeMerchant, sinkingMonthly, inCycle,
     spendInRange, incomeInRange, incomeKept, isIncome, isMove, isBillPayment, isFlexible, incomeOptions,
-    salaryFor, salaryHistory, paydayReset, suggestUse, freedomDays, interestLeak, nextPaydayPreview,
+    salaryFor, salaryHistory, looksLikeSalary, paydayReset, suggestUse, freedomDays, interestLeak, nextPaydayPreview,
     billShare, billPot, billsMonthly, billPaidIn, billDue, billEnded, fixedEnded, loanEnd, billsFor, fixedFor, fixedTotal, paymentsLeft, lastDueFrom, nextFixedDue, payBill, undoBillPayment, zoneStatus, ESSENTIAL_CATEGORIES,
     isCardTransfer, statementOn, dueAfter, cardOwedAt, cardReserve, cardStatus, emiQuote, revolveQuote, cardBillPlan,
-    recordCardPayment, keptFor, ownPart, coverPurchase, addCardEmi, isPassedOn, passThroughPair, passOn, iouLeft, openIous, addIou, payIou, undoIouTx, iouSummary, iouEvents, cardEmiFromBooking, looksLikeCardBill, spendToCardPayment, convertCardBalance, answerCardDue, cardLateFee, cardRate, CARD_RATE, undoCardConvert, cardFreeDays, byCategory, DEFAULT_SPLIT,
+    recordCardPayment, keptFor, ownPart, coverPurchase, refundToPurchase, undoRefund, addCardEmi, isPassedOn, passThroughPair, passOn, iouLeft, openIous, addIou, payIou, undoIouTx, iouSummary, iouEvents, cardEmiFromBooking, looksLikeCardBill, spendToCardPayment, convertCardBalance, answerCardDue, cardLateFee, cardRate, CARD_RATE, undoCardConvert, cardFreeDays, byCategory, DEFAULT_SPLIT,
     isLoanCredit, borrowedThisCycle, borrowCheck, rolloverOptions, setTranslator,
     payoffOrder, tickDebts, debtJourney, lenderTasks, lastBorrowed,
     encryptBackup, openBackup, backupInfo, toB64, fromB64, isTransfer, walletBalances, goalStatus, goalsMonthly, budgetEnvelopes, netWorth, reportRange, budgetHistory, aiFacts, planFacts, fraudSignals, investReady, goalResult, weekStart,

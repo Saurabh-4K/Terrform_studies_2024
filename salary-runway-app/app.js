@@ -1199,7 +1199,10 @@
 
   // The bank's salary SMS: remembered so payday can ask with the right amount.
   function noteSalary(p) {
-    const cyc = Core.cycleFor(p.date || today(), Number(state.settings.payday) || 1);
+    const payday = Number(state.settings.payday) || 1;
+    let cyc = Core.cycleFor(p.date || today(), payday);
+    // Paid a day or two early (payday on a holiday): it's next month's salary.
+    if (Core.daysBetween(p.date || today(), cyc.next) <= 3 && Core.daysBetween(cyc.start, p.date || today()) > 3) cyc = Core.cycleFor(cyc.next, payday);
     state.salarySeen = { cycle: cyc.start, amount: p.amount, date: p.date || today() };
   }
 
@@ -2825,14 +2828,14 @@
         const p = r.parsed;
         const isIn = p.type === 'credit';
         const cardRow = p.type === 'statement' || p.type === 'cardpayment' || p.type === 'cardemi';
-        const note = r.duplicate ? tr('Already added') : r.match ? tr('Matches your entry: {note}, {date}', { note: esc(r.match.note || label(r.match.category || '')), date: fmtDate(r.match.date) }) : isIn && p.salary ? tr('Looks like your salary, which is already counted') : smsNote(p) || (isIn ? tr('Money in') : '');
+        const note = r.duplicate ? tr('Already added') : r.match ? tr('Matches your entry: {note}, {date}', { note: esc(r.match.note || label(r.match.category || '')), date: fmtDate(r.match.date) }) : isIn && Core.looksLikeSalary(state, p) ? tr('Looks like your salary, which is already counted') : smsNote(p) || (isIn ? tr('Money in') : '');
         const check = '<td><input type="checkbox" data-sms-check="' + i + '" aria-label="' + tr('Add this') + '"' + (r.checked ? ' checked' : '') + '></td>';
         if (cardRow) {
           return '<tr' + (r.duplicate ? ' class="muted"' : '') + '>' + check +
             '<td><div class="cell-title">' + tr(p.type === 'statement' ? 'Card statement' : p.type === 'cardemi' ? 'Card EMI booked' : 'Card bill payment') + '</div><div class="cell-sub">' + fmtDate(p.date) + ' · ' + note + '</div></td>' +
             '<td>—</td><td class="amt">' + inr(p.amount) + '</td></tr>';
         }
-        return '<tr' + (r.duplicate || (isIn && p.salary) ? ' class="muted"' : '') + '>' + check +
+        return '<tr' + (r.duplicate || (isIn && Core.looksLikeSalary(state, p)) ? ' class="muted"' : '') + '>' + check +
           '<td><div class="cell-title">' + esc(tr(p.merchant)) + '</div><div class="cell-sub">' + fmtDate(p.date) + (note ? ' · ' + note : '') +
           ' · <button class="link" data-action="sms-skip-like" data-i="' + i + '">' + tr('Skip SMS like this') + '</button></div></td>' +
           '<td><select data-sms-cat="' + i + '" aria-label="' + tr('Category') + '">' + (isIn ? incomeCategoryOptions(personPick(p.category) ? null : p.category) : categoryOptions(personPick(p.category) ? null : p.category)) + personOptions(isIn, p.category) + '</select></td>' +
@@ -2991,7 +2994,7 @@
       state.emiOffers = (state.emiOffers || []).concat({ key: o.key, date: p.date, amount: p.amount, months: p.months, rate: p.rate, last4: p.last4, booked: !!p.booked }).slice(-20);
       return true;
     }
-    if (p.type === 'credit' && p.salary) {
+    if (p.type === 'credit' && Core.looksLikeSalary(state, p)) {
       noteSalary(p);
       return false;
     }
@@ -3042,6 +3045,16 @@
       autoAssignSaved(tx);
       return true;
     }
+    // A refund to a card for something bought on it this month cancels that purchase.
+    if (p.type === 'credit' && !person && paidFrom !== 'account' && paidFrom.indexOf('card:') !== 0) {
+      const buy = Core.refundToPurchase(state, paidFrom, { amount: p.amount, merchant: tx.note, date: p.date, key: o.key }, today());
+      if (buy) {
+        if (o.key) state.smsIgnored = (state.smsIgnored || []).concat(o.key).slice(-500);
+        smsNews.push(tr('{amount} refunded: {shop} now costs {left}', { amount: inr(p.amount), shop: buy.note || label(buy.category), left: inr(buy.amount) }));
+        logEvent('refund', { amount: p.amount, full: buy.amount === 0 });
+        return true;
+      }
+    }
     if (p.type === 'credit') {
       tx.kind = 'in';
       // A refund to a card lowers the card bill, so it stays as this month's money.
@@ -3079,7 +3092,7 @@
   }
 
   // What a People choice did, said once the SMS are in.
-  let peopleNews = [];
+  let smsNews = [];
 
   // Ties an entry from SMS to People: a repayment of that IOU, or a new one (the payee or payer is the person).
   function linkPerson(tx, pick) {
@@ -3090,11 +3103,11 @@
       // Settled meanwhile: left for the person to check.
       if (!i) { tx.needsReview = true; return; }
       Core.payIou(state, i.id, Math.min(tx.amount, Core.iouLeft(i)), tx.date, tx.id);
-      peopleNews.push(Core.iouLeft(i) ? tr('{left} still to go with {name}', { left: inr(Core.iouLeft(i)), name: i.name }) : tr('Settled with {name}', { name: i.name }));
+      smsNews.push(Core.iouLeft(i) ? tr('{left} still to go with {name}', { left: inr(Core.iouLeft(i)), name: i.name }) : tr('Settled with {name}', { name: i.name }));
     } else {
       const i = Core.addIou(state, { name: tx.note, dir: isIn ? 'owe' : 'lent', amount: tx.amount, txId: tx.id }, today());
       if (!i) return;
-      peopleNews.push(tr(i.dir === 'owe' ? 'In People: you owe {name} {amount}' : 'In People: {name} owes you {amount}', { name: i.name, amount: inr(i.amount) }));
+      smsNews.push(tr(i.dir === 'owe' ? 'In People: you owe {name} {amount}' : 'In People: {name} owes you {amount}', { name: i.name, amount: inr(i.amount) }));
     }
     if (isIn) tx.useFor = tx.useFor || 'spend';
     logEvent('sms-people', { dir: isIn ? 'in' : 'out', repay: !!pick.iou, amount: tx.amount });
@@ -3561,6 +3574,15 @@
   }
 
   // From a bank SMS that wasn't really a payment: an OTP, a request, a failed payment, an offer.
+  // Refunds taken off this purchase, each with a way back (it wasn't a refund for this).
+  function refundsBox(x) {
+    if (!(x.refunds || []).length) return '';
+    return '<div class="callout"><b>' + tr('Refunded') + '</b>' + x.refunds.map((r, i) =>
+      '<div class="row"><span>' + tr('{amount} on {date}', { amount: inr(r.amount), date: fmtDate(r.date) }) + '</span>' +
+      '<button class="ghost small" data-action="refund-undo" data-id="' + esc(x.id) + '" data-i="' + i + '">' + tr('Not for this purchase') + '</button></div>').join('') +
+      '<span class="hint">' + tr('A refund to the card makes the purchase smaller, so it isn’t counted as income.') + '</span></div>';
+  }
+
   function notPaymentBox(x, can) {
     if (!can || !(x.smsKey || x.source === 'sms')) return '';
     const shop = Core.normalizeMerchant(x.note) && x.note !== 'Bank payment' ? x.note : '';
@@ -3608,6 +3630,7 @@
       (flex && Core.ownPart(x) > 0 && Core.keptFor(state).length ? '<div class="iou-actions">' + Core.keptFor(state).slice(0, 3).map((k) =>
         '<button class="ghost small" data-action="keep-use" data-id="' + esc(k.tx.id) + '" data-buy="' + esc(x.id) + '">' + tr('Paid from {name} ({left} left)', { name: esc(k.name), left: inr(k.left) }) + '</button>').join('') + '</div>' : '') +
       (x.covered ? '<p class="hint">' + tr('{amount} of it was paid from money kept for it, so it doesn’t use your budgets.', { amount: inr(x.covered) }) + '</p>' : '') +
+      refundsBox(x) +
       notPaymentBox(x, flex || isIn || saved) +
       '</div></div>';
   }
@@ -3795,7 +3818,8 @@
       (x.splitOf ? ' · <span class="chip">' + tr('Split') + '</span>' : '') +
       (x.passedOn ? ' · <span class="chip">' + tr('Passed on') + '</span>' : '') +
       (x.iouId || x.iouPay ? ' · <span class="chip">' + tr('People') + '</span>' : '') +
-      (x.matched ? ' · <span class="chip">' + tr('Bank SMS ✓') + '</span>' : '');
+      (x.matched ? ' · <span class="chip">' + tr('Bank SMS ✓') + '</span>' : '') +
+      ((x.refunds || []).length ? ' · <span class="chip">' + tr('{amount} refunded', { amount: inr(x.refunds.reduce((a, r) => a + r.amount, 0)) }) + '</span>' : '');
     const extra = edit && isIn
       ? ' <button class="link" data-action="income-change" data-id="' + esc(x.id) + '">' + tr(x.useFor ? INCOME_USE_LABELS[x.useFor] : 'Choose what it does') + '</button>'
       : edit && saved && x.useFor ? ' <button class="link" data-action="saved-change" data-id="' + esc(x.id) + '">' + tr('Change') + '</button>' : '';
@@ -5774,6 +5798,16 @@
         [x, other].forEach((y) => { if (y) { delete y.passedOn; state.passNo = (state.passNo || []).concat(y.id).slice(-200); } });
         save(); toast(tr('Counted again as income and spending')); break;
       }
+      case 'refund-undo': {
+        const x = state.transactions.find((y) => y.id === btn.dataset.id);
+        if (!x) return;
+        const before = JSON.stringify(state);
+        const r = Core.undoRefund(state, x, Number(btn.dataset.i));
+        // The SMS can come in again, as money in.
+        if (r && r.smsKey) state.smsIgnored = (state.smsIgnored || []).filter((k) => k !== r.smsKey);
+        save(); rerenderKeepScroll(); offerUndo(tr('Refund taken off. Read your SMS again to add it as money in.'), before);
+        return;
+      }
       case 'iou-start': ui.iouStart = { txId: btn.dataset.id }; break;
       case 'iou-start-cancel': ui.iouStart = null; break;
       case 'iou-start-save': {
@@ -6413,8 +6447,8 @@
           if (!r.checked || !r.parsed || recorded.has(r.key)) return;
           if (recordSms(r.parsed, { key: r.key, category: r.parsed.category })) added++;
         });
-        ui.smsRows = null; ui.smsText = ''; markSmsSeen(); save(); toast(peopleNews.length ? peopleNews.join(' · ') : tr('{items} added', { items: plural(added, 'item') }));
-        peopleNews = [];
+        ui.smsRows = null; ui.smsText = ''; markSmsSeen(); save(); toast(smsNews.length ? smsNews.join(' · ') : tr('{items} added', { items: plural(added, 'item') }));
+        smsNews = [];
         announceAutoSaved(); break;
       }
       case 'record-savings': {
@@ -6594,8 +6628,8 @@
         tx.needsReview = false;
         linkPerson(tx, pick);
         save(); rerenderKeepScroll();
-        offerUndo(peopleNews.join(' · ') || tr('Saved'), before);
-        peopleNews = [];
+        offerUndo(smsNews.join(' · ') || tr('Saved'), before);
+        smsNews = [];
         return;
       }
       tx.category = el.value;
@@ -7295,8 +7329,8 @@
       });
       save();
       return SmsInbox.removeAlerts({ keys: items.map((it) => it.key) }).then(() => {
-        if (added) toast(peopleNews.length ? peopleNews.join(' · ') : tr('{sms} recorded', { sms: plural(added, 'bank SMS', 'bank SMS') }));
-        peopleNews = [];
+        if (added) toast(smsNews.length ? smsNews.join(' · ') : tr('{sms} recorded', { sms: plural(added, 'bank SMS', 'bank SMS') }));
+        smsNews = [];
         announceAutoSaved();
       });
     }).catch(() => {});

@@ -1932,4 +1932,11 @@
   "The EMI doesn’t cover the {amount} interest a month, so it never ends. Check the balance and EMI.": "EMI महीने का {amount} ब्याज भी नहीं भरती, इसलिए लोन कभी खत्म नहीं होगा. बकाया और EMI जांचें.",
   "Only {max} was left to pay back with {name}. Make it {max} or less, and add the rest as its own entry.": "{name} के साथ सिर्फ {max} लौटाना बाकी था. {max} या कम करें, और बाकी रकम अलग एंट्री में जोड़ें.",
   "Refund to {card}": "{card} पर रिफंड",
+  "{amount} refunded: {shop} now costs {left}": "{amount} रिफंड: {shop} अब {left}",
+  "Refunded": "रिफंड",
+  "{amount} on {date}": "{date} को {amount}",
+  "Not for this purchase": "इस खरीद के लिए नहीं",
+  "A refund to the card makes the purchase smaller, so it isn’t counted as income.": "कार्ड पर आया रिफंड खरीद को कम करता है, इसलिए इसे आमदनी नहीं गिना जाता.",
+  "{amount} refunded": "{amount} रिफंड",
+  "Refund taken off. Read your SMS again to add it as money in.": "रिफंड हटाया. पैसे आए के रूप में जोड़ने के लिए SMS फिर से पढ़ें.",
 };

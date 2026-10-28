@@ -1839,3 +1839,44 @@ test('each loan’s last EMI, from what is owed, the rate and the EMI', () => {
   const emi = { id: 'e', name: 'HDFC EMI', balance: 23000, rate: 22.44, minPayment: 6010, viaCard: 'c', emisLeft: 4, emiThrough: '2026-10-03' };
   assert.deepEqual(Core.loanEnd(s, emi, t), { left: 4, next: '2026-11-03', last: '2027-02-03' });
 });
+
+test('a salary SMS without the word salary is still the salary', () => {
+  const s = baseState({ settings: { salary: 98000, payday: 28 } });
+  const credit = (amount, date, raw) => ({ type: 'credit', amount, date, raw: raw || 'Rs.' + amount + ' credited to a/c XX1234 by NEFT ACME TECH PVT LTD' });
+  // Payday, close to the usual pay (overtime included)
+  assert.equal(Core.looksLikeSalary(s, credit(107689, '2026-10-28')), true);
+  // Two days early (payday on a Sunday)
+  assert.equal(Core.looksLikeSalary(s, credit(98000, '2026-10-26')), true);
+  // A friend's ₹26,000, or a big amount mid-month: not salary
+  assert.equal(Core.looksLikeSalary(s, credit(26000, '2026-10-28')), false);
+  assert.equal(Core.looksLikeSalary(s, credit(98000, '2026-10-15')), false);
+  // A loan credit never is
+  assert.equal(Core.looksLikeSalary(s, credit(100000, '2026-10-28', 'Loan amount Rs.100000 disbursed to a/c XX1234')), false);
+  // Only the first one this month
+  s.salarySeen = { cycle: '2026-10-28', amount: 107689, date: '2026-10-28' };
+  assert.equal(Core.looksLikeSalary(s, credit(98000, '2026-10-29')), false);
+  // The word itself always counts
+  assert.equal(Core.looksLikeSalary(s, Object.assign(credit(5000, '2026-10-10'), { salary: true })), true);
+});
+
+test('the extra in this month\'s pay is counted once', () => {
+  const t = '2026-10-28';
+  const s = baseState({ settings: { salary: 98000, payday: 28 }, fixed: [] });
+  // Paid ₹1,07,689 against a usual ₹98,000: ₹9,689 extra, recorded as money in
+  s.transactions.push({ id: 'extra', kind: 'in', date: t, amount: 9689, category: 'Overtime', note: 'Extra in this month’s pay', useFor: 'spend' });
+  s.payslips = { [t]: { amount: 107689, usual: 98000, reason: 'Overtime', extraTx: 'extra' } };
+  const plain = Core.projectRunway(s, t).balanceToday;
+  // Without a balance entered, the extra adds to the usual pay
+  assert.equal(plain, 98000 + 9689);
+  // The balance entered on payday already holds all of it: not added again
+  s.balanceCheck = { date: t, amount: 107857 };
+  assert.equal(Core.projectRunway(s, t).balanceToday, 107857);
+  // Usual pay raised to cover it (and no balance): counted once
+  delete s.balanceCheck;
+  s.settings.salary = 107689;
+  assert.equal(Core.projectRunway(s, t).balanceToday, 107689);
+  // Given to the emergency fund: it comes off what's shown
+  s.balanceCheck = { date: t, amount: 107857 };
+  s.transactions[0].useFor = 'emergency';
+  assert.equal(Core.projectRunway(s, t).balanceToday, 107857 - 9689);
+});

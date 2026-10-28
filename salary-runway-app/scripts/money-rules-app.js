@@ -214,6 +214,15 @@ async function notifications(browser, B) {
         await page.evaluate(() => { const e = [...document.querySelectorAll('select[data-tx-cat]')].find((x) => [...x.options].some((o) => o.value === '@iou:iou1')); e.value = '@iou:iou1'; e.dispatchEvent(new Event('change', { bubbles: true })); });
         await page.waitForTimeout(200);
       }],
+    'card refund → the purchase gets smaller': [alert({ type: 'credit', amount: 500, merchant: 'CROMA', category: 'Refund', cardId: 'c1' }),
+      (s) => s.transactions.some((t) => t.note === 'CROMA' && t.amount === 1000 && (t.refunds || []).length === 1) && !s.transactions.some((t) => t.kind === 'in' && t.note === 'CROMA'),
+      null,
+      async (page) => {
+        await page.evaluate(() => document.querySelector('[data-action=tab][data-tab=spend]').click()); await page.waitForTimeout(150);
+        await page.evaluate(() => document.querySelector('[data-action=page-open][data-key=payments]').click()); await page.waitForTimeout(150);
+        await page.evaluate(() => [...document.querySelectorAll('[data-action=tx-edit]')].find((b) => /CROMA/.test(b.innerText)).click()); await page.waitForTimeout(200);
+        await page.evaluate(() => document.querySelector('[data-action=refund-undo]').click()); await page.waitForTimeout(200);
+      }],
     'Not a payment → never offered again': [alert({ type: 'debit', amount: 99, merchant: 'OFFER', category: 'Misc', status: 'ignored' }),
       (s, a) => !s.transactions.some((t) => t.note === 'OFFER') && (s.smsIgnored || []).indexOf(a.key) !== -1],
   };
@@ -244,7 +253,8 @@ async function notifications(browser, B) {
     console.log((ok ? 'OK   ' : 'FAIL ') + 'pop-up lists include People' + (ok ? '' : '\n   ' + JSON.stringify(lists)));
     await page.close();
   }
-  for (const [name, [a, check, then]] of Object.entries(cases)) {
+  data.transactions.push({ id: 'croma', date: '2026-10-25', amount: 1500, category: 'Shopping', note: 'CROMA', paidFrom: 'c1', source: 'sms' });
+  for (const [name, [a, check, then, undo]] of Object.entries(cases)) {
     const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
     const errors = []; page.on('pageerror', (e) => errors.push(e.message));
     await page.addInitScript(() => {
@@ -268,7 +278,8 @@ async function notifications(browser, B) {
       mid = await snap(page);
       const ids = await page.evaluate((n) => JSON.parse(localStorage.getItem('salary-runway-v1')).transactions.slice(n).map((t) => t.id), JSON.parse(before).txs);
       await c('[data-action=tab][data-tab=spend]'); await c('[data-action=page-open][data-key=payments]');
-      for (const id of ids.reverse()) await c('[data-action=tx-delete][data-id="' + id + '"]');
+      if (undo) await undo(page);
+      else for (const id of ids.reverse()) await c('[data-action=tx-delete][data-id="' + id + '"]');
     } catch (e) { errors.push(String(e.message || e)); }
     const after = await snap(page);
     const ok = landed && before === after && !errors.length;

@@ -38,6 +38,8 @@
     'spend from cash wallet': (s) => X(s, { amount: 500, category: 'Food & dining', note: 'Tea', wallet: 'cash' }),
     'ATM cash to wallet': (s) => X(s, { kind: 'transfer', amount: 500, from: 'main', to: 'cash', note: 'ATM' }),
     'refund to card': (s) => X(s, { kind: 'in', amount: 500, category: 'Refund', note: 'Amazon', paidFrom: 'c1', useFor: 'spend' }),
+    'refund to card for this month’s purchase': { pre: (s) => X(s, { id: 'buy', date: '2026-10-21', amount: 1500, category: 'Shopping', note: 'Amazon', paidFrom: 'c1' }),
+      apply: (s) => Core.refundToPurchase(s, 'c1', { amount: 500, merchant: 'AMAZON', date: T }, T) },
     'money in, undecided': (s) => X(s, { kind: 'in', amount: 2000, category: 'Gift', note: 'Dad', useFor: null }),
     'money in → spend': (s) => X(s, { kind: 'in', amount: 2000, category: 'Side income', note: 'Comm', useFor: 'spend' }),
     'money in → emergency': (s) => { X(s, { kind: 'in', amount: 2000, category: 'Gift', note: 'Dad', useFor: 'emergency' }); s.savings.emergencyBalance += 2000; },

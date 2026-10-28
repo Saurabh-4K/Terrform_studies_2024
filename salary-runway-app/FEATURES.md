@@ -254,7 +254,7 @@ Your privacy, backup file, restore, example data, erase, and **Clean up SMS impo
 ## 3. Payday check-in
 
 - Asked in the **first week of each salary cycle**, or as soon as the bank's **salary SMS** arrives, which pre-fills the amount.
-- **"Payday! How much came in this month?"** Same as usual is one tap.
+- **"Payday! How much came in this month?"** Same as usual is one tap. More than usual (overtime, a bonus) is recorded as money in to decide on; once a bank balance entered that day holds it, or the usual pay is raised to cover it, it isn't added a second time.
 - **More than usual:** asks why (Bonus, Incentive or commission, Overtime, Arrears or hike arrears, Reimbursement, Other) with an optional note. The extra then goes to [Money received](#7-money-received), so you decide what it does.
 - **Less than usual:** asks why (Tax deduction (TDS), PF or other deduction, Unpaid leave, Advance or loan recovery, Paid in part / late, Other) with a note. **This month's budgets are planned on what actually came in.** Other months are unaffected.
 - **"This is my new usual pay from now on"** for raises or a new tax slab.
@@ -592,6 +592,8 @@ Small habits that quietly cost a lot: cigarettes, liquor, tea and snacks, food d
   - Payments you don't check are recorded anyway and wait under **Needs your check**.
   - **Not a payment** (an OTP, a payment request, a failed or reversed payment, an offer): in *Needs your check*, or by tapping any payment from SMS. It comes out of spending with Undo, and the same SMS never comes back on a later scan; *Also skip SMS from {place}* leaves that place's SMS out from now on (listed on the Bank SMS page, each with ✕ to count it again). Deleting an SMS payment with ✕ also keeps it from coming back.
   - **Salary SMS:** *Payday! ₹57,500 credited · Tap to review your monthly plan*.
+  - A salary SMS without the word *salary* (*NEFT credited by ACME PVT LTD*) is still the salary when it's close to your usual pay (80% to 150% of it), within 3 days of payday (early when payday is a holiday), and the first such credit that month. It's never counted again as money in.
+  - **A refund to a card** for something bought on it this month (same shop, not more than was paid) makes that purchase smaller: the budget, reports, card bill and limit all drop as if less was spent, and it isn't income. The purchase shows *₹500 refunded*; *Not for this purchase* takes it back. A refund with no such purchase (bought last month), or to the bank account, is money in.
   - **Card statement:** "HDFC card bill: ₹12,500 · Tap to plan the payment".
   - Card bill payments are recorded quietly.
 - **Report a problem** (Profile → Help), for the testing phase:
