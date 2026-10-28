@@ -3,7 +3,7 @@
 A small Cloudflare Worker for the app's optional **AI weekly plan**. It holds your Anthropic API key (the app never contains it), lets in only people with an invite code, and asks Claude Sonnet 5.5. It stores nothing.
 
 ## What it receives
-Once a week per tester (plus at most one remake a day): the app's language and a summary of numbers the app has already worked out (`Core.planFacts` in `core.js`): today's limit, zone, spending by category this week and usually, budgets, bills to come, past rounds, loans, cards and goals by the names the person gave them, fraud-check counts and amounts, and loan options. It answers with the plan in a fixed JSON format. Never SMS text, shop names, notes or account numbers. Testers can see the summary word for word in Profile → AI weekly plan → *See exactly what's sent*.
+Once a week per tester (plus at most one remake a day): the app's language and a summary of numbers the app has already worked out (`Core.planFacts` in `core.js`): today's limit, zone, spending by category this week and usually, budgets, bills to come, maybe expenses, past rounds, loans, cards and goals by the names the person gave them, fraud-check counts and amounts, and loan options. It answers with the plan in a fixed JSON format. Never SMS text, shop names, notes or account numbers. Testers can see the summary word for word in Profile → AI weekly plan → *See exactly what's sent*.
 
 ## Set it up (about 15 minutes, all in a browser)
 1. **Claude Console** (platform.claude.com, separate from Claude Pro):

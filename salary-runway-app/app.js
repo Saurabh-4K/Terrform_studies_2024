@@ -576,6 +576,11 @@
       'When the money comes in, match it to the claims it pays. Paid back in parts: the claim waits for the rest. Closed with something still missing: what didn’t come back becomes your spending.',
       'Paid back more than you spent: the extra counts once. This month’s spending: it’s added to your budget. Side vault: it’s kept apart from daily spending but counted in your net worth.',
     ]],
+    maybe: ['Maybe expenses', [
+      'Costs that may come: a wedding gift, a bike repair, a doctor’s visit. Add the amount, roughly when, and how likely it is.',
+      'Likely: the money is held from today’s limit until payday, so you’re ready if it comes. Maybe: nothing changes, but you see what today’s limit would be if it comes. Unlikely: only listed, so it doesn’t surprise you.',
+      'None is counted at half: a cost comes in full or not at all. When the date passes, the app asks whether it came. Link the payment and it shows in your reports, but not as daily spending, because its money was held. Over time you see how good your guesses were.',
+    ]],
     people: ['People', [
       'Money between you and friends or family. No EMI and no fixed dates: paid back all at once or in parts, by a date only if one was promised.',
       'It moves your balance like any money, but it’s never counted as income or spending, so your budgets stay right.',
@@ -931,7 +936,7 @@
       '</section>' +
       cardHomeNotes(cyc) +
       savedCard() +
-      alertsNudge() + iouDueCard() + passCard() + incomeCard() +
+      alertsNudge() + iouDueCard() + maybeDueCard() + passCard() + incomeCard() +
       weekCard() +
       bal +
       (needsCheck().length
@@ -973,6 +978,8 @@
             : '<p class="hint">' + tr('No more fixed payments this cycle.') + '</p>') + '</section>' },
       { key: 'payday', group: 'This month', icon: 'payday', label: 'Next payday', tone: 'mint', badge: { text: fmtDate(cyc.next) }, html: () => paydayPreviewCard() },
       { key: 'big', group: 'Check & plan', icon: 'big', label: 'Big expense?', tone: 'amber', badge: null, html: () => bigExpenseCard() },
+      { key: 'maybe', group: 'Check & plan', icon: 'scale', label: 'Maybe expenses', tone: 'amber',
+        badge: (() => { const due = Core.maybeDue(state, t).length; return due ? { text: tr('{n} to answer', { n: due }), tone: 'bad' } : r.held ? { text: shortInr(r.held) } : null; })(), html: () => maybePage() },
       { key: 'graph', group: 'Check & plan', icon: 'graph', label: 'Runway graph', tone: 'amber', badge: null, html: () => chartCard() },
       { key: 'budgets', group: 'Check & plan', icon: 'budgets', label: 'Budgets', tone: 'amber', badge: overBudgets ? { text: tr('{n} over', { n: overBudgets }), tone: 'bad' } : null,
         html: () => '<section class="card"><div class="card-head"><h2>' + tr(r.anchor && r.anchorIdx > 0 ? 'You can spend until payday' : 'You can spend this cycle') + '</h2><button class="ghost" data-action="tab" data-tab="plan">' + tr('Adjust') + '</button></div>' +
@@ -1305,7 +1312,7 @@
         : tr('Nothing is borrowed yet. Spend only on basics until payday to shrink it.')) + '</span>';
     }
     if (!p.depleted) {
-      html += '<span class="sub">' + tr('After fixed payments, loan minimums and bills ({amount}):', { amount: inr(p.committed) }) + ' ' +
+      html += '<span class="sub">' + tr(p.maybeNext ? 'After fixed payments, loan minimums, bills and likely costs ({amount}):' : 'After fixed payments, loan minimums and bills ({amount}):', { amount: inr(p.committed + (p.maybeNext || 0)) }) + ' ' +
         (p.freeAfter >= 0 ? tr('{amount} left for everything else.', { amount: inr(p.freeAfter) }) : '<span class="bad">' + tr('{amount} short', { amount: inr(-p.freeAfter) }) + '</span>.') + '</span>';
     }
     return html + '</section>';
@@ -1454,6 +1461,7 @@
         tr('<b>What the account can cover:</b> ({money} in the account this morning − {bills} of bills still to come) ÷ {days} days = <b>{amount}</b>.', { money: inr(l.money), bills: inr(l.bills), days: l.days, amount: inr(l.byMoney) }),
         tr('Today’s limit: <b>{amount}</b>. Spending or saving today uses it up; going over lowers the days that follow.', { amount: inr(r.dailyAllowance) }),
       ];
+      if (r.held) lines.splice(3, 0, tr('{amount} is held for likely costs before payday (Maybe expenses), so it’s already out of the account amount.', { amount: inr(r.held) }));
     } else if (ui.explain === 'freedom') {
       const f = Core.freedomDays(state, t);
       title = tr('Days of Freedom');
@@ -2980,6 +2988,7 @@
     logEvent('notpayment', { shop: logText(tx.note), amount: tx.amount, kind: tx.kind || 'spend', category: tx.category, skipShop: !!skipShop });
     if (Core.isIncome(tx) || Core.isMove(tx)) undoIncomeUse(tx);
     if (tx.claimId || tx.payoutId) Core.reimbForget(state, tx);
+    Core.maybeForget(state, tx);
     if (tx.smsKey) state.smsIgnored = (state.smsIgnored || []).concat(tx.smsKey).slice(-500);
     const shop = skipKey(tx.note);
     if (skipShop && shop && (state.smsSkip || []).indexOf(shop) === -1) {
@@ -3619,6 +3628,100 @@
       '<span class="hint">' + tr('A refund to the card makes the purchase smaller, so it isn’t counted as income.') + '</span></div>';
   }
 
+  // ---------- maybe expenses ----------
+
+  const MAYBE_LABEL = { likely: 'Likely', maybe: 'Maybe', unlikely: 'Unlikely' };
+  // What a cost does now: held, shown as "if it comes", or only listed.
+  function maybeNote(m, cyc) {
+    if (m.date >= cyc.next) return tr('Next round');
+    return tr(m.likely === 'likely' ? 'Held from today’s limit' : m.likely === 'maybe' ? 'Not held: see “if it comes”' : 'Only listed');
+  }
+
+  // Did it come? A payment that may be the one, or add it now; or it didn't.
+  function maybeAnswer(m) {
+    const t = today();
+    if (ui.maybeAnswer !== m.id) {
+      return '<div class="row"><button class="primary" data-action="maybe-yes" data-id="' + esc(m.id) + '">' + tr('Yes, it came') + '</button>' +
+        '<button data-action="maybe-no" data-id="' + esc(m.id) + '">' + tr('No, it didn’t') + '</button>' +
+        '<button class="ghost" data-action="maybe-later" data-id="' + esc(m.id) + '">' + tr('Not yet') + '</button></div>';
+    }
+    const cand = Core.maybeCandidates(state, m.id, t);
+    return '<div class="callout">' + (cand.length
+      ? '<b>' + tr('Which payment was it?') + '</b>' + cand.map((x, i) => '<label class="check-row"><input type="radio" name="mb-tx" value="' + esc(x.id) + '"' + (i === 0 ? ' checked' : '') + '> ' +
+          esc(x.note || label(x.category)) + ' · ' + fmtDate(x.date) + ' · ' + inr(x.amount) + '</label>').join('') +
+        '<div class="row"><button class="primary" data-action="maybe-link" data-id="' + esc(m.id) + '">' + tr('Link it') + '</button></div>' +
+        '<span class="hint">' + tr('Not in the list? Add it as a payment:') + '</span>'
+      : '<b>' + tr('Add it as a payment') + '</b>') +
+      '<div class="form-grid"><label class="field" for="mb-paid"><span>' + tr('Paid (₹)') + '</span><input id="mb-paid" type="number" inputmode="numeric" min="1" max="1000000000" step="any" value="' + m.amount + '"></label>' +
+      '<label class="field" for="mb-paid-date"><span>' + tr('Date') + '</span><input id="mb-paid-date" type="date" max="' + t + '" value="' + (m.date <= t ? m.date : t) + '"></label></div>' +
+      '<div class="row"><button' + (cand.length ? '' : ' class="primary"') + ' data-action="maybe-new" data-id="' + esc(m.id) + '">' + tr('Add payment') + '</button>' +
+      '<button class="ghost" data-action="maybe-cancel">' + tr('Cancel') + '</button></div></div>';
+  }
+
+  // Home: a cost whose date has passed. Did it come?
+  function maybeDueCard() {
+    const t = today();
+    const due = Core.maybeDue(state, t).filter((m) => (state.maybeAsked || {})[m.id] !== t || ui.maybeAnswer === m.id);
+    if (!due.length) return '';
+    const m = due[0];
+    return '<section class="card income-card"><div class="card-head"><h2>' + tr('Did “{name}” come? ({amount}, around {date})', { name: esc(m.name), amount: inr(m.amount), date: fmtDate(m.date) }) + '</h2></div>' +
+      maybeAnswer(m) + '</section>';
+  }
+
+  // Home → Maybe expenses: what's held, what today's limit would be if the maybe ones come, and the list.
+  function maybePage() {
+    const t = today();
+    const r = Core.projectRunway(state, t);
+    const cyc = r.cycle;
+    const open = Core.maybeOpen(state).sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+    const answered = (state.maybe || []).filter((m) => m.outcome).slice(-10).reverse();
+    const w = Core.maybeIfHappens(state, t);
+    const st = Core.maybeStats(state);
+    const line = (name, val) => '<div class="line"><span>' + name + '</span><span>' + val + '</span></div>';
+    const quick = (days, name) => '<button class="pill" type="button" data-action="maybe-when" data-days="' + days + '">' + tr(name) + '</button>';
+    const form = ui.maybeForm
+      ? '<div class="callout"><b>' + tr('A cost that may come') + '</b><div class="form-grid">' +
+        '<label class="field" for="mb-name"><span>' + tr('What') + '</span><input id="mb-name" type="text" maxlength="40" placeholder="' + tr('Wedding gift') + '"></label>' +
+        '<label class="field" for="mb-amount"><span>' + tr('About how much (₹)') + '</span><input id="mb-amount" type="number" inputmode="numeric" min="1" max="1000000000" step="any"></label>' +
+        '<label class="field" for="mb-date"><span>' + tr('Around when') + '</span><input id="mb-date" type="date" value="' + Core.addDays(t, 7) + '"></label>' +
+        '<label class="field" for="mb-likely"><span>' + tr('How likely') + '</span><select id="mb-likely">' +
+          ['likely', 'maybe', 'unlikely'].map((k) => '<option value="' + k + '"' + (k === 'maybe' ? ' selected' : '') + '>' + tr(MAYBE_LABEL[k]) + '</option>').join('') + '</select></label>' +
+        '<label class="field wide" for="mb-cat"><span>' + tr('Category') + '</span><select id="mb-cat">' + categoryOptions('Family') + '</select></label></div>' +
+        '<div class="pills">' + quick(7, 'Next week') + quick(30, 'Next month') + '</div>' +
+        (ui.maybeError ? '<p class="bad" role="alert">' + esc(ui.maybeError) + '</p>' : '') +
+        '<div class="row"><button class="primary" data-action="maybe-add">' + tr('Save') + '</button><button class="ghost" data-action="maybe-form-cancel">' + tr('Cancel') + '</button></div></div>'
+      : '<div><button class="primary" data-action="maybe-form">' + tr('Add a cost that may come') + '</button></div>';
+    const past = ['likely', 'maybe', 'unlikely'].filter((k) => st[k].answered >= 3).map((k) =>
+      tr('{kind}: came {n} of {total} times', { kind: tr(MAYBE_LABEL[k]), n: st[k].happened, total: st[k].answered }) +
+      (st[k].guess ? ' · ' + tr('cost {pct}% of the guess', { pct: Math.round((st[k].actual / st[k].guess) * 100) }) : ''));
+    return '<section class="card"><div class="card-head">' + titled('Maybe expenses', 'maybe') + '</div>' +
+      '<div class="summary">' + line(tr('Held from today’s limit'), inr(r.held)) + line(tr('Today’s limit'), inr(r.dailyAllowance)) +
+      (w ? line(tr('If the “maybe” ones come ({amount})', { amount: inr(w.amount) }), inr(w.limit)) : '') + '</div>' +
+      (past.length ? '<p class="hint">' + tr('Your past guesses:') + ' ' + past.join('; ') + '</p>' : '') +
+      form +
+      (open.length ? '<div class="list">' + open.map((m) => '<div class="list-item"><div class="grow"><div class="title">' + esc(m.name) + ' · ' + tr(MAYBE_LABEL[m.likely]) + '</div>' +
+          '<div class="meta">' + fmtDate(m.date) + ' · ' + maybeNote(m, cyc) + '</div>' +
+          (m.date <= t ? maybeAnswer(m) : '') + '</div>' +
+          '<div class="amt">' + inr(m.amount) + '</div><button class="ghost small" data-action="maybe-remove" data-id="' + esc(m.id) + '" aria-label="' + esc(tr('Remove {name}', { name: m.name })) + '">✕</button></div>').join('') + '</div>'
+        : '<p class="hint">' + tr('Nothing added. A wedding, a repair, a doctor’s visit coming up? Add it here so it doesn’t surprise you.') + '</p>') +
+      (answered.length ? '<h3>' + tr('Answered') + '</h3><div class="list">' + answered.map((m) => {
+        const tx = m.outcome.happened && state.transactions.find((x) => x.id === m.outcome.txId);
+        return '<div class="list-item"><div class="grow"><div class="title">' + esc(m.name) + '</div><div class="meta">' + tr(MAYBE_LABEL[m.likely]) + ' · ' +
+          (m.outcome.happened ? tr('came: {amount} (guess {guess})', { amount: inr(tx ? tx.amount : 0), guess: inr(m.amount) }) : tr('didn’t come')) + '</div></div>' +
+          '<button class="ghost small" data-action="maybe-reopen" data-id="' + esc(m.id) + '">' + tr('Undo') + '</button></div>'; }).join('') + '</div>' : '') +
+      '</section>';
+  }
+
+  // In a payment's edit view: the expected cost it paid.
+  function maybeTxBox(x) {
+    if (!x.maybeId) return '';
+    const m = (state.maybe || []).find((y) => y.id === x.maybeId);
+    if (!m) return '';
+    return '<div class="callout"><b>' + tr('Expected cost: {name}', { name: esc(m.name) }) + '</b><span class="hint">' +
+      tr('Its money was held, so it’s in your reports but not your daily spending.') + '</span>' +
+      '<div><button class="ghost small" data-action="maybe-reopen" data-id="' + esc(m.id) + '">' + tr('It isn’t this cost') + '</button></div></div>';
+  }
+
   // ---------- reimbursable expenses and the side vault ----------
 
   const REIMB_STATUS = { PENDING: 'Waiting to be paid back', PARTIALLY_REIMBURSED: 'Partly paid back', SETTLED: 'Paid back', CLOSED: 'Closed' };
@@ -3742,7 +3845,7 @@
         '<button class="ghost small" data-action="keep-use" data-id="' + esc(k.tx.id) + '" data-buy="' + esc(x.id) + '">' + tr('Paid from {name} ({left} left)', { name: esc(k.name), left: inr(k.left) }) + '</button>').join('') + '</div>' : '') +
       (x.covered ? '<p class="hint">' + tr('{amount} of it was paid from money kept for it, so it doesn’t use your budgets.', { amount: inr(x.covered) }) + '</p>' : '') +
       refundsBox(x) +
-      reimbBox(x) +
+      reimbBox(x) + maybeTxBox(x) +
       notPaymentBox(x, flex || isIn || saved) +
       '</div></div>';
   }
@@ -3940,6 +4043,7 @@
       (x.passedOn ? ' · <span class="chip">' + tr('Passed on') + '</span>' : '') +
       (x.iouId || x.iouPay ? ' · <span class="chip">' + tr('People') + '</span>' : '') +
       (x.claimId ? ' · <span class="chip">' + tr('Reimbursable') + '</span>' : '') +
+      (x.maybeId ? ' · <span class="chip">' + tr('Expected cost') + '</span>' : '') +
       (x.payoutId ? ' · <span class="chip">' + tr('Reimbursement') + '</span>' : '') +
       (x.matched ? ' · <span class="chip">' + tr('Bank SMS ✓') + '</span>' : '') +
       ((x.refunds || []).length ? ' · <span class="chip">' + tr('{amount} refunded', { amount: inr(x.refunds.reduce((a, r) => a + r.amount, 0)) }) + '</span>' : '');
@@ -4409,7 +4513,7 @@
     return '<section class="card ai-settings">' + titled('AI weekly plan', 'plan') +
       '<p>' + tr('A plan each week from your own numbers, written by Claude from Anthropic.') + '</p>' +
       '<div class="callout"><b>' + tr('Sent once a week, when your plan is made') + '</b>' +
-      '<span class="hint">' + tr('A summary the app has already worked out: today’s limit, zone, spending by category this week and usually, budgets, bills to come, past rounds, your loans, cards and goals by the names you gave them, and how many payments look unusual.') + '</span>' +
+      '<span class="hint">' + tr('A summary the app has already worked out: today’s limit, zone, spending by category this week and usually, budgets, bills to come, costs that may come, past rounds, your loans, cards and goals by the names you gave them, and how many payments look unusual.') + '</span>' +
       '<b>' + tr('Never sent') + '</b><span class="hint">' + tr('SMS text, shop names, notes, account or card numbers.') + '</span>' +
       '<b>' + tr('Where it goes') + '</b><span class="hint">' + tr('To your app’s server, which keeps nothing, and on to Anthropic to write the plan.') + '</span>' +
       '<div><button class="link" data-action="ai-show-facts">' + tr(ui.aiFacts ? 'Hide what’s sent' : 'See exactly what’s sent') + '</button></div>' +
@@ -5936,6 +6040,54 @@
         save(); rerenderKeepScroll(); offerUndo(tr('Refund taken off. Read your SMS again to add it as money in.'), before);
         return;
       }
+      case 'maybe-form': ui.maybeForm = true; ui.maybeError = ''; break;
+      case 'maybe-form-cancel': ui.maybeForm = false; ui.maybeError = ''; break;
+      case 'maybe-when': { const d = document.getElementById('mb-date'); if (d) d.value = Core.addDays(t, Number(btn.dataset.days) || 7); return; }
+      case 'maybe-add': {
+        const v = (id) => (document.getElementById(id) || {}).value || '';
+        const amount = Math.round(Number(v('mb-amount')));
+        if (!(amount > 0) || amount > 1e9) { ui.maybeError = tr('Enter about how much it would cost.'); break; }
+        if (!v('mb-date')) { ui.maybeError = tr('Choose roughly when.'); break; }
+        const before = JSON.stringify(state);
+        const m = Core.addMaybe(state, { name: v('mb-name').trim() || tr('Maybe expense'), amount, date: v('mb-date'), likely: v('mb-likely'), category: v('mb-cat') || 'Misc' }, new Date().toISOString());
+        if (!m) return;
+        ui.maybeForm = false; ui.maybeError = '';
+        save(); rerenderKeepScroll();
+        offerUndo(tr(m.likely === 'likely' ? 'Added. Its money is held from today’s limit.' : 'Added.'), before);
+        return;
+      }
+      case 'maybe-yes': ui.maybeAnswer = btn.dataset.id; break;
+      case 'maybe-cancel': ui.maybeAnswer = null; break;
+      case 'maybe-later': state.maybeAsked = Object.assign({}, state.maybeAsked, { [btn.dataset.id]: t }); save(); break;
+      case 'maybe-no': case 'maybe-reopen': case 'maybe-remove': {
+        const before = JSON.stringify(state);
+        const a = btn.dataset.action;
+        if (a === 'maybe-no') Core.maybeDidnt(state, btn.dataset.id, new Date().toISOString());
+        else if (a === 'maybe-reopen') Core.maybeReopen(state, btn.dataset.id);
+        else { Core.maybeReopen(state, btn.dataset.id); state.maybe = (state.maybe || []).filter((m) => m.id !== btn.dataset.id); }
+        ui.maybeAnswer = null;
+        save(); rerenderKeepScroll();
+        offerUndo(tr(a === 'maybe-no' ? 'Noted: it didn’t come. Its money is free again.' : a === 'maybe-reopen' ? 'Open again' : 'Removed'), before);
+        return;
+      }
+      case 'maybe-link': case 'maybe-new': {
+        const m = (state.maybe || []).find((y) => y.id === btn.dataset.id);
+        if (!m) return;
+        const before = JSON.stringify(state);
+        let txId = null;
+        if (btn.dataset.action === 'maybe-link') txId = ((document.querySelector('input[name="mb-tx"]:checked') || {}).value) || null;
+        else {
+          const amount = Math.round(Number((document.getElementById('mb-paid') || {}).value));
+          const date = (document.getElementById('mb-paid-date') || {}).value || t;
+          if (!(amount > 0) || amount > 1e9 || date > t) { toast(tr('Enter what you paid.')); return; }
+          txId = uid();
+          state.transactions.push({ id: txId, date, amount, category: m.category || 'Misc', note: m.name, source: 'manual' });
+        }
+        if (!txId || !Core.maybeHappened(state, m.id, txId, new Date().toISOString())) { toast(tr('Pick the payment')); return; }
+        ui.maybeAnswer = null;
+        save(); rerenderKeepScroll(); offerUndo(tr('Linked. It’s in your reports, not your daily spending.'), before);
+        return;
+      }
       case 'reimb-open': ui.reimbForm = btn.dataset.id; ui.reimbError = ''; break;
       case 'reimb-cancel': ui.reimbForm = null; ui.reimbError = ''; break;
       case 'reimb-save': {
@@ -6232,6 +6384,7 @@
         if (tx && tx.kind === 'cardconvert') Core.undoCardConvert(state, tx);
         if (tx && (tx.iouId || tx.iouPay)) Core.undoIouTx(state, tx);
         if (tx && (tx.claimId || tx.payoutId)) Core.reimbForget(state, tx);
+        if (tx) Core.maybeForget(state, tx);
         // A purchase paid from kept money: that money is kept again.
         if (tx && tx.coveredFrom) {
           const k = state.transactions.find((y) => y.id === tx.coveredFrom);
