@@ -616,7 +616,8 @@
   }
 
   function reimbView(state) {
-    const R = reimbOf(state);
+    // Reading never writes: no claims yet is an empty view, not a new record.
+    const R = state.reimb && typeof state.reimb === 'object' ? { claims: state.reimb.claims || [], payouts: state.reimb.payouts || [] } : { claims: [], payouts: [] };
     const claims = R.claims.map((c) => Object.assign({}, c, { allocated: 0, margin: 0 }));
     const byId = {};
     claims.forEach((c) => { byId[c.id] = c; });
