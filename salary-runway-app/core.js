@@ -888,8 +888,17 @@
     const flexLeft = Math.max(0, plan.flexTotal + extraIn - paceSpend - moved);
     const planRate = anchor ? dailyBudget : remainingDays > 0 ? flexLeft / remainingDays : 0;
 
+    /*
+     * No balance entered since payday, but one last round: last round's
+     * leftover is still in the account, so the new round starts from it plus
+     * the salary (an overspend starts it lower). Older than that, the salary
+     * alone is the best guess.
+     */
+    const prevCycle = previousCycle(cycle, Number(state.settings.payday) || 1);
+    const carried = !anchor && check && check.date < cycle.start && check.date >= prevCycle.start
+      ? projectRunway(state, addDays(cycle.start, -1)).balanceToday || 0 : 0;
     const points = [];
-    let bal = plan.salary - plan.savingsTotal;
+    let bal = plan.salary - plan.savingsTotal + carried;
     let pace = 0;
     let planned = 0;
     for (let i = 0; i < N; i++) {
@@ -947,7 +956,7 @@
 
     const last = points[points.length - 1];
     return {
-      cycle, plan, events, points, idxToday, remainingDays, anchor, anchorIdx: anchor ? aIdx : null, limit,
+      cycle, plan, events, points, idxToday, remainingDays, anchor, anchorIdx: anchor ? aIdx : null, limit, carried,
       spentToDate, spentToday, savedToday, flexLeft, extraIn, moved, billsAhead, paceRate, planRate, dailyAllowance, leftToday, overToday, tomorrowAllowance,
       balanceToday: points[idxToday].actual, kept,
       zeroPace: firstBelowZero('pace'),
@@ -1792,7 +1801,9 @@
     const debts = state.debts.filter((d) => d.balance > 0);
     if (!debts.length) return null;
     const extra = monthlyPlan(Object.assign({}, state, { adjustment: null }), todayIso).debtExtra;
-    const when = (sim) => ({ months: sim.months, interest: sim.totalInterest, never: sim.neverPaysOff, date: sim.neverPaysOff ? null : addMonths(todayIso, sim.months) });
+    // Month 1 is the next EMI, so the dates match each loan's own last EMI (loanEnd).
+    const base = debts.map((d) => loanEnd(state, d, todayIso)).filter((e) => e && e.next).map((e) => e.next).sort()[0] || addMonths(todayIso, 1);
+    const when = (sim) => ({ months: sim.months, interest: sim.totalInterest, never: sim.neverPaysOff, date: sim.neverPaysOff ? null : addMonths(base, sim.months - 1) });
     const now = when(simulateDebts(debts, 0, 'avalanche', false));
     const plan = when(simulateDebts(debts, extra, payoffOrder(state), true));
     // Minimums only: each EMI paid, and a finished loan's EMI goes back to daily spending.
@@ -3361,7 +3372,10 @@
    * - a bonus in a shop's or DTH account ("Dear Subscriber … Bonus amount of Rs. 114.45")
    * - offers ("LIFETIME FREE pre-approved … Credit Card … 19 BluChips per Rs.100 spent … T&C apply")
    */
-  const NOT_MONEY = /reward\s*points?|\b(?:rp|points)\s+(?:credited|earned|redeemed)|\bhas requested\b|\bcollect request\b|\bpayment request\b|\bwill be (?:auto[- ]?)?(?:debited|deducted|charged)\b|\bmandate\b.{0,60}\b(?:registered|created|set ?up|approved)\b|\bauto ?pay\b.{0,40}\b(?:set ?up|registered|activated)\b|\bbonus amount\b|\bdear subscriber\b|\bpre-?approved\b|\blifetime free\b|\bper\s*(?:rs\.?|inr|₹)\s*[\d,]+|\bt\s*&\s*c\b|\bapply now\b|\b(?:get|earn|win) up ?to\b|\bfailed\b|\bdeclined\b|\bunsuccessful\b/i;
+  const NOT_MONEY = /reward\s*points?|\b(?:rp|points)\s+(?:credited|earned|redeemed)|\bhas requested\b|\bcollect request\b|\bpayment request\b|\bwill be (?:auto[- ]?)?(?:debited|deducted|charged)\b|\bmandate\b.{0,60}\b(?:registered|created|set ?up|approved)\b|\bauto ?pay\b.{0,40}\b(?:set ?up|registered|activated)\b|\bbonus amount\b|\bdear subscriber\b|\bpre-?approved\b|\blifetime free\b|\bper\s*(?:rs\.?|inr|₹)\s*[\d,]+|\bt\s*&\s*c\b|\bapply now\b|\b(?:get|earn|win) up ?to\b|\bfailed\b|\bdeclined\b|\bunsuccessful\b|\bwaive[dr]\b/i;
+
+  // A bank's own charges ("Late payment fee of Rs.500 + GST Rs.90 charged", "Finance charges of Rs 1,234 levied"). Kept in step with SmsParser.java.
+  const BANK_FEE = /\b(?:late (?:payment )?fee|finance charges?|interest charged|annual (?:fee|membership fee)|over ?limit fee|cash advance fee|joining fee|renewal fee)\b/i;
 
   // Bill amounts round up, so paying them clears the bill.
   function money(m) { return m ? Math.ceil(parseFloat(m[1].replace(/,/g, ''))) : 0; }
@@ -3423,6 +3437,10 @@
     }
     if (card && CARD_PAYMENT.test(t)) {
       return { type: 'cardpayment', amount, last4: cardLast4(t), merchant: 'Card bill payment', category: 'Bills', date: dateOf(t), raw: t };
+    }
+    if (BANK_FEE.test(t) && !/\b(?:reversed|reversal|refund(?:ed)?|credited)\b/i.test(t)) {
+      const onCardFee = CARD_HINT.test(t) && !DEBIT_CARD.test(t);
+      return { type: 'debit', amount, merchant: 'Bank charges', date: dateOf(t), category: 'Bills', paidFrom: onCardFee ? 'card' : 'account', last4: onCardFee ? cardLast4(t) : null, acct: null, atm: false, raw: t };
     }
     const isCredit = /\b(credited|received|deposited|refund(?:ed)?|disbursed|reversed)\b/i.test(t);
     // A reversal is money coming back, even when the SMS also says "debited".

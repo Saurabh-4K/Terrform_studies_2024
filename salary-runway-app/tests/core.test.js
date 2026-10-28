@@ -117,12 +117,20 @@ test('left to spend today goes down as you spend, and tomorrow adjusts', () => {
   assert.equal(Math.round(r.tomorrowAllowance), 167);
 });
 
-test('a balance check from an earlier cycle is ignored', () => {
+test('no balance since payday: last round\'s leftover carries in; an older check is ignored', () => {
   const s = baseState();
-  s.balanceCheck = { date: '2026-09-20', amount: 100 };
+  s.balanceCheck = { date: '2026-09-20', amount: 5000 };
+  s.transactions.push({ id: 't', date: '2026-09-25', amount: 1200, category: 'Food', note: 'Shop' });
   const r = Core.projectRunway(s, '2026-10-05');
   assert.equal(r.anchor, null);
-  assert.equal(r.balanceToday, 35000);
+  // 5,000 − 1,200 left on 30 Sep, + 50,000 salary − 15,000 rent on the 5th
+  assert.equal(r.carried, 3800);
+  assert.equal(r.balanceToday, 38800);
+  // Today's limit still follows the plan: the leftover isn't new money to spend
+  assert.equal(Math.round(r.limit.byBudget), Math.round(Core.projectRunway(Object.assign({}, s, { balanceCheck: null }), '2026-10-05').limit.byBudget));
+  // A check two rounds back: the salary alone
+  s.balanceCheck = { date: '2026-08-20', amount: 5000 };
+  assert.equal(Core.projectRunway(s, '2026-10-05').balanceToday, 35000);
 });
 
 test('money received raises the balance and today\'s amount', () => {
@@ -932,7 +940,9 @@ test('debt-free dates: minimums only against the plan', () => {
   assert.equal(d.minimums, 2500);
   assert.ok(d.plan.months < d.now.months && d.sooner === d.now.months - d.plan.months);
   assert.ok(d.saved > 0);
-  assert.equal(d.plan.date, Core.addMonths('2026-11-01', d.plan.months));
+  // Month 1 is the next EMI (5 Nov); minimums only ends on the loan's own last EMI
+  assert.equal(d.plan.date, Core.addMonths('2026-11-05', d.plan.months - 1));
+  assert.equal(d.now.date, Core.loanEnd(s, s.debts[0], '2026-11-01').last);
   // A minimum below the interest never pays off
   s.debts[0].minPayment = 1000; s.savings.debtExtra = 0;
   assert.equal(Core.debtFreeDates(s, '2026-11-01').now.never, true);
@@ -1977,4 +1987,13 @@ test('accuracy meter: how close the app was to the bank', () => {
   assert.deepEqual([a.pct, a.avgGap, a.list[2].gap], [98.8, 233, -500]);
   // Only the last n count
   assert.equal(Core.accuracyStats([{ date: '0', expected: 100, actual: 0 }, { date: '1', expected: 1000, actual: 1000 }], 1).pct, 100);
+});
+
+test('bank charges SMS: late fee with GST, finance charges, a debit card fee; a reversed or waived fee isn\'t a charge', () => {
+  const p = (m) => { const r = Core.parseSms(m, {}, '2026-10-28'); return r && [r.type, r.amount, r.merchant, r.category, r.paidFrom, r.last4]; };
+  assert.deepEqual(p('Late payment fee of Rs.500.00 + GST Rs.90.00 charged to your HDFC Bank Credit Card XX6645.'), ['debit', 590, 'Bank charges', 'Bills', 'card', '6645']);
+  assert.deepEqual(p('Finance charges of Rs 1,234.56 have been levied on your SBI Credit Card ending 4321.'), ['debit', 1235, 'Bank charges', 'Bills', 'card', '4321']);
+  assert.deepEqual(p('Annual fee of Rs.236 for your Debit Card has been debited from A/c XX1234.'), ['debit', 236, 'Bank charges', 'Bills', 'account', null]);
+  assert.equal(p('Late payment fee of Rs 500 on your Credit Card XX6645 has been reversed.')[0], 'credit');
+  assert.equal(p('Annual fee of Rs 499 waived on your Credit Card XX1111.'), null);
 });
