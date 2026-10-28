@@ -68,6 +68,12 @@
     'card spend → EMI (6 months)': { pre: (s) => X(s, { id: 'cs', amount: 12000, category: 'Shopping', note: 'Phone', paidFrom: 'c1', date: '2026-10-21' }),
       apply: (s) => Core.convertCardBalance(s, 'c1', 12000, { kind: 'emi', months: 6, rate: 16 }, T) },
     'spend Emergency': (s) => X(s, { amount: 500, category: 'Emergency', note: 'Hospital' }),
+    'maybe cost, likely': (s) => Core.addMaybe(s, { name: 'Wedding gift', amount: 5000, date: '2026-10-27', likely: 'likely' }, T),
+    'maybe cost, maybe': (s) => Core.addMaybe(s, { name: 'Bike repair', amount: 5000, date: '2026-10-27', likely: 'maybe' }, T),
+    'likely cost came (₹6,000 paid)': { pre: (s) => Core.addMaybe(s, { name: 'Wedding gift', amount: 5000, date: '2026-10-26', likely: 'likely' }, T),
+      apply: (s) => { X(s, { amount: 6000, category: 'Family', note: 'Gift' }); Core.maybeHappened(s, s.maybe[s.maybe.length - 1].id, 'x', T); } },
+    'likely cost didn’t come': { pre: (s) => Core.addMaybe(s, { name: 'Wedding gift', amount: 5000, date: '2026-10-26', likely: 'likely' }, T),
+      apply: (s) => Core.maybeDidnt(s, s.maybe[s.maybe.length - 1].id, T) },
     'salary lower (90k)': (s) => { s.payslips = { '2026-09-28': { amount: 90000, usual: 98000 } }; },
     'balance check (−1000)': (s) => { s.balanceCheck = { date: T, amount: 18700 }; },
   };
@@ -94,6 +100,7 @@
     m('cardOwed', () => Core.cardOwedAt(s, s.cards[0], T));
     m('cardReserve', () => Core.cardReserve(s, T));
     m('kept', () => sumv(Core.keptFor(s), (k) => k.left));
+    m('held', () => r.held);
     m('zone', () => Core.zoneStatus(s, T, r).zone);
     m('cash', () => { const w = Core.walletBalances(s, T); return (w.wallets || w).find((x) => x.id === 'cash').balance; });
     m('freedom', () => Core.freedomDays(s, T).days);

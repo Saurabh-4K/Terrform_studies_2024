@@ -4,7 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { base, kinds, measure } = require('./money-map.js');
 
-const KEYS = ['bank', 'spentCycle', 'reports', 'income', 'worth', 'fund', 'grow', 'goal', 'loans', 'people', 'cardOwed', 'kept', 'cash'];
+const KEYS = ['bank', 'spentCycle', 'reports', 'income', 'worth', 'fund', 'grow', 'goal', 'loans', 'people', 'cardOwed', 'kept', 'cash', 'held'];
 
 // What changes (anything not listed stays the same). bank: the money shown today (card spending is kept aside at once);
 // worth: net worth; people: what friends owe you less what you owe them; cardOwed: what the card is owed in all.
@@ -28,6 +28,12 @@ const MAP = {
   'save → grow': { bank: -100, grow: 100 },
   'save → goal': { bank: -100, goal: 100 },
   'save → loan prepay': { bank: -100, loans: -100 },
+  // A likely cost before payday is held from today's limit; a maybe one only shows "if it happens".
+  'maybe cost, likely': { held: 5000 },
+  'maybe cost, maybe': {},
+  // Paid from the money held for it: in reports, not daily spending; the hold is released.
+  'likely cost came (₹6,000 paid)': { bank: -6000, reports: 6000, worth: -6000, held: -5000 },
+  'likely cost didn’t come': { held: -5000 },
   'save, undecided': { bank: -100 },
   'bill paid (electricity)': { bank: -1200, worth: -1200 },
   'card bill paid (its EMI part)': { cardOwed: -6010 },

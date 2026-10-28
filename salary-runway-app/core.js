@@ -587,7 +587,104 @@
   // What a spending entry costs your own budgets: less what a gift kept for it paid.
   // Spending that's yours in reports: less what's claimed back from work (a gift-kept purchase is still shown).
   function personalAmt(t) { return (Number(t.amount) || 0) - (Number(t.reimbExcluded) || 0); }
-  function ownPart(t) { return Math.max(0, (Number(t.amount) || 0) - (Number(t.covered) || 0) - (Number(t.reimbExcluded) || 0)); }
+  // A payment for a maybe expense (t.maybeId) was paid from money held for it: not daily spending.
+  function ownPart(t) { return t.maybeId ? 0 : Math.max(0, (Number(t.amount) || 0) - (Number(t.covered) || 0) - (Number(t.reimbExcluded) || 0)); }
+
+  // ---------- maybe expenses ----------
+
+  /*
+   * Costs that may come: a wedding gift, a bike repair, a doctor's visit.
+   * { id, name, amount, date, likely: 'likely' | 'maybe' | 'unlikely', category, created,
+   *   outcome: null | { happened, txId, date } }.
+   * - Likely ones due this round (or overdue) are held, like money kept aside,
+   *   so today's limit is already safe if they come.
+   * - Maybe ones change nothing; the app shows today's limit if they happen.
+   * - Unlikely ones are only listed.
+   * A cost either comes in full or not at all, so none is counted at half.
+   * When its date has passed, the app asks whether it happened: a payment
+   * linked to it shows in reports but isn't daily spending (its money was held).
+   */
+  const MAYBE_LIKELY = ['likely', 'maybe', 'unlikely'];
+  function maybeOpen(state) {
+    return (state.maybe || []).filter((m) => m && !m.outcome && Number(m.amount) > 0 && MAYBE_LIKELY.indexOf(m.likely) !== -1);
+  }
+  // Held today: likely costs open and due before payday, overdue ones included.
+  function maybeHeld(state, todayIso) {
+    const cyc = cycleFor(todayIso, Number(state.settings.payday) || 1);
+    return sum(maybeOpen(state).filter((m) => m.likely === 'likely' && m.date < cyc.next), (m) => Math.round(Number(m.amount)));
+  }
+  // Due or past its date: time to ask whether it happened.
+  function maybeDue(state, todayIso) {
+    return maybeOpen(state).filter((m) => m.date <= todayIso).sort((a, b) => (a.date < b.date ? -1 : 1));
+  }
+  // Today's limit if the 'maybe' costs due before payday all come (null when there are none).
+  function maybeIfHappens(state, todayIso) {
+    const cyc = cycleFor(todayIso, Number(state.settings.payday) || 1);
+    const these = maybeOpen(state).filter((m) => m.likely === 'maybe' && m.date < cyc.next);
+    if (!these.length) return null;
+    const ids = these.map((m) => m.id);
+    const what = Object.assign({}, state, { maybe: (state.maybe || []).map((m) => (ids.indexOf(m.id) !== -1 ? Object.assign({}, m, { likely: 'likely' }) : m)) });
+    return { amount: sum(these, (m) => Math.round(Number(m.amount))), count: these.length, limit: projectRunway(what, todayIso).dailyAllowance };
+  }
+  function addMaybe(state, m, nowIso) {
+    const amount = Math.round(Number(m.amount));
+    if (!(amount > 0) || amount > 1e9 || !m.date || MAYBE_LIKELY.indexOf(m.likely) === -1) return null;
+    const x = { id: 'm' + Math.random().toString(36).slice(2, 10), name: String(m.name || '').trim().slice(0, 40) || 'Maybe expense', amount, date: m.date,
+      likely: m.likely, category: m.category || 'Misc', created: nowIso, outcome: null };
+    state.maybe = (state.maybe || []).concat(x);
+    return x;
+  }
+  // It happened: linked to the payment that paid it.
+  function maybeHappened(state, id, txId, nowIso) {
+    const m = (state.maybe || []).find((x) => x.id === id);
+    const tx = state.transactions.find((x) => x.id === txId);
+    if (!m || !tx || !isFlexible(tx) || tx.maybeId || tx.claimId || tx.covered || tx.iouId || tx.passedOn) return false;
+    tx.maybeId = m.id;
+    m.outcome = { happened: true, txId, date: nowIso };
+    return true;
+  }
+  function maybeDidnt(state, id, nowIso) {
+    const m = (state.maybe || []).find((x) => x.id === id);
+    if (!m) return false;
+    m.outcome = { happened: false, date: nowIso };
+    return true;
+  }
+  // Open again (undo an answer); its payment, if any, becomes daily spending again.
+  function maybeReopen(state, id) {
+    const m = (state.maybe || []).find((x) => x.id === id);
+    if (!m) return false;
+    state.transactions.forEach((t) => { if (t.maybeId === id) delete t.maybeId; });
+    m.outcome = null;
+    return true;
+  }
+  // A payment deleted: the cost it paid is open again.
+  function maybeForget(state, tx) {
+    if (tx && tx.maybeId) { const m = (state.maybe || []).find((x) => x.id === tx.maybeId); if (m) m.outcome = null; }
+  }
+  // Payments that may be the one: near its date and amount, not already linked to something else.
+  function maybeCandidates(state, id, todayIso) {
+    const m = (state.maybe || []).find((x) => x.id === id);
+    if (!m) return [];
+    const from = addDays(m.date < todayIso ? m.date : todayIso, -14);
+    return state.transactions.filter((t) => isFlexible(t) && !t.maybeId && !t.claimId && !t.covered && !t.iouId && !t.passedOn &&
+      t.date >= from && t.date <= todayIso && t.amount >= m.amount * 0.5 && t.amount <= m.amount * 2)
+      .sort((a, b) => Math.abs(a.amount - m.amount) - Math.abs(b.amount - m.amount)).slice(0, 5);
+  }
+  /*
+   * How good the guesses were, per likelihood: how many came, and what they
+   * cost against the guess. { likely: { answered, happened, rate, guess, actual } … }
+   */
+  function maybeStats(state) {
+    const out = {};
+    MAYBE_LIKELY.forEach((k) => {
+      const done = (state.maybe || []).filter((m) => m.likely === k && m.outcome);
+      const came = done.filter((m) => m.outcome.happened);
+      const paid = came.map((m) => ({ m, t: state.transactions.find((x) => x.id === m.outcome.txId) })).filter((x) => x.t);
+      out[k] = { answered: done.length, happened: came.length, rate: done.length ? came.length / done.length : null,
+        guess: sum(paid, (x) => Number(x.m.amount) || 0), actual: sum(paid, (x) => Number(x.t.amount) || 0) };
+    });
+    return out;
+  }
 
   // ---------- reimbursable expenses and the side vault ----------
 
@@ -929,8 +1026,10 @@
     // Today's amount is fixed for the day: what spending and saving today don't change.
     // Money kept for something to buy is in the account but not to spend.
     // Kept apart: money kept for a purchase, and the side vault (margins routed there).
+    // Likely costs that may come before payday are held too.
+    const held = maybeHeld(state, todayIso);
     const kept = sum(state.transactions.filter((t) => isIncome(t) && t.useFor === 'keep' && t.date <= todayIso), (t) => Math.max(0, t.amount - (Number(t.keepUsed) || 0))) +
-      (state.reimb ? reimbView(state).vault : 0);
+      (state.reimb ? reimbView(state).vault : 0) + held;
     const byMoney = Math.max(0, bal - kept + spentToday + savedToday - billsAhead) / (remainingDays + 1);
     // Never below zero: a limit of -₹50 means nothing, ₹0 says it.
     const byBudget = anchor
@@ -959,7 +1058,7 @@
     return {
       cycle, plan, events, points, idxToday, remainingDays, anchor, anchorIdx: anchor ? aIdx : null, limit, carried,
       spentToDate, spentToday, savedToday, flexLeft, extraIn, moved, billsAhead, paceRate, planRate, dailyAllowance, leftToday, overToday, tomorrowAllowance,
-      balanceToday: points[idxToday].actual, kept,
+      balanceToday: points[idxToday].actual, kept, held,
       zeroPace: firstBelowZero('pace'),
       zeroPlan: firstBelowZero('plan'),
       endPace: last.actual !== null ? last.actual : last.pace,
@@ -2331,11 +2430,13 @@
       sum(state.debts.filter((d) => d.balance > 0 && !startsNext(d)), (d) => Number(d.minPayment) || 0) +
       billsMonthly(state, next.start) + sum(state.sinking, sinkingMonthly) + goalsMonthly(state, next.start)
     );
+    // Likely costs due next round.
+    const maybeNext = sum(maybeOpen(state).filter((m) => m.likely === 'likely' && inCycle(m.date, next)), (m) => Math.round(Number(m.amount)));
     return {
       date: next.start, nominal, shortfall, fromBefore, newCardDebt, borrowed, effective,
       percent: nominal > 0 ? (borrowed / nominal) * 100 : 0,
       depleted: nominal > 0 && nominal - borrowed <= 0,
-      committed, freeAfter: effective - committed,
+      committed, maybeNext, freeAfter: effective - committed - maybeNext,
     };
   }
 
@@ -2551,7 +2652,7 @@
     const share = anchor ? (cyc.days - daysBetween(cyc.start, anchor.date)) / cyc.days : 1;
     const from = anchor ? anchor.date : cyc.start;
     const spent = byCategory(spendInRange(state.transactions, cyc).filter((t) => t.date >= from && t.date <= todayIso)
-      .map((t) => (t.covered ? Object.assign({}, t, { amount: t.amount - (Number(t.covered) || 0) }) : t)));
+      .map((t) => (t.maybeId ? Object.assign({}, t, { amount: 0 }) : t.covered ? Object.assign({}, t, { amount: t.amount - (Number(t.covered) || 0) }) : t)));
     const moves = (state.budgetMoves || []).filter((m) => m.cycle === cyc.start);
     const own = {};
     (state.budgets || []).forEach((b) => { own[b.name] = b; });
@@ -2796,6 +2897,18 @@
       L.push('Credit card ' + c.name + ': owes ' + R(st.owed) + (st.due ? ', bill due ' + D(st.due) : '') + (st.remaining ? ', still to pay on that bill ' + R(st.remaining) : '') +
         ', interest about ' + cardRate(c) + '% a year if not paid in full.');
     });
+    // Costs that may come, with how likely the person thinks they are, and how good their guesses have been.
+    const maybe = maybeOpen(state).sort((a, b) => (a.date < b.date ? -1 : 1)).slice(0, 8);
+    if (maybe.length) {
+      const LK = { likely: 'likely (money already held from today\'s limit if before payday)', maybe: 'maybe (not held)', unlikely: 'unlikely (not held)' };
+      L.push('Costs that may come: ' + maybe.map((m) => m.name + ' ' + R(m.amount) + ' around ' + D(m.date) + ', ' + LK[m.likely]).join('; ') + '.');
+      const w = maybeIfHappens(state, todayIso);
+      if (w) L.push("If the 'maybe' costs before payday come (" + R(w.amount) + "), today's limit would be " + R(w.limit) + '.');
+      const st = maybeStats(state);
+      const past = MAYBE_LIKELY.filter((k) => st[k].answered >= 3).map((k) => k + ' ones came ' + st[k].happened + ' of ' + st[k].answered + ' times' +
+        (st[k].guess ? ', costing ' + Math.round((st[k].actual / st[k].guess) * 100) + '% of the guess' : ''));
+      if (past.length) L.push('How past guesses turned out: ' + past.join('; ') + '.');
+    }
     const f = freedomDays(state, todayIso);
     L.push('Emergency fund: ' + R(Number((state.savings || {}).emergencyBalance) || 0) + (f ? ' = ' + f.days + ' days of basics covered' : '') + '.');
     (state.goals || []).forEach((g) => {
@@ -2998,11 +3111,12 @@
       if (!t || !Number.isFinite(amount) || amount < 0 || amount > 1e10 || !okDate(t.date)) throw new Error('format');
       return Object.assign({}, t, { amount });
     });
-    ['fixed', 'debts', 'budgets', 'bills', 'sinking', 'goals', 'cards', 'wallets', 'iou', 'emergencies', 'accuracy'].forEach((k) => {
+    ['fixed', 'debts', 'budgets', 'bills', 'sinking', 'goals', 'cards', 'wallets', 'iou', 'emergencies', 'accuracy', 'maybe'].forEach((k) => {
       if (k in s && !Array.isArray(s[k])) delete s[k];
     });
     if (!s.savings || typeof s.savings !== 'object') delete s.savings;
     if (s.reimb != null && (typeof s.reimb !== 'object' || !Array.isArray(s.reimb.claims || []) || !Array.isArray(s.reimb.payouts || []))) delete s.reimb;
+    if (s.maybe) s.maybe = s.maybe.filter((m) => m && okDate(m.date) && Number(m.amount) > 0).map((m) => Object.assign({}, m, { amount: Math.round(Number(m.amount)) }));
     ['fixed', 'debts'].forEach((k) => (s[k] || []).forEach((x) => {
       ['amount', 'balance', 'minPayment', 'rate'].forEach((f) => { if (x[f] != null) x[f] = Number(x[f]) || 0; });
     }));
@@ -3515,6 +3629,7 @@
     isCardTransfer, statementOn, dueAfter, cardOwedAt, cardReserve, cardStatus, emiQuote, revolveQuote, cardBillPlan,
     recordCardPayment, keptFor, ownPart, coverPurchase, refundToPurchase, undoRefund, earmarkedIn, cleanState, accuracyStats, reimbView, syncReimb, addClaim, recordPayout, claimSet, reimbForget, reimbAmount, addCardEmi, isPassedOn, passThroughPair, passOn, iouLeft, openIous, addIou, payIou, undoIouTx, iouSummary, iouEvents, cardEmiFromBooking, looksLikeCardBill, spendToCardPayment, convertCardBalance, answerCardDue, cardLateFee, cardRate, CARD_RATE, undoCardConvert, cardFreeDays, byCategory, DEFAULT_SPLIT,
     isLoanCredit, borrowedThisCycle, borrowCheck, rolloverOptions, setTranslator,
+    maybeOpen, maybeHeld, maybeDue, maybeIfHappens, addMaybe, maybeHappened, maybeDidnt, maybeReopen, maybeForget, maybeCandidates, maybeStats,
     payoffOrder, tickDebts, debtJourney, lenderTasks, lastBorrowed,
     encryptBackup, openBackup, backupInfo, toB64, fromB64, isTransfer, walletBalances, goalStatus, goalsMonthly, budgetEnvelopes, netWorth, reportRange, budgetHistory, aiFacts, planFacts, fraudSignals, investReady, goalResult, weekStart,
     daySpent, daySpending, dayTally, roundSnapshot, roundResult, weekRecap,
