@@ -2787,6 +2787,65 @@
   // ---------- weekly plan: fraud checks, readiness, goals ----------
 
   // Monday of the week containing iso.
+  /*
+   * The last n full weeks (Monday to Sunday, oldest first), week by week:
+   * spending, days within the limit, saved, extra to loans, borrowed, each
+   * category, and that week's goal from the weekly plan. Then what the app
+   * reads from them: categories up or down three weeks in a row, the goal
+   * streak, and how hard this week's goal should be (easier after two
+   * misses, a little harder after two wins). A week with almost nothing
+   * recorded is marked, so a quiet week isn't read as a cheap one.
+   */
+  function weekTrend(state, todayIso, n) {
+    n = n || 4;
+    const goals = {};
+    (state.goalHistory || []).concat(state.weeklyPlan ? [state.weeklyPlan.lastGoal, state.weeklyPlan.goal] : [])
+      .forEach((g) => { if (g && g.week) goals[g.week] = g; });
+    const thisWeek = weekStart(todayIso);
+    const weeks = [];
+    for (let k = n; k >= 1; k--) {
+      const from = addDays(thisWeek, -7 * k);
+      const to = addDays(from, 6);
+      const txs = state.transactions.filter((t) => t.date >= from && t.date <= to);
+      const flex = txs.filter((t) => isFlexible(t) && !t.gap);
+      const tally = dayTally(state, from, to);
+      const g = goals[from];
+      const res = g ? goalResult(state, g) : null;
+      weeks.push({
+        from, to,
+        spent: Math.round(sum(flex, ownPart)),
+        byCategory: byCategory(flex.map((t) => Object.assign({}, t, { amount: ownPart(t) }))),
+        won: tally.won, over: tally.over, logged: tally.logged, quiet: tally.logged < 2,
+        saved: Math.round(sum(txs.filter((t) => isMove(t) && !t.setAside && t.useFor !== 'debt'), (t) => t.amount)),
+        debtPaid: Math.round(extraToLoans(state, from, to)),
+        borrowed: Math.round(borrowedIn(state, from, to)),
+        goal: g ? { text: g.text, type: g.type, amount: g.amount, met: res ? res.met : null, value: res ? res.value : null } : null,
+      });
+    }
+    // Three recorded weeks in a row going one way, ending last week.
+    const last3 = weeks.slice(-3);
+    const run = (dir) => {
+      if (last3.length < 3 || last3.some((w) => w.quiet)) return [];
+      const cats = Object.keys(last3[2].byCategory).concat(Object.keys(last3[0].byCategory)).filter((c, i, a) => a.indexOf(c) === i);
+      return cats.map((c) => ({ name: c, values: last3.map((w) => Math.round(w.byCategory[c] || 0)) }))
+        .filter((x) => (dir > 0 ? x.values[0] < x.values[1] && x.values[1] < x.values[2] && x.values[2] >= 300
+          : x.values[0] > x.values[1] && x.values[1] > x.values[2] && x.values[0] >= 300))
+        .sort((a, b) => Math.abs(b.values[2] - b.values[0]) - Math.abs(a.values[2] - a.values[0])).slice(0, 3);
+    };
+    // The goal streak, newest first: weeks with a goal, until one without.
+    let streak = 0;
+    let kind = null;
+    for (let i = weeks.length - 1; i >= 0; i--) {
+      const g = weeks[i].goal;
+      if (!g || g.met === null) break;
+      if (kind === null) kind = g.met ? 'met' : 'missed';
+      if ((g.met ? 'met' : 'missed') !== kind) break;
+      streak++;
+    }
+    const difficulty = kind === 'missed' && streak >= 2 ? 'easier' : kind === 'met' && streak >= 2 ? 'harder' : 'same';
+    return { weeks, rising: run(1), falling: run(-1), streak: { kind, count: streak }, difficulty };
+  }
+
   function weekStart(iso) {
     return addDays(iso, -((parseISO(iso).getDay() + 6) % 7));
   }
@@ -2894,6 +2953,24 @@
     if (lastGoal) {
       const res = goalResult(state, lastGoal);
       if (res) L.push("Last week's goal: " + (lastGoal.text || lastGoal.type) + ' (' + lastGoal.type + ' ' + R(lastGoal.amount) + '): ' + (res.met ? 'met' : 'not met') + ', actual ' + R(res.value) + '.');
+    }
+    const tr4 = weekTrend(state, todayIso, 4);
+    if (tr4.weeks.some((w) => !w.quiet)) {
+      L.push('', 'LAST 4 WEEKS (Monday to Sunday, oldest first)');
+      tr4.weeks.forEach((w) => {
+        if (w.quiet) { L.push('Week of ' + D(w.from) + ': hardly anything recorded, so not a guide.'); return; }
+        L.push('Week of ' + D(w.from) + ': spent ' + R(w.spent) + '; ' + (w.won + w.over ? w.won + ' of ' + (w.won + w.over) + ' days within the limit' : 'daily limit not tracked') +
+          (w.over ? ', ' + w.over + ' over' : '') + '; saved ' + R(w.saved) + '; extra to loans ' + R(w.debtPaid) + '; borrowed ' + R(w.borrowed) +
+          (w.goal ? "; that week's goal: " + (w.goal.text || w.goal.type) + ' (' + (w.goal.met ? 'met' : 'not met') + ', actual ' + R(w.goal.value || 0) + ')' : '') + '.');
+      });
+      if (tr4.rising.length) L.push('Up three weeks in a row: ' + tr4.rising.map((x) => x.name + ' ' + x.values.map(R).join(' → ')).join('; ') + '.');
+      if (tr4.falling.length) L.push('Down three weeks in a row: ' + tr4.falling.map((x) => x.name + ' ' + x.values.map(R).join(' → ')).join('; ') + '.');
+      if (tr4.streak.count) L.push('Weekly goals: ' + tr4.streak.kind + ' ' + tr4.streak.count + ' week' + (tr4.streak.count > 1 ? 's' : '') + ' in a row.');
+      L.push("This week's goal should be " + {
+        easier: 'easier: the last goals were missed, so set it close to what they actually managed last week. A goal they reach beats a perfect one they don\'t.',
+        harder: 'a little harder (about 10% more) than last week\'s: the last goals were met.',
+        same: 'about as hard as last week\'s.',
+      }[tr4.difficulty]);
     }
     const debts = (state.debts || []).filter((d) => d.balance > 0);
     if (debts.length) {
@@ -3178,7 +3255,7 @@
       if (!t || !Number.isFinite(amount) || amount < 0 || amount > 1e10 || !okDate(t.date)) throw new Error('format');
       return Object.assign({}, t, { amount });
     });
-    ['fixed', 'debts', 'budgets', 'bills', 'sinking', 'goals', 'cards', 'wallets', 'iou', 'emergencies', 'accuracy', 'maybe'].forEach((k) => {
+    ['fixed', 'debts', 'budgets', 'bills', 'sinking', 'goals', 'cards', 'wallets', 'iou', 'emergencies', 'accuracy', 'maybe', 'goalHistory'].forEach((k) => {
       if (k in s && !Array.isArray(s[k])) delete s[k];
     });
     if (!s.savings || typeof s.savings !== 'object') delete s.savings;
@@ -3697,7 +3774,7 @@
     recordCardPayment, keptFor, ownPart, coverPurchase, refundToPurchase, undoRefund, earmarkedIn, cleanState, accuracyStats, reimbView, syncReimb, addClaim, recordPayout, claimSet, reimbForget, reimbAmount, addCardEmi, isPassedOn, passThroughPair, passOn, iouLeft, openIous, addIou, payIou, undoIouTx, iouSummary, iouEvents, cardEmiFromBooking, looksLikeCardBill, spendToCardPayment, convertCardBalance, answerCardDue, cardLateFee, cardRate, CARD_RATE, undoCardConvert, cardFreeDays, byCategory, DEFAULT_SPLIT,
     isLoanCredit, borrowedThisCycle, borrowCheck, rolloverOptions, setTranslator,
     maybeOpen, maybeHeld, maybeDue, maybeIfHappens, addMaybe, maybeHappened, maybeDidnt, maybeReopen, maybeForget, maybeCandidates, maybeStats,
-    payoffOrder, tickDebts, debtJourney, lenderTasks, lastBorrowed,
+    weekTrend, payoffOrder, tickDebts, debtJourney, lenderTasks, lastBorrowed,
     encryptBackup, openBackup, backupInfo, toB64, fromB64, isTransfer, walletBalances, goalStatus, goalsMonthly, budgetEnvelopes, netWorth, reportRange, budgetHistory, aiFacts, planFacts, fraudSignals, investReady, goalResult, weekStart,
     daySpent, daySpending, dayTally, roundSnapshot, roundResult, weekRecap,
     monthReport, LEAKS, leakNames, leakOf, leakSummary, leakSuggestions, spendWhere, spendWhen, spendTrend, BASICS,

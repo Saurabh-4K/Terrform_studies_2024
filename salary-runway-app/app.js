@@ -4496,7 +4496,27 @@
     return '<ol class="plan-steps">' + sec.steps.map((st) => '<li><b>' + esc(st.action) + '</b>' + (st.why ? '<span class="hint">' + esc(st.why) + '</span>' : '') + '</li>').join('') + '</ol>';
   }
 
+  // The last 4 weeks, week by week: worked out by the app, with or without the AI.
+  function weekTrendCard() {
+    const tw = Core.weekTrend(state, today(), 4);
+    if (!tw.weeks.some((w) => !w.quiet)) return '';
+    const goalCell = (w) => !w.goal || w.goal.met === null ? '–' : w.goal.met ? '✓' : '✗';
+    const vals = (x) => x.values.map(inr).join(' → ');
+    return '<section class="card"><div class="card-head"><h2>' + tr('Last 4 weeks') + '</h2></div>' +
+      '<div class="table-wrap"><table><thead><tr>' + [tr('Week of'), tr('Spent'), tr('Days within limit'), tr('Goal')].map((h) => '<th>' + h + '</th>').join('') + '</tr></thead><tbody>' +
+        tw.weeks.map((w) => '<tr>' + [fmtDate(w.from), w.quiet ? tr('Hardly recorded') : inr(w.spent), w.quiet || !(w.won + w.over) ? '–' : w.won + '/' + (w.won + w.over), goalCell(w)]
+          .map((c, i) => '<td' + (i ? ' class="amt"' : '') + '>' + c + '</td>').join('') + '</tr>').join('') + '</tbody></table></div>' +
+      tw.rising.map((x) => '<p class="warn">' + tr('{name} up three weeks in a row: {values}', { name: esc(label(x.name)), values: vals(x) }) + '</p>').join('') +
+      tw.falling.map((x) => '<p class="good">' + tr('{name} down three weeks in a row: {values}', { name: esc(label(x.name)), values: vals(x) }) + '</p>').join('') +
+      (tw.streak.count >= 2 ? '<p class="hint">' + tr(tw.streak.kind === 'met' ? 'Weekly goals met {n} weeks in a row: this week’s is a little harder.' : 'Weekly goals missed {n} weeks in a row: this week’s is easier, so you can win it.', { n: tw.streak.count }) + '</p>' : '') +
+      '</section>';
+  }
+
   function planCard() {
+    return planCardInner() + weekTrendCard();
+  }
+
+  function planCardInner() {
     const cfg = aiCfg();
     const t = today();
     const wp = state.weeklyPlan;
@@ -4604,6 +4624,8 @@
       clearTimeout(timer);
       ui.planBusy = false;
       if (plan) {
+        // A finished week's goal is kept (8 weeks), so the trend can say how goals went.
+        if (prev && prev.goal && prev.week < week) state.goalHistory = (state.goalHistory || []).filter((g) => g.week !== prev.goal.week).concat(prev.goal).slice(-8);
         state.weeklyPlan = { week, made: t, plan, goal: Object.assign({}, plan.week_goal, { week }), lastGoal: lastGoal || null,
           lastResult: lastGoal ? Core.goalResult(state, lastGoal) : null, seen: false };
         save(true);

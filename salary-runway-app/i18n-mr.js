@@ -2069,4 +2069,13 @@
   "removed": "काढलेले",
   "Remove this payment": "हे पेमेंट काढा",
   "Not a fixed payment": "ठरलेले पेमेंट नाही",
+  "Days within limit": "मर्यादेत राहिलेले दिवस",
+  "Goal": "ध्येय",
+  "Hardly recorded": "जवळजवळ नोंद नाही",
+  "Last 4 weeks": "मागचे 4 आठवडे",
+  "Week of": "आठवडा",
+  "{name} down three weeks in a row: {values}": "{name} सलग तीन आठवडे कमी: {values}",
+  "{name} up three weeks in a row: {values}": "{name} सलग तीन आठवडे जास्त: {values}",
+  "Weekly goals met {n} weeks in a row: this week’s is a little harder.": "आठवड्याची ध्येये सलग {n} आठवडे पूर्ण: या आठवड्याचे थोडे कठीण.",
+  "Weekly goals missed {n} weeks in a row: this week’s is easier, so you can win it.": "आठवड्याची ध्येये सलग {n} आठवडे हुकली: या आठवड्याचे सोपे, म्हणजे तुम्ही जिंकू शकता.",
 };
