@@ -666,7 +666,7 @@ Small habits that quietly cost a lot: cigarettes, liquor, tea and snacks, food d
 ## 17. Current limits
 
 - Loan balances don't go down automatically; update them from each statement. Card bills are tracked automatically.
-- Fixed payments are assumed to be paid on their due date.
+- A fixed payment or EMI with nothing recorded stays *still to pay* after its due date until you say it's paid (or a bank SMS matches it).
 - Data lives on one phone or in one browser; use backup and restore to move it.
 - Card SMS detection is built from common bank formats; new formats need real samples.
 - Reminders for due dates show inside the app, not yet as phone notifications.
