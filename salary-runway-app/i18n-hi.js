@@ -2194,4 +2194,5 @@
   "Senior Citizens’ Savings Scheme": "वरिष्ठ नागरिक बचत योजना",
   "NSC": "NSC",
   "Post office savings account": "डाकघर बचत खाता",
+  "{amount} came from {from} on {date1}, and {paid} went to {to} in {n} payments. If you passed it on, it’s neither your income nor your spending.": "{date1} को {from} से {amount} आए, और {n} भुगतानों में {paid} {to} को गए. अगर आपने इसे आगे दिया, तो यह न आपकी आय है न खर्च.",
 };

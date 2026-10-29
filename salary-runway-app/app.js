@@ -2176,9 +2176,11 @@
     const f = ui.passForm;
     const pair = f ? { in: state.transactions.find((x) => x.id === f.inId), out: state.transactions.find((x) => x.id === f.outId) } : Core.passThroughPair(state, t);
     if (!pair || !pair.in || !pair.out) return '';
+    const outs = pair.outs || [pair.out];
     const from = pair.in.note || tr('someone');
     const to = pair.out.note || tr('someone');
-    const ids = ' data-in="' + esc(pair.in.id) + '" data-out="' + esc(pair.out.id) + '"';
+    const outTotal = outs.reduce((a, x) => a + x.amount, 0);
+    const ids = ' data-in="' + esc(pair.in.id) + '" data-out="' + esc(outs.map((x) => x.id).join(',')) + '"';
     if (f) {
       const date = (id, label) => '<label class="field" for="' + id + '"><span>' + label + '</span><input id="' + id + '" type="date" min="' + t + '"></label>';
       return '<section class="card income-card pass-card"><div class="card-head"><h2>' + tr('Borrowed from {from}, lent to {to}', { from: esc(from), to: esc(to) }) + '</h2></div>' +
@@ -2187,11 +2189,14 @@
         '<div class="row"><button class="primary" data-action="pass-iou"' + ids + '>' + tr('Save') + '</button><button class="ghost" data-action="pass-form-cancel">' + tr('Cancel') + '</button></div></section>';
     }
     return '<section class="card income-card pass-card"><div class="card-head"><h2>' + tr('Money passing through?') + '</h2></div>' +
-      '<p class="hint">' + tr('{amount} came from {from} on {date1}, and {amount} went to {to} on {date2}. If you passed it on, it’s neither your income nor your spending.',
-        { amount: inr(pair.in.amount), from: esc(from), to: esc(to), date1: fmtDate(pair.in.date), date2: fmtDate(pair.out.date) }) + '</p>' +
+      '<p class="hint">' + (outs.length > 1
+        ? tr('{amount} came from {from} on {date1}, and {paid} went to {to} in {n} payments. If you passed it on, it’s neither your income nor your spending.',
+          { amount: inr(pair.in.amount), from: esc(from), paid: inr(outTotal), to: esc(to), n: outs.length, date1: fmtDate(pair.in.date) })
+        : tr('{amount} came from {from} on {date1}, and {amount} went to {to} on {date2}. If you passed it on, it’s neither your income nor your spending.',
+          { amount: inr(pair.in.amount), from: esc(from), to: esc(to), date1: fmtDate(pair.in.date), date2: fmtDate(pair.out.date) })) + '</p>' +
       '<div class="choices">' +
-      '<button class="choice suggested" data-action="pass-borrow"' + ids + '><span class="choice-title">' + tr('Borrowed from {from}, lent to {to}', { from: esc(from), to: esc(to) }) + '</span>' +
-        '<span class="choice-detail">' + tr('You owe {from}, {to} owes you. Kept in People, with any promised dates.', { from: esc(from), to: esc(to) }) + '</span></button>' +
+      (outs.length > 1 ? '' : '<button class="choice suggested" data-action="pass-borrow"' + ids + '><span class="choice-title">' + tr('Borrowed from {from}, lent to {to}', { from: esc(from), to: esc(to) }) + '</span>' +
+        '<span class="choice-detail">' + tr('You owe {from}, {to} owes you. Kept in People, with any promised dates.', { from: esc(from), to: esc(to) }) + '</span></button>') +
       '<button class="choice" data-action="pass-yes"' + ids + '><span class="choice-title">' + tr('Just passed it on') + '</span>' +
         '<span class="choice-detail">' + tr('Nobody owes anybody: you only delivered it.') + '</span></button></div>' +
       '<div class="row"><button data-action="pass-no"' + ids + '>' + tr('No, they’re separate') + '</button></div></section>';
@@ -3012,6 +3017,7 @@
     if (tx.claimId || tx.payoutId) Core.reimbForget(state, tx);
     Core.maybeForget(state, tx);
     Core.unlinkRefund(state, tx); Core.forgetRefunds(state, tx);
+    Core.unpassOn(state, tx);
     if (tx.smsKey) state.smsIgnored = (state.smsIgnored || []).concat(tx.smsKey).slice(-500);
     const shop = skipKey(tx.note);
     if (skipShop && shop && (state.smsSkip || []).indexOf(shop) === -1) {
@@ -6301,13 +6307,12 @@
         return;
       }
       case 'pass-no':
-        state.passNo = (state.passNo || []).concat(btn.dataset.in, btn.dataset.out).slice(-200);
+        state.passNo = (state.passNo || []).concat(btn.dataset.in, String(btn.dataset.out || '').split(',')).slice(-200);
         save(); toast(tr('Kept as they are')); break;
       case 'pass-undo': {
         const x = state.transactions.find((y) => y.id === ui.editTx);
         if (!x) return;
-        const other = state.transactions.find((y) => y.id === x.passedOn);
-        [x, other].forEach((y) => { if (y) { delete y.passedOn; state.passNo = (state.passNo || []).concat(y.id).slice(-200); } });
+        Core.unpassOn(state, x).forEach((y) => { state.passNo = (state.passNo || []).concat(y.id).slice(-200); });
         save(); toast(tr('Counted again as income and spending')); break;
       }
       case 'refund-undo': {
@@ -6713,7 +6718,7 @@
         if (tx && tx.kind === 'cardconvert') Core.undoCardConvert(state, tx);
         if (tx && (tx.iouId || tx.iouPay)) Core.undoIouTx(state, tx);
         if (tx && (tx.claimId || tx.payoutId)) Core.reimbForget(state, tx);
-        if (tx) { Core.maybeForget(state, tx); Core.unlinkRefund(state, tx); Core.forgetRefunds(state, tx); }
+        if (tx) { Core.maybeForget(state, tx); Core.unlinkRefund(state, tx); Core.forgetRefunds(state, tx); Core.unpassOn(state, tx); }
         // A purchase paid from kept money: that money is kept again.
         if (tx && tx.coveredFrom) {
           const k = state.transactions.find((y) => y.id === tx.coveredFrom);

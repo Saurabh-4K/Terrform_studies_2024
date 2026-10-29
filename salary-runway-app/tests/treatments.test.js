@@ -117,3 +117,32 @@ test('a loan EMI paid by SMS: counted once; interest and principal by the bank\'
   Core.unpayFixed(s, tx);
   assert.equal(bal(s), bal(plain) - 15000);
 });
+
+test('money passed on in parts: ₹5,000 received, ₹3,325 + ₹1,674 paid on; neither income nor spending', () => {
+  const s = base();
+  const before = measure(s);
+  X(s, { id: 't1', amount: 3325, category: 'Family', note: 'Irctc Ticketing' });
+  X(s, { id: 't2', amount: 1674, category: 'Family', note: 'Irctc Ticketing' });
+  X(s, { id: 'f', kind: 'in', amount: 5000, category: 'Money received', note: 'UPI *Anav', useFor: 'spend' });
+  const p = Core.passThroughPair(s, T);
+  assert.deepEqual([p.in.id, p.outs.map((o) => o.id)], ['f', ['t1', 't2']]);
+  assert.equal(Core.passOn(s, 'f', 't1,t2'), true);
+  const after = measure(s);
+  // ₹1 more in the bank (₹5,000 in, ₹4,999 out), nothing else
+  const diff = {};
+  ['bank', 'spentCycle', 'reports', 'income', 'worth'].forEach((k) => { if (after[k] !== before[k]) diff[k] = after[k] - before[k]; });
+  assert.deepEqual(diff, { bank: 1, worth: 1 });
+  // Undo from any part frees all three; deleting one part frees the rest
+  assert.equal(Core.unpassOn(s, s.transactions.find((t) => t.id === 't2')).length, 3);
+  assert.ok(s.transactions.every((t) => !t.passedOn));
+  Core.passOn(s, 'f', 't1,t2');
+  const t1 = s.transactions.find((t) => t.id === 't1');
+  Core.unpassOn(s, t1);
+  s.transactions = s.transactions.filter((t) => t !== t1);
+  assert.ok(s.transactions.every((t) => !t.passedOn));
+  // Parts that don't add up aren't offered
+  const s2 = base();
+  X(s2, { amount: 3000, category: 'Family', note: 'A' }); X(s2, { amount: 1000, category: 'Family', note: 'B' });
+  X(s2, { kind: 'in', amount: 5000, category: 'Money received', note: 'C', useFor: 'spend' });
+  assert.equal(Core.passThroughPair(s2, T), null);
+});

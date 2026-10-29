@@ -496,24 +496,45 @@
     const ins = state.transactions.filter((t) => isIncome(t) && !isPassedOn(t) && t.date >= from && t.date <= todayIso &&
       t.amount >= 1000 && !t.salary && t.category !== 'Salary' && no.indexOf(t.id) === -1)
       .sort((a, b) => (a.date < b.date ? 1 : -1));
+    const near = (i, x) => Math.abs(x - i.amount) <= Math.max(1, i.amount * 0.01);
     for (const i of ins) {
-      const outs = state.transactions.filter((t) => isFlexible(t) && !t.splitOf && no.indexOf(t.id) === -1 &&
-        Math.abs(t.amount - i.amount) <= Math.max(1, i.amount * 0.01) && Math.abs(daysBetween(i.date, t.date)) <= 3)
+      const close = state.transactions.filter((t) => isFlexible(t) && !t.splitOf && no.indexOf(t.id) === -1 && Math.abs(daysBetween(i.date, t.date)) <= 3)
         .sort((a, b) => Math.abs(daysBetween(i.date, a.date)) - Math.abs(daysBetween(i.date, b.date)));
-      if (outs.length) return { in: i, out: outs[0] };
+      const one = close.find((t) => near(i, t.amount));
+      if (one) return { in: i, out: one, outs: [one] };
+      // Paid on in parts (two train tickets for ₹5,000 received): 2 or 3 payments adding up to it.
+      const parts = close.filter((t) => t.amount < i.amount).slice(0, 12);
+      for (let a = 0; a < parts.length; a++) {
+        for (let b = a + 1; b < parts.length; b++) {
+          if (near(i, parts[a].amount + parts[b].amount)) return { in: i, out: parts[a], outs: [parts[a], parts[b]] };
+          for (let c = b + 1; c < parts.length; c++) {
+            if (near(i, parts[a].amount + parts[b].amount + parts[c].amount)) return { in: i, out: parts[a], outs: [parts[a], parts[b], parts[c]] };
+          }
+        }
+      }
     }
     return null;
   }
 
   // Marks the pair as passed on; undone by clearing passedOn on both.
-  function passOn(state, inId, outId) {
+  // outIds: one id, or several ("a,b") when it was paid on in parts. Each part points at the money in.
+  function passOn(state, inId, outIds) {
     const i = state.transactions.find((t) => t.id === inId);
-    const o = state.transactions.find((t) => t.id === outId);
-    if (!i || !o) return false;
-    i.passedOn = o.id; o.passedOn = i.id;
+    const outs = String(outIds || '').split(',').map((id) => state.transactions.find((t) => t.id === id)).filter(Boolean);
+    if (!i || !outs.length) return false;
+    i.passedOn = outs[0].id;
+    outs.forEach((o) => { o.passedOn = i.id; o.needsReview = false; });
     i.useFor = i.useFor || 'spend';
-    i.needsReview = false; o.needsReview = false;
+    i.needsReview = false;
     return true;
+  }
+  // Undoes a pass-through from any of its entries; returns the entries it freed.
+  function unpassOn(state, x) {
+    if (!x || !x.passedOn) return [];
+    const i = isIncome(x) ? x : state.transactions.find((t) => t.id === x.passedOn);
+    const all = state.transactions.filter((t) => t === i || (i && t.passedOn === i.id) || t === x);
+    all.forEach((t) => { delete t.passedOn; });
+    return all;
   }
 
   // ---------- money between you and people you know ----------
@@ -4147,7 +4168,7 @@
     billShare, billPot, billsMonthly, billPaidIn, billDue, billEnded, fixedEnded, loanEnd, billsFor, fixedFor, fixedTotal, paymentsLeft, lastDueFrom, nextFixedDue, payBill, undoBillPayment, zoneStatus, ESSENTIAL_CATEGORIES,
     isCardTransfer, statementOn, dueAfter, cardOwedAt, cardReserve, cardStatus, emiQuote, revolveQuote, cardBillPlan,
     recordCardPayment, keptFor, ownPart, coverPurchase, refundToPurchase, undoRefund, earmarkedIn, cleanState, accuracyStats, reimbView, syncReimb, addClaim, recordPayout, claimSet, reimbForget, reimbAmount, addCardEmi, isPassedOn, passThroughPair, passOn, iouLeft, openIous, addIou, payIou, undoIouTx, iouSummary, iouEvents, cardEmiFromBooking, looksLikeCardBill, spendToCardPayment, convertCardBalance, answerCardDue, cardLateFee, cardRate, CARD_RATE, undoCardConvert, cardFreeDays, byCategory, DEFAULT_SPLIT,
-    isLoanCredit, borrowedThisCycle, borrowCheck, rolloverOptions, setTranslator,
+    unpassOn, isLoanCredit, borrowedThisCycle, borrowCheck, rolloverOptions, setTranslator,
     maybeOpen, maybeHeld, maybeDue, maybeIfHappens, addMaybe, maybeHappened, maybeDidnt, maybeReopen, maybeForget, maybeCandidates, maybeStats,
     weekTrend, priorityLadder, monthlyReview, healthCheck, whatIf, namesBrand, cleanAdvice, payoffOrder, tickDebts, debtJourney, lenderTasks, lastBorrowed,
     encryptBackup, openBackup, backupInfo, toB64, fromB64, isTransfer, walletBalances, goalStatus, goalsMonthly, budgetEnvelopes, netWorth, reportRange, budgetHistory, aiFacts, planFacts, fraudSignals, investReady, goalResult, weekStart,
