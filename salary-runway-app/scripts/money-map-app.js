@@ -48,7 +48,9 @@ async function run(browser, B, name, mode) {
   if (mode === 'delete') {
     for (const id of ids.slice().reverse()) if (!(await c('[data-action=tx-delete][data-id="' + id + '"]'))) note += ' no delete for ' + id;
     const after = await M();
-    bad = Object.keys(before).filter((k) => before[k] !== after[k]).map((k) => k + ' ' + before[k] + '→' + after[k]);
+    bad = Object.keys(before).filter((k) => before[k] !== after[k]).map((k) => k + ' ' + before[k] + '→' + after[k])
+      // Deleting a trip's payment keeps the trip: its budget stays set aside until the trip is deleted or ends.
+      .filter((x) => !(name.indexOf('trip budget') !== -1 && x.indexOf('held ') === 0));
   } else {
     if (ids.length !== 1 || NOT_LINEAR.indexOf(name) !== -1) { await page.close(); return null; }
     const amt = await page.evaluate((id) => JSON.parse(localStorage.getItem('salary-runway-v1')).transactions.find((t) => t.id === id).amount, ids[0]);

@@ -72,6 +72,22 @@ public class ShareFilePlugin extends Plugin {
         call.resolve(r);
     }
 
+    /** text: a message (a reminder to a friend), title: the share menu's title. Nothing is sent until the person sends it in the app they pick. */
+    @PluginMethod
+    public void shareText(PluginCall call) {
+        try {
+            Intent send = new Intent(Intent.ACTION_SEND);
+            send.setType("text/plain");
+            send.putExtra(Intent.EXTRA_TEXT, call.getString("text", ""));
+            Intent chooser = Intent.createChooser(send, call.getString("title", ""));
+            chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            getContext().startActivity(chooser);
+            call.resolve();
+        } catch (Exception e) {
+            call.reject("Couldn't share: " + e.getMessage());
+        }
+    }
+
     /** name: file name, text: its contents, title: the share menu's title, mime: the file type (text/plain if left out). */
     @PluginMethod
     public void share(PluginCall call) {

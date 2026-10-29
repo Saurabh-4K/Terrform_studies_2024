@@ -60,6 +60,27 @@ Everything the app can do today, screen by screen, with the rules it follows. Fo
 - **Paid from / Into:** the add form and the edit sheet offer each wallet as well as credit cards. Rows show the wallet, and moves show *Main bank account → Cash*.
 - **Split a payment:** in the edit sheet, *Split this payment into categories*. For example, ₹530 at Blinkit becomes ₹380 groceries and ₹150 household. It saves only when the parts add up. Each part becomes its own payment, marked *Split*, so budgets, charts and leaks count each part in its own category. Undo puts it back as one payment.
 
+## Trips and events (Spend → Trips & events)
+
+A trip, a wedding, a flat's bills: the people once, then each payment with who paid and each share. Only **you and each person** are tracked: what you owe them and what they owe you. What Amit owes Rahul is theirs to sort out.
+
+- **New trip or event:** name, dates, the people apart from you, and optionally **your budget** for it.
+- **Add a payment:** amount, date, **place** (where it was paid, for when there's a debate later), category, **who paid** (you or anyone in it), and the split:
+  - **Equally**, between those ticked; **by amounts** (₹ each); or **by shares** (2 : 1 : 1).
+  - Shares always add up to the payment **to the rupee**: ₹1,000 three ways is ₹334 + ₹333 + ₹333, the extra rupee to the payer. While typing, the form shows each share and *Adds up ✓*, or *₹200 still to share out*.
+- **From a bank SMS:** a payment's edit view asks *Shared with friends or family?* Pick the trip (or make one): the amount and date are fixed by the SMS, and the place comes from the SMS shop name.
+- **How it's counted (bank rules):**
+  - **You paid:** the whole payment left the account (or the card owes all of it), but only **your share** is your spending, in budgets, today's limit and reports. The rest is owed to you.
+  - **Someone else paid:** your share is your spending now and you owe them; the account doesn't move until you pay them back.
+  - Net worth falls only by your share. Paying back, either way, is money passed on: never income, never spending.
+  - A work claim on a shared payment is limited to your share; a refund can't take a purchase below the others' part.
+- **Settle up:** one line per person, after what you owe each other cancels out (*You owe ₹2,167 · ₹833 and ₹3,000 cancel out*). **Got it** / **I paid** records it: the app offers a matching UPI entry already there (same amount, since the trip began) or adds one. **Mark even** when the two cancel exactly.
+- **Remind:** a message you send yourself (WhatsApp, SMS, anything), never sent by the app: *Hi Rahul, for Goa trip (5 Nov – 8 Nov): • 5 Nov, Fishermans Wharf: your share ₹500 of ₹2,000 • 7 Nov, Airport cab: your share ₹333 of ₹1,000. So it comes to ₹833.*
+- **Trip budget:** set aside from today's limit from now until the trip ends (when it starts before payday), like a likely cost. Your shares are paid from it, oldest first, so they don't eat the daily limit or the budgets; anything over it counts as usual; what's unused goes back after the trip. The event shows *From your trip budget (₹5,000): ₹3,834*.
+- **Taking a payment out** (✕) puts a bank payment back to being yours alone; a payment added in the event, or a share someone else paid, goes. It's refused once that person has been paid back for it (*Already settled with Sneha for this. Undo that first.*). Deleting a trip's payment from the Payments list does the same.
+- **Delete event:** the payments stay as they are (the money really moved); anything still owed either way stays under **People**, with the event's name. It warns first, listing who still owes what. Undo works as everywhere.
+- Not tracked on purpose: what others owe each other, paise (whole rupees, as everywhere in the app), other currencies.
+
 ## Cover, keep, goals and net worth
 - **Cover an overspend (Runway → Budgets):** a budget that's over shows *Cover it from another budget*. Pick a budget with money left and the amount (filled in with what's needed). The month's total stays the same, so today's limit doesn't change; rows show *₹700 covered in* and *given to cover others*. Undo works, and moves belong to their own month.
 - **Keep what's left for next month (Plan → Flexible budgets):** a tick per budget, for costs that come and go (clothes, gifts). What it doesn't use this month is added to it next month (*₹800 kept from last month*). Only a leftover carries; an overspend already came out of the money.

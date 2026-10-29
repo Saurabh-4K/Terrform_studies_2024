@@ -55,7 +55,7 @@ function check(s, day, where) {
   const rep = Core.spendWhere(s, day, 'cycle').categories.reduce((a, c) => a + c.spent, 0);
   // Reports show where money went, including purchases paid from money kept for them; spending leaves those out
   const covered = Core.spendInRange(s.transactions, r.cycle).filter((t) => t.date <= day)
-    .reduce((a, t) => a + (t.maybeId ? t.amount - (Number(t.reimbExcluded) || 0) : Math.min(Number(t.covered) || 0, Math.max(0, t.amount - (Number(t.reimbExcluded) || 0)))), 0);
+    .reduce((a, t) => a + (t.maybeId ? t.amount - (Number(t.reimbExcluded) || 0) : Math.min(Number(t.covered) || 0, Math.max(0, t.amount - (Number(t.reimbExcluded) || 0)))) + (Number(t.tripCovered) || 0), 0);
   assert.equal(Math.round(rep), Math.round(r.spentToDate + covered), where + ' reports ≠ spent + covered');
   const v = Core.reimbView(s);
   assert.ok(v.pendingFloat >= 0 && v.vault >= 0, where + ' claims below zero');

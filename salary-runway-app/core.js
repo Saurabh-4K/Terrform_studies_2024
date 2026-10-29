@@ -207,7 +207,7 @@
     if (!f) return null;
     const o = opts || {};
     let tx = o.txId ? state.transactions.find((x) => x.id === o.txId) : null;
-    if (o.txId && (!tx || !isFlexible(tx) || (tx.paidFrom && tx.paidFrom !== 'account') || tx.claimId || tx.maybeId || tx.covered || tx.iouId)) return null;
+    if (o.txId && (!tx || !isFlexible(tx) || (tx.paidFrom && tx.paidFrom !== 'account') || tx.claimId || tx.maybeId || tx.covered || tx.iouId || tx.eventId)) return null;
     const due = fixedDueFor(state, f, tx ? tx.date : o.date);
     if (!due) return null;
     if (!tx) {
@@ -239,7 +239,7 @@
   function fixedMatches(state, todayIso) {
     const out = [];
     state.transactions.forEach((t) => {
-      if (!isFlexible(t) || t.notFixed || (t.paidFrom && t.paidFrom !== 'account') || t.claimId || t.maybeId || t.covered || t.iouId) return;
+      if (!isFlexible(t) || t.notFixed || (t.paidFrom && t.paidFrom !== 'account') || t.claimId || t.maybeId || t.covered || t.iouId || t.eventId) return;
       if (t.date > todayIso || t.date < addDays(todayIso, -20)) return;
       (state.fixed || []).concat(emiLoans(state)).forEach((f) => {
         const amt = Number(f.minPayment != null ? f.minPayment : f.amount) || 0;
@@ -498,7 +498,7 @@
       .sort((a, b) => (a.date < b.date ? 1 : -1));
     const near = (i, x) => Math.abs(x - i.amount) <= Math.max(1, i.amount * 0.01);
     for (const i of ins) {
-      const close = state.transactions.filter((t) => isFlexible(t) && !t.splitOf && no.indexOf(t.id) === -1 && Math.abs(daysBetween(i.date, t.date)) <= 3)
+      const close = state.transactions.filter((t) => isFlexible(t) && !t.splitOf && !t.eventId && no.indexOf(t.id) === -1 && Math.abs(daysBetween(i.date, t.date)) <= 3)
         .sort((a, b) => Math.abs(daysBetween(i.date, a.date)) - Math.abs(daysBetween(i.date, b.date)));
       const one = close.find((t) => near(i, t.amount));
       if (one) return { in: i, out: one, outs: [one] };
@@ -582,6 +582,8 @@
 
   // Undoes what a deleted entry did to an IOU: a repayment comes off; the entry that started one ends it.
   function undoIouTx(state, tx) {
+    // An event's own entries are undone with the event's payment (eventForgetTx), never one by one.
+    if (tx.eventId && tx.iouId) return;
     if (tx.iouPay) {
       const i = (state.iou || []).find((x) => x.id === tx.iouPay);
       if (i) {
@@ -622,6 +624,315 @@
         return { date, name: i.name, amount: iouLeft(i) - cover, kind: 'iou', iouId: i.id };
       })
       .filter((e) => e.amount > 0);
+  }
+
+  // ---------- trips and events: shared payments with friends and family ----------
+
+  /*
+   * An event (a Goa trip, a wedding, a flat's bills) keeps the people once,
+   * and each payment's split. Only you and each person are tracked: what
+   * Amit owes Rahul is theirs to sort out.
+   * - You paid: the payment stays whole (the bank or card took all of it);
+   *   the others' part (lentShare) isn't your spending, and each person owes
+   *   you their share.
+   * - Someone else paid: your share is your spending now, and you owe them.
+   *   It's recorded as that person lending you the money and you spending
+   *   it, so the account balance doesn't move until you pay them back.
+   * Per person, what they owe you and what you owe them is one IOU each way
+   * for the event; settling nets the two first. Paying back either way is
+   * money passed on, never income or spending.
+   */
+  function findEvent(state, evId) { return (state.events || []).find((e) => e.id === evId) || null; }
+  const sameName = (a, b) => String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase();
+  function cleanPeople(list) {
+    const out = [];
+    (list || []).forEach((n) => {
+      const name = String(n || '').trim().slice(0, 40);
+      if (name && !sameName(name, 'me') && !out.some((x) => sameName(x, name))) out.push(name);
+    });
+    return out;
+  }
+  function addEvent(state, o, todayIso) {
+    const name = String(o.name || '').trim().slice(0, 60);
+    const people = cleanPeople(o.people);
+    if (!name || !people.length) return null;
+    const from = o.from || todayIso;
+    const to = o.to && o.to >= from ? o.to : from;
+    const ev = { id: newId('ev'), name, from, to, people, budget: Math.max(0, Math.round(Number(o.budget) || 0)), created: todayIso, items: [] };
+    state.events = (state.events || []).concat(ev);
+    return ev;
+  }
+  // Name, dates, budget, and people added (someone with a share can't be taken out).
+  function editEvent(state, evId, o) {
+    const ev = findEvent(state, evId);
+    if (!ev) return false;
+    const people = o.people ? cleanPeople(o.people) : ev.people;
+    const used = new Set();
+    ev.items.forEach((it) => { Object.keys(it.shares).forEach((n) => { if (n !== 'me' && it.shares[n] > 0) used.add(n.toLowerCase()); }); if (it.paidBy !== 'me') used.add(it.paidBy.toLowerCase()); });
+    if ([...used].some((n) => !people.some((p) => p.toLowerCase() === n)) || !people.length) return false;
+    if (o.name != null && String(o.name).trim()) ev.name = String(o.name).trim().slice(0, 60);
+    if (o.from) ev.from = o.from;
+    if (o.to) ev.to = o.to < ev.from ? ev.from : o.to;
+    if (o.budget != null) ev.budget = Math.max(0, Math.round(Number(o.budget) || 0));
+    ev.people = people;
+    tripCover(state, ev);
+    return true;
+  }
+
+  /*
+   * Splitting a total so the shares add up to it exactly, to the rupee:
+   * equal, by amounts (must add up), or by shares (2 : 1 : 1). Rupees left
+   * over go to the largest fractions; on a tie, to the payer first, then in
+   * order (₹1,000 three ways: ₹334 for the payer, ₹333, ₹333).
+   */
+  function splitShares(total, names, mode, values, payer) {
+    total = Math.round(Number(total) || 0);
+    if (!(total > 0) || !(names || []).length) return null;
+    const v = values || {};
+    if (mode === 'amounts') {
+      const out = {};
+      names.forEach((n) => { out[n] = Math.round(Number(v[n]) || 0); });
+      if (names.some((n) => out[n] < 0) || sum(names, (n) => out[n]) !== total) return null;
+      return out;
+    }
+    const w = names.map((n) => (mode === 'shares' ? Math.max(0, Number(v[n]) || 0) : 1));
+    const W = sum(w, (x) => x);
+    if (!(W > 0)) return null;
+    const raw = w.map((x) => (total * x) / W);
+    const base = raw.map((x) => Math.floor(x + 1e-9));
+    let rem = total - sum(base, (x) => x);
+    const order = names.map((n, i) => i).sort((a, b) => (raw[b] - base[b]) - (raw[a] - base[a]) || (names[b] === payer) - (names[a] === payer) || a - b);
+    for (const i of order) { if (rem <= 0) break; if (w[i] > 0) { base[i] += 1; rem -= 1; } }
+    const out = {};
+    names.forEach((n, i) => { out[n] = base[i]; });
+    return out;
+  }
+
+  // The event's IOU with a person, one each way (made when first needed).
+  function eventIou(state, ev, name, dir, make) {
+    let i = (state.iou || []).find((x) => x.eventId === ev.id && x.dir === dir && sameName(x.name, name));
+    if (!i && make) {
+      i = { id: newId('iou'), name, dir, amount: 0, paid: 0, promised: null, created: ev.created, payments: [], eventId: ev.id, note: ev.name };
+      state.iou = (state.iou || []).concat(i);
+    }
+    return i || null;
+  }
+  function personIn(ev, name) { return ev.people.find((p) => sameName(p, name)) || null; }
+
+  /*
+   * A payment in the event. o: { date, total, paidBy: 'me' or a person,
+   * shares: { me, Amit, … } adding up to total, place, note, category,
+   * txId (a payment already recorded, from SMS) }. Returns the item, or null.
+   */
+  function addEventExpense(state, evId, o) {
+    const ev = findEvent(state, evId);
+    if (!ev || !o || !o.date) return null;
+    const total = Math.round(Number(o.total) || 0);
+    const payer = o.paidBy === 'me' ? 'me' : personIn(ev, o.paidBy);
+    if (!(total > 0) || total > 1e9 || !payer) return null;
+    const shares = {};
+    for (const k of Object.keys(o.shares || {})) {
+      const a = Math.round(Number(o.shares[k]) || 0);
+      if (a < 0) return null;
+      if (!a) continue;
+      const who = k === 'me' ? 'me' : personIn(ev, k);
+      if (!who) return null;
+      shares[who] = (shares[who] || 0) + a;
+    }
+    if (sum(Object.keys(shares), (k) => shares[k]) !== total) return null;
+    const mine = shares.me || 0;
+    const category = String(o.category || 'Travel');
+    const place = String(o.place || '').trim().slice(0, 60);
+    const note = String(o.note || '').trim().slice(0, 80);
+    const item = { id: newId('ei'), date: o.date, total, paidBy: payer, shares, place, note, category, txIds: [] };
+    if (payer === 'me') {
+      let tx = o.txId ? state.transactions.find((t) => t.id === o.txId) : null;
+      if (o.txId && (!tx || !isFlexible(tx) || tx.amount !== total || tx.eventId || tx.iouId || tx.splitOf || tx.maybeId || tx.claimId || tx.covered || tx.refunded)) return null;
+      if (!tx) {
+        tx = { id: newId('t'), date: o.date, amount: total, category, note: place || note || ev.name, source: 'manual', eventNew: true };
+        if (o.wallet) tx.wallet = o.wallet;
+        state.transactions.push(tx);
+      }
+      tx.category = category;
+      tx.eventId = ev.id; tx.eventItem = item.id;
+      if (total - mine > 0) tx.lentShare = total - mine; else delete tx.lentShare;
+      if (mine > 0) tx.eventShare = true;
+      tx.needsReview = false;
+      item.txIds = [tx.id];
+      item.date = tx.date;
+      Object.keys(shares).filter((k) => k !== 'me').forEach((k) => { eventIou(state, ev, k, 'lent', true).amount += shares[k]; });
+    } else if (mine > 0) {
+      // They lent you your share and you spent it: the balance stays; you owe them.
+      const i = eventIou(state, ev, payer, 'owe', true);
+      i.amount += mine;
+      const lend = { id: newId('t'), kind: 'in', date: o.date, amount: mine, category: 'Money received', note: payer, source: 'event', eventId: ev.id, eventItem: item.id, iouId: i.id };
+      const spend = { id: newId('t'), date: o.date, amount: mine, category, note: place || note || ev.name, source: 'event', eventId: ev.id, eventItem: item.id, eventShare: true, paidBy: payer };
+      state.transactions.push(lend, spend);
+      item.txIds = [lend.id, spend.id];
+    }
+    ev.items.push(item);
+    tripCover(state, ev);
+    return item;
+  }
+
+  /*
+   * Taking a payment out of the event: the bank payment goes back to being
+   * yours alone (one added here is removed); a share someone else paid goes.
+   * Refused when a person has already been paid back more than they'd then
+   * be owed: returns { ok: false, name }.
+   */
+  function removeEventExpense(state, evId, itemId) {
+    const ev = findEvent(state, evId);
+    const item = ev && ev.items.find((x) => x.id === itemId);
+    if (!item) return { ok: false };
+    const changes = [];
+    if (item.paidBy === 'me') Object.keys(item.shares).filter((k) => k !== 'me').forEach((k) => changes.push({ i: eventIou(state, ev, k, 'lent'), less: item.shares[k] }));
+    else if (item.shares.me) changes.push({ i: eventIou(state, ev, item.paidBy, 'owe'), less: item.shares.me });
+    const stuck = changes.find((c) => c.i && c.i.amount - c.less < (Number(c.i.paid) || 0));
+    if (stuck) return { ok: false, name: stuck.i.name };
+    changes.forEach((c) => {
+      if (!c.i) return;
+      c.i.amount -= c.less;
+      if (c.i.amount <= 0 && !(Number(c.i.paid) > 0)) state.iou = state.iou.filter((x) => x !== c.i);
+    });
+    const ids = new Set(item.txIds);
+    const gone = new Set();
+    state.transactions.forEach((t) => {
+      if (!ids.has(t.id)) return;
+      if (t.eventNew || t.source === 'event') { gone.add(t.id); return; }
+      delete t.eventId; delete t.eventItem; delete t.lentShare; delete t.eventShare; delete t.tripCovered;
+    });
+    state.transactions = state.transactions.filter((t) => !gone.has(t.id));
+    ev.items = ev.items.filter((x) => x !== item);
+    tripCover(state, ev);
+    return { ok: true };
+  }
+  // A payment deleted from the list: its event item goes with it, if it can.
+  function eventForgetTx(state, tx) {
+    if (!tx || !tx.eventId) return { ok: true };
+    return removeEventExpense(state, tx.eventId, tx.eventItem);
+  }
+
+  /*
+   * Deleting the event: the payments stay as they are (the money really
+   * moved), and anything still owed either way stays under People, with
+   * the event's name as a note. Nothing is lost.
+   */
+  function deleteEvent(state, evId) {
+    const ev = findEvent(state, evId);
+    if (!ev) return false;
+    state.transactions.forEach((t) => {
+      if (t.eventId !== evId) return;
+      delete t.eventId; delete t.eventItem; delete t.tripCovered;
+    });
+    (state.iou || []).forEach((i) => { if (i.eventId === evId) { delete i.eventId; i.note = ev.name; } });
+    state.iou = (state.iou || []).filter((i) => !(i.note === ev.name && !i.eventId && i.amount <= 0 && !(Number(i.paid) > 0)));
+    state.events = state.events.filter((e) => e !== ev);
+    return true;
+  }
+
+  // Per person: what they still owe you, what you still owe them, and the net (+ they owe you).
+  function eventBalances(state, ev) {
+    return ev.people.map((name) => {
+      const lent = eventIou(state, ev, name, 'lent');
+      const owe = eventIou(state, ev, name, 'owe');
+      const theyOwe = lent ? iouLeft(lent) : 0;
+      const youOwe = owe ? iouLeft(owe) : 0;
+      return { name, theyOwe, youOwe, net: theyOwe - youOwe, settled: theyOwe === 0 && youOwe === 0 && !!(lent || owe) };
+    });
+  }
+
+  /*
+   * Settling with a person: what each owes the other cancels first (no money
+   * moves for that part), then the money paid. o: { amount, date, txId }:
+   * a payment already recorded (an SMS) or a new one. Returns
+   * { netted, paid } or null.
+   */
+  function settleEvent(state, evId, name, o) {
+    const ev = findEvent(state, evId);
+    const who = ev && personIn(ev, name);
+    if (!who) return null;
+    const date = (o && o.date) || ev.to;
+    const lent = eventIou(state, ev, who, 'lent');
+    const owe = eventIou(state, ev, who, 'owe');
+    const netted = Math.min(lent ? iouLeft(lent) : 0, owe ? iouLeft(owe) : 0);
+    if (netted > 0) { payIou(state, lent.id, netted, date, null); payIou(state, owe.id, netted, date, null); }
+    const amount = Math.round(Number(o && o.amount) || 0);
+    const i = lent && iouLeft(lent) > 0 ? lent : owe && iouLeft(owe) > 0 ? owe : null;
+    if (!i || !(amount > 0)) return { netted, paid: 0 };
+    const paid = Math.min(amount, iouLeft(i));
+    let tx = o.txId ? state.transactions.find((t) => t.id === o.txId) : null;
+    const fits = (t) => t && !t.iouId && !t.iouPay && !t.passedOn && !t.eventId && (i.dir === 'lent' ? isIncome(t) && !t.payoutId && !t.refundOf : isFlexible(t)) && t.amount === paid;
+    if (o.txId && !fits(tx)) return null;
+    if (!tx) {
+      tx = i.dir === 'lent' ? { id: newId('t'), kind: 'in', date, amount: paid, category: 'Money returned', note: who, source: 'manual', useFor: 'spend' }
+        : { id: newId('t'), date, amount: paid, category: 'Misc', note: who, source: 'manual' };
+      state.transactions.push(tx);
+    }
+    payIou(state, i.id, paid, tx.date, tx.id);
+    return { netted, paid };
+  }
+  // Payments already recorded that could be this person paying back (or you paying them): the same amount as what's left, since the event began.
+  function settleCandidates(state, evId, name) {
+    const ev = findEvent(state, evId);
+    if (!ev) return [];
+    const b = eventBalances(state, ev).find((x) => sameName(x.name, name));
+    if (!b || !b.net) return [];
+    const left = Math.abs(b.net);
+    const theyPay = b.net > 0;
+    return state.transactions.filter((t) => t.date >= ev.from && t.amount === left && !t.iouId && !t.iouPay && !t.passedOn && !t.eventId &&
+      (theyPay ? isIncome(t) && !t.payoutId && !t.refundOf && !t.salary : isFlexible(t)))
+      .sort((a, c) => (sameName(c.note, name) - sameName(a.note, name)) || (a.date < c.date ? 1 : -1)).slice(0, 3);
+  }
+
+  /*
+   * The trip budget: money for your share, set aside like a likely cost.
+   * While the event runs (it starts before payday and hasn't ended), what's
+   * left of it is held from today's limit; your shares are paid from it,
+   * oldest first, so they don't count against the daily limit or the
+   * budgets. Over the budget, the rest counts as usual. After the event,
+   * anything unused goes back to the limit.
+   */
+  function tripCover(state, ev) {
+    const mine = state.transactions.filter((t) => t.eventId === ev.id && t.eventShare).sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+    let left = Number(ev.budget) || 0;
+    mine.forEach((t) => {
+      delete t.tripCovered;
+      const c = Math.min(left, ownPart(t));
+      if (c > 0) { t.tripCovered = c; left -= c; }
+    });
+  }
+  function tripHeld(state, todayIso) {
+    const cyc = cycleFor(todayIso, Number(state.settings.payday) || 1);
+    return sum((state.events || []).filter((e) => Number(e.budget) > 0 && e.from < cyc.next && e.to >= todayIso), (e) =>
+      Math.max(0, Number(e.budget) - sum(state.transactions.filter((t) => t.eventId === e.id), (t) => Number(t.tripCovered) || 0)));
+  }
+
+  // Everything the event screen shows.
+  function eventView(state, evId) {
+    const ev = findEvent(state, evId);
+    if (!ev) return null;
+    const items = ev.items.slice().sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+    const total = sum(items, (x) => x.total);
+    const iPaid = sum(items.filter((x) => x.paidBy === 'me'), (x) => x.total);
+    const myShare = sum(items, (x) => x.shares.me || 0);
+    const balances = eventBalances(state, ev);
+    const fromBudget = sum(state.transactions.filter((t) => t.eventId === ev.id), (t) => Number(t.tripCovered) || 0);
+    return { ev, items, total, iPaid, myShare, balances, budget: Number(ev.budget) || 0, fromBudget, overBudget: Math.max(0, myShare - (Number(ev.budget) || 0)),
+      owedToYou: sum(balances, (b) => Math.max(0, b.net)), youOwe: sum(balances, (b) => Math.max(0, -b.net)), settled: balances.every((b) => b.net === 0) };
+  }
+  // A person's lines for a reminder: each payment with date, place and their share.
+  function eventStatement(state, evId, name) {
+    const ev = findEvent(state, evId);
+    if (!ev) return null;
+    const b = eventBalances(state, ev).find((x) => sameName(x.name, name));
+    const lines = ev.items.slice().sort((a, c) => (a.date < c.date ? -1 : 1)).map((it) => {
+      const theirs = Object.keys(it.shares).find((k) => sameName(k, name));
+      if (it.paidBy === 'me' && theirs) return { date: it.date, place: it.place || it.note, amount: it.shares[theirs], dir: 'theyOwe', total: it.total };
+      if (sameName(it.paidBy, name) && it.shares.me) return { date: it.date, place: it.place || it.note, amount: it.shares.me, dir: 'youOwe', total: it.total };
+      return null;
+    }).filter(Boolean);
+    return { event: ev.name, name: b ? b.name : name, lines, net: b ? b.net : 0 };
   }
 
   /*
@@ -687,9 +998,9 @@
 
   // What a spending entry costs your own budgets: less what a gift kept for it paid.
   // Spending that's yours in reports: less what's claimed back from work (a gift-kept purchase is still shown).
-  function personalAmt(t) { return (Number(t.amount) || 0) - (Number(t.reimbExcluded) || 0) - (Number(t.refunded) || 0); }
+  function personalAmt(t) { return (Number(t.amount) || 0) - (Number(t.reimbExcluded) || 0) - (Number(t.refunded) || 0) - (Number(t.lentShare) || 0); }
   // A payment for a maybe expense (t.maybeId) was paid from money held for it: not daily spending.
-  function ownPart(t) { return t.maybeId ? 0 : Math.max(0, (Number(t.amount) || 0) - (Number(t.covered) || 0) - (Number(t.reimbExcluded) || 0) - (Number(t.refunded) || 0)); }
+  function ownPart(t) { return t.maybeId ? 0 : Math.max(0, (Number(t.amount) || 0) - (Number(t.covered) || 0) - (Number(t.reimbExcluded) || 0) - (Number(t.refunded) || 0) - (Number(t.lentShare) || 0) - (Number(t.tripCovered) || 0)); }
 
   /*
    * A refund or a reversal into the account, for a purchase from the account
@@ -700,7 +1011,7 @@
    */
   function refundable(state, buy) {
     return isFlexible(buy) && !(buy.paidFrom && buy.paidFrom !== 'account') && !buy.maybeId && !buy.claimId &&
-      buy.amount - (Number(buy.covered) || 0) - (Number(buy.refunded) || 0) > 0;
+      buy.amount - (Number(buy.covered) || 0) - (Number(buy.refunded) || 0) - (Number(buy.lentShare) || 0) > 0;
   }
   function linkRefund(state, inId, buyId) {
     const r = state.transactions.find((t) => t.id === inId);
@@ -709,7 +1020,7 @@
     if (!refundable(state, buy) || r.date < buy.date) return false;
     const payday = Number(state.settings.payday) || 1;
     if (cycleFor(r.date, payday).start !== cycleFor(buy.date, payday).start) return false;
-    const room = buy.amount - (Number(buy.covered) || 0) - (Number(buy.refunded) || 0);
+    const room = buy.amount - (Number(buy.covered) || 0) - (Number(buy.refunded) || 0) - (Number(buy.lentShare) || 0);
     if (r.amount > room) return false;
     buy.refunded = (Number(buy.refunded) || 0) + r.amount;
     r.refundOf = buy.id;
@@ -741,7 +1052,7 @@
       const cyc = cycleFor(r.date, payday);
       const shop = normalizeMerchant(r.note || '');
       const buy = state.transactions.filter((b) => refundable(state, b) && inCycle(b.date, cyc) && b.date <= r.date &&
-        b.amount - (Number(b.covered) || 0) - (Number(b.refunded) || 0) >= r.amount &&
+        b.amount - (Number(b.covered) || 0) - (Number(b.refunded) || 0) - (Number(b.lentShare) || 0) >= r.amount &&
         ((shop && normalizeMerchant(b.note || '') === shop) || (b.amount === r.amount && daysBetween(b.date, r.date) <= 7)))
         .sort((a, b) => (a.date < b.date ? 1 : -1))[0];
       if (buy) out.push({ refund: r, buy });
@@ -815,7 +1126,7 @@
   function maybeHappened(state, id, txId, nowIso) {
     const m = (state.maybe || []).find((x) => x.id === id);
     const tx = state.transactions.find((x) => x.id === txId);
-    if (!m || !tx || !isFlexible(tx) || tx.maybeId || tx.claimId || tx.covered || tx.iouId || tx.passedOn) return false;
+    if (!m || !tx || !isFlexible(tx) || tx.maybeId || tx.claimId || tx.covered || tx.iouId || tx.passedOn || tx.eventId) return false;
     tx.maybeId = m.id;
     m.outcome = { happened: true, txId, date: nowIso };
     return true;
@@ -843,7 +1154,7 @@
     const m = (state.maybe || []).find((x) => x.id === id);
     if (!m) return [];
     const from = addDays(m.date < todayIso ? m.date : todayIso, -14);
-    return state.transactions.filter((t) => isFlexible(t) && !t.maybeId && !t.claimId && !t.covered && !t.iouId && !t.passedOn &&
+    return state.transactions.filter((t) => isFlexible(t) && !t.maybeId && !t.claimId && !t.covered && !t.iouId && !t.passedOn && !t.eventId &&
       t.date >= from && t.date <= todayIso && t.amount >= m.amount * 0.5 && t.amount <= m.amount * 2)
       .sort((a, b) => Math.abs(a.amount - m.amount) - Math.abs(b.amount - m.amount)).slice(0, 5);
   }
@@ -945,8 +1256,10 @@
     const tx = state.transactions.find((t) => t.id === txId);
     if (!tx || !isFlexible(tx) || tx.claimId) return null;
     const R = reimbOf(state);
-    const eligible = Math.round(Number(o && o.eligible) || tx.amount);
-    if (!(eligible > 0) || eligible > tx.amount) return null;
+    // Of a payment shared with friends, only your own part can be claimed from work.
+    const most = tx.amount - (Number(tx.lentShare) || 0);
+    const eligible = Math.round(Number(o && o.eligible) || most);
+    if (!(eligible > 0) || eligible > most) return null;
     const c = { id: newId('clm'), txId, actual: tx.amount, eligible, date: tx.date, who: (o && o.who) || '', ref: (o && o.ref) || '',
       closed: false, routing: o && o.routing === 'vault' ? 'vault' : 'daily', created: nowIso, updated: nowIso };
     R.claims.push(c);
@@ -1219,7 +1532,7 @@
     // Money kept for something to buy is in the account but not to spend.
     // Kept apart: money kept for a purchase, and the side vault (margins routed there).
     // Likely costs that may come before payday are held too.
-    const held = maybeHeld(state, todayIso);
+    const held = maybeHeld(state, todayIso) + tripHeld(state, todayIso);
     const kept = sum(state.transactions.filter((t) => isIncome(t) && t.useFor === 'keep' && t.date <= todayIso), (t) => Math.max(0, t.amount - (Number(t.keepUsed) || 0))) +
       (state.reimb ? reimbView(state).vault : 0) + held;
     const byMoney = Math.max(0, bal - kept + spentToday + savedToday - billsAhead) / (remainingDays + 1);
@@ -2879,7 +3192,7 @@
     const share = anchor ? (cyc.days - daysBetween(cyc.start, anchor.date)) / cyc.days : 1;
     const from = anchor ? anchor.date : cyc.start;
     const spent = byCategory(spendInRange(state.transactions, cyc).filter((t) => t.date >= from && t.date <= todayIso)
-      .map((t) => (t.maybeId ? Object.assign({}, t, { amount: 0 }) : t.covered ? Object.assign({}, t, { amount: t.amount - (Number(t.covered) || 0) }) : t)));
+      .map((t) => (t.maybeId ? Object.assign({}, t, { amount: 0 }) : t.covered || t.tripCovered ? Object.assign({}, t, { amount: t.amount - (Number(t.covered) || 0) - (Number(t.tripCovered) || 0) }) : t)));
     const moves = (state.budgetMoves || []).filter((m) => m.cycle === cyc.start);
     const own = {};
     (state.budgets || []).forEach((b) => { own[b.name] = b; });
@@ -3891,11 +4204,14 @@
       if (!t || !Number.isFinite(amount) || amount < 0 || amount > 1e10 || !okDate(t.date)) throw new Error('format');
       return Object.assign({}, t, { amount });
     });
-    ['fixed', 'debts', 'budgets', 'bills', 'sinking', 'goals', 'cards', 'wallets', 'iou', 'emergencies', 'accuracy', 'maybe', 'goalHistory'].forEach((k) => {
+    ['fixed', 'debts', 'budgets', 'bills', 'sinking', 'goals', 'cards', 'wallets', 'iou', 'emergencies', 'accuracy', 'maybe', 'goalHistory', 'events'].forEach((k) => {
       if (k in s && !Array.isArray(s[k])) delete s[k];
     });
     if (!s.savings || typeof s.savings !== 'object') delete s.savings;
     if (s.reimb != null && (typeof s.reimb !== 'object' || !Array.isArray(s.reimb.claims || []) || !Array.isArray(s.reimb.payouts || []))) delete s.reimb;
+    if (s.events) s.events = s.events.filter((e) => e && e.id && Array.isArray(e.people) && Array.isArray(e.items) && okDate(e.from) && okDate(e.to))
+      .map((e) => Object.assign({}, e, { budget: Math.max(0, Math.round(Number(e.budget) || 0)),
+        items: e.items.filter((it) => it && it.id && okDate(it.date) && it.shares && typeof it.shares === 'object' && Number(it.total) > 0) }));
     if (s.maybe) s.maybe = s.maybe.filter((m) => m && okDate(m.date) && Number(m.amount) > 0).map((m) => Object.assign({}, m, { amount: Math.round(Number(m.amount)) }));
     ['fixed', 'debts'].forEach((k) => (s[k] || []).forEach((x) => {
       ['amount', 'balance', 'minPayment', 'rate'].forEach((f) => { if (x[f] != null) x[f] = Number(x[f]) || 0; });
@@ -4441,6 +4757,7 @@
     insights, simulateDebts, compareDebtPlans, debtFreeDates, emergencyPlan, parseSms,
     splitSmsBatch, smsKey, categorize, normalizeMerchant, sinkingMonthly, inCycle,
     spendInRange, incomeInRange, incomeKept, isIncome, isMove, isBillPayment, isFixedPayment, isCashAdvance, emiLoans,
+    addEvent, editEvent, splitShares, addEventExpense, removeEventExpense, eventForgetTx, deleteEvent, eventBalances, settleEvent, settleCandidates, tripHeld, eventView, eventStatement,
     cutOptions, weekTarget, fitWeekGoal, rupeeAmounts, checkAdviceNumbers,
     linkRefund, unlinkRefund, forgetRefunds, refundMatches, isEarned, earnedIn, fixedPaidFor, fixedDueFor, payFixed, unpayFixed, fixedMatches, isFlexible, incomeOptions,
     salaryFor, salaryHistory, looksLikeSalary, paydayReset, suggestUse, freedomDays, interestLeak, nextPaydayPreview,

@@ -82,6 +82,21 @@
       apply: (s) => { X(s, { amount: 6000, category: 'Family', note: 'Gift' }); Core.maybeHappened(s, s.maybe[s.maybe.length - 1].id, 'x', T); } },
     'likely cost didn’t come': { pre: (s) => Core.addMaybe(s, { name: 'Wedding gift', amount: 5000, date: '2026-10-26', likely: 'likely' }, T),
       apply: (s) => Core.maybeDidnt(s, s.maybe[s.maybe.length - 1].id, T) },
+    // Trips and events: a dinner for four I paid, a hotel a friend paid, and the dinner with a trip budget.
+    'event: I paid ₹2,000 for four': (s) => {
+      X(s, { amount: 2000, category: 'Food & dining', note: 'Dinner' });
+      const ev = Core.addEvent(s, { name: 'Trip', from: T, to: '2026-10-27', people: ['Amit', 'Rahul', 'Sneha'] }, T);
+      Core.addEventExpense(s, ev.id, { date: T, total: 2000, paidBy: 'me', shares: { me: 500, Amit: 500, Rahul: 500, Sneha: 500 }, category: 'Food & dining', txId: 'x' });
+    },
+    'event: a friend paid, my share ₹3,000': (s) => {
+      const ev = Core.addEvent(s, { name: 'Trip', from: T, to: '2026-10-27', people: ['Amit', 'Rahul', 'Sneha'] }, T);
+      Core.addEventExpense(s, ev.id, { date: T, total: 12000, paidBy: 'Amit', shares: { me: 3000, Amit: 3000, Rahul: 3000, Sneha: 3000 }, category: 'Travel' });
+    },
+    'event with a ₹5,000 trip budget: I paid ₹2,000 for four': (s) => {
+      X(s, { amount: 2000, category: 'Food & dining', note: 'Dinner' });
+      const ev = Core.addEvent(s, { name: 'Trip', from: T, to: '2026-10-27', people: ['Amit', 'Rahul', 'Sneha'], budget: 5000 }, T);
+      Core.addEventExpense(s, ev.id, { date: T, total: 2000, paidBy: 'me', shares: { me: 500, Amit: 500, Rahul: 500, Sneha: 500 }, category: 'Food & dining', txId: 'x' });
+    },
     'salary lower (90k)': (s) => { s.payslips = { '2026-09-28': { amount: 90000, usual: 98000 } }; },
     'balance check (−1000)': (s) => { s.balanceCheck = { date: T, amount: 18700 }; },
   };

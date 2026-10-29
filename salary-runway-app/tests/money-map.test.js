@@ -55,6 +55,11 @@ const MAP = {
   'purchase covered by kept': { bank: -1500, reports: 1500, worth: -1500, kept: -1500 },
   'card spend → EMI (6 months)': { bank: 12000, loans: 12000, cardOwed: -12000 },
   'spend Emergency': { bank: -500, spentCycle: 500, reports: 500, worth: -500 },
+  // Trips: the bank pays all; only my share is my spending; the rest is owed to me. A friend's payment moves no money:
+  // my share is spent and owed. With a trip budget, my share comes from it (held money), not daily spending.
+  'event: I paid ₹2,000 for four': { bank: -2000, spentCycle: 500, reports: 500, worth: -500, people: 1500 },
+  'event: a friend paid, my share ₹3,000': { spentCycle: 3000, reports: 3000, worth: -3000, people: -3000 },
+  'event with a ₹5,000 trip budget: I paid ₹2,000 for four': { bank: -2000, reports: 500, worth: -500, people: 1500, held: 4500 },
   'salary lower (90k)': {},
   'balance check (−1000)': { bank: -1000, worth: -1000 },
 };

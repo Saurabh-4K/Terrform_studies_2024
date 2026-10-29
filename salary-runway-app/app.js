@@ -584,6 +584,12 @@
       'With the weekly plan on, the first plan after payday adds a direction for the month ahead, written by AI from these numbers.',
       'It also adds an adviser’s view: two or three things that matter most for your step, from general money knowledge. Each says whether it comes from your numbers or is general guidance to check. It never names a bank, fund, insurer or app, never suggests new borrowing, and suggests areas to invest only on the last step.',
     ]],
+    events: ['Trips & events', [
+      'A trip, a wedding, a flat’s bills: add the people once, then each payment with where it was paid, who paid, and each person’s share: equal, by amounts, or by shares. Shares always add up to the rupee; the payer takes the extra rupee.',
+      'You paid: the whole payment left your account, but only your share is your spending; the rest is owed to you. Someone else paid: your share is your spending now, and you owe them. Only you and each person are tracked, never what others owe each other.',
+      'Settle up shows one number per person, after what you owe each other cancels out. Money paid back either way is passed on: never income, never spending. Remind sends a message you choose to send, with each payment’s date, place and share.',
+      'A budget for the trip is set aside from today’s limit until it ends, and your shares are paid from it. Deleting an event keeps the payments, and anything still owed stays under People.',
+    ]],
     maybe: ['Maybe expenses', [
       'Costs that may come: a wedding gift, a bike repair, a doctor’s visit. Add the amount, roughly when, and how likely it is.',
       'Likely: the money is held from today’s limit until payday, so you’re ready if it comes. Maybe: nothing changes, but you see what today’s limit would be if it comes. Unlikely: only listed, so it doesn’t surprise you.',
@@ -2858,6 +2864,9 @@
         { key: 'viz-trend', group: 'Your spending', icon: 'trend', label: 'Month by month', tone: 'mint', viz: 'trend', badge: null, html: () => vizCard() },
         { key: 'leaks', group: 'Your spending', icon: 'drop', label: 'Little leaks', tone: 'mint',
           badge: leakAsks ? { text: tr('{n} new', { n: leakAsks }), tone: 'bad' } : leaks.perMonth ? { text: shortInr(leaks.perMonth) } : null, html: () => leaksCard() },
+        { key: 'events', group: 'Records', icon: 'people', label: 'Trips & events', tone: 'teal',
+          badge: (() => { const o = (state.events || []).reduce((a, e) => { const v = Core.eventView(state, e.id); return a + v.owedToYou - v.youOwe; }, 0); return o ? { text: (o > 0 ? '+' : '−') + shortInr(Math.abs(o)), tone: o > 0 ? 'good' : 'bad' } : null; })(),
+          html: () => eventsPage() },
         { key: 'reimb', group: 'Records', icon: 'repeat', label: 'Reimbursements', tone: 'teal',
           badge: (() => { const p = Core.reimbView(state).pendingFloat; return p ? { text: shortInr(p) } : null; })(), html: () => reimbPage() },
         { key: 'payments', group: 'Records', icon: 'list', label: 'Payments', tone: 'teal', badge: { text: String(list.filter((x) => Core.inCycle(x.date, cyc)).length) },
@@ -3672,7 +3681,7 @@
 
   // Bill and card payments are tied to the bill's learned amount or the card's statement: only their note can change.
   function txLocked(x) {
-    return Core.isBillPayment(x) || Core.isCardTransfer(x);
+    return Core.isBillPayment(x) || Core.isCardTransfer(x) || !!x.eventId;
   }
 
   // From a bank SMS that wasn't really a payment: an OTP, a request, a failed payment, an offer.
@@ -3821,6 +3830,192 @@
   }
 
   // Home → Maybe expenses: what's held, what today's limit would be if the maybe ones come, and the list.
+  // ---------- trips and events ----------
+
+  const dateSpan = (a, b) => (a === b ? fmtDate(a) : fmtDate(a) + ' – ' + fmtDate(b));
+  const whoName = (n) => (n === 'me' ? tr('You') : n);
+
+  // Spend → Trips & events: the list, or one event.
+  function eventsPage() {
+    const ev = ui.evOpen && (state.events || []).find((e) => e.id === ui.evOpen);
+    if (ev) return eventPage(ev);
+    const t = today();
+    const list = (state.events || []).slice().sort((a, b) => (a.from < b.from ? 1 : -1));
+    const form = ui.evForm
+      ? '<div class="callout ev-form"><b>' + tr('A new trip or event') + '</b><div class="form-grid">' +
+        '<label class="field wide" for="ev-name"><span>' + tr('Name') + '</span><input id="ev-name" type="text" maxlength="60" placeholder="' + tr('Goa trip') + '"></label>' +
+        '<label class="field" for="ev-from"><span>' + tr('From') + '</span><input id="ev-from" type="date" value="' + t + '"></label>' +
+        '<label class="field" for="ev-to"><span>' + tr('To') + '</span><input id="ev-to" type="date" value="' + t + '"></label>' +
+        '<label class="field wide" for="ev-people"><span>' + tr('People, apart from you (commas between names)') + '</span><input id="ev-people" type="text" maxlength="400" placeholder="' + tr('Amit, Rahul, Sneha') + '"></label>' +
+        '<label class="field wide" for="ev-budget"><span>' + tr('Your budget for it (₹, optional)') + '</span><input id="ev-budget" type="number" inputmode="numeric" min="0" max="1000000000" step="any"></label></div>' +
+        '<p class="hint">' + tr('A budget is set aside from today’s limit until the event ends, and your shares are paid from it, so the trip doesn’t eat your daily money.') + '</p>' +
+        (ui.evError ? '<p class="bad" role="alert">' + esc(ui.evError) + '</p>' : '') +
+        '<div class="row"><button class="primary" data-action="ev-create">' + tr('Create') + '</button><button class="ghost" data-action="ev-form-cancel">' + tr('Cancel') + '</button></div></div>'
+      : '<div><button class="primary" data-action="ev-form">' + tr('New trip or event') + '</button></div>';
+    return '<section class="card events-card"><div class="card-head">' + titled('Trips & events', 'events') + '</div>' +
+      '<p class="hint">' + tr('Add the people once, then every payment with who paid and each share. Only you and each person are tracked: what you owe them, and what they owe you.') + '</p>' + form +
+      (list.length ? '<div class="list">' + list.map((e) => {
+        const v = Core.eventView(state, e.id);
+        const status = v.settled ? '<span class="good">' + tr('Settled ✓') + '</span>'
+          : [v.owedToYou ? '<span class="good">' + tr('Owed to you {amount}', { amount: inr(v.owedToYou) }) + '</span>' : '', v.youOwe ? '<span class="bad">' + tr('You owe {amount}', { amount: inr(v.youOwe) }) + '</span>' : ''].filter(Boolean).join(' · ');
+        return '<button class="list-item ev-row" data-action="ev-open" data-id="' + esc(e.id) + '"><div class="grow"><div class="title">' + esc(e.name) + '</div>' +
+          '<div class="meta">' + dateSpan(e.from, e.to) + ' · ' + tr('{n} people', { n: e.people.length + 1 }) + (v.items.length ? ' · ' + status : '') + '</div></div>' +
+          '<div class="amt">' + inr(v.myShare) + '</div></button>';
+      }).join('') + '</div>' : '<p class="hint">' + tr('No trips or events yet.') + '</p>') + '</section>';
+  }
+
+  function eventPage(ev) {
+    const t = today();
+    const v = Core.eventView(state, ev.id);
+    const line = (name, val) => '<div class="line"><span>' + name + '</span><span>' + val + '</span></div>';
+    let html = '<section class="card event-card"><div class="card-head"><button class="link" data-action="ev-close">← ' + tr('All trips & events') + '</button></div>' +
+      '<h2>' + esc(ev.name) + '</h2><p class="hint">' + dateSpan(ev.from, ev.to) + ' · ' + tr('You') + ', ' + ev.people.map(esc).join(', ') + '</p>';
+    if (ui.evEdit) {
+      html += '<div class="callout"><div class="form-grid">' +
+        '<label class="field wide" for="ee-name"><span>' + tr('Name') + '</span><input id="ee-name" type="text" maxlength="60" value="' + esc(ev.name) + '"></label>' +
+        '<label class="field" for="ee-from"><span>' + tr('From') + '</span><input id="ee-from" type="date" value="' + ev.from + '"></label>' +
+        '<label class="field" for="ee-to"><span>' + tr('To') + '</span><input id="ee-to" type="date" value="' + ev.to + '"></label>' +
+        '<label class="field wide" for="ee-people"><span>' + tr('People, apart from you (commas between names)') + '</span><input id="ee-people" type="text" maxlength="400" value="' + esc(ev.people.join(', ')) + '"></label>' +
+        '<label class="field wide" for="ee-budget"><span>' + tr('Your budget for it (₹, optional)') + '</span><input id="ee-budget" type="number" inputmode="numeric" min="0" max="1000000000" step="any" value="' + (ev.budget || '') + '"></label></div>' +
+        '<div class="row"><button class="primary" data-action="ev-edit-save">' + tr('Save') + '</button><button class="ghost" data-action="ev-edit-cancel">' + tr('Cancel') + '</button></div></div>';
+    }
+    html += '<div class="summary">' + line(tr('Spent together'), inr(v.total)) + line(tr('You paid'), inr(v.iPaid)) + line('<b>' + tr('Your share') + '</b>', '<b>' + inr(v.myShare) + '</b>') +
+      (v.budget ? line(tr('From your trip budget ({amount})', { amount: inr(v.budget) }), inr(v.fromBudget) + (v.overBudget ? ' · <span class="bad">' + tr('{amount} over', { amount: inr(v.overBudget) }) + '</span>' : '')) : '') + '</div>';
+    // Settle up: one line per person.
+    if (v.items.length) {
+      html += '<h3>' + tr('Settle up') + '</h3><div class="list">' + v.balances.map((b) => {
+        const both = b.theyOwe > 0 && b.youOwe > 0;
+        let row = '<div class="list-item"><div class="grow"><div class="title">' + esc(b.name) + '</div><div class="meta">' +
+          (b.net > 0 ? '<span class="good">' + tr('Owes you {amount}', { amount: inr(b.net) }) + '</span>' : b.net < 0 ? '<span class="bad">' + tr('You owe {amount}', { amount: inr(-b.net) }) + '</span>' : (b.settled || both ? tr('Even') : tr('Nothing between you'))) +
+          (both ? ' · ' + tr('{a} and {b} cancel out', { a: inr(b.theyOwe), b: inr(b.youOwe) }) : '') + '</div></div>';
+        if (b.net !== 0 || both) {
+          row += b.net === 0 ? '<button class="ghost small" data-action="ev-net" data-name="' + esc(b.name) + '">' + tr('Mark even') + '</button>'
+            : '<button class="ghost small" data-action="ev-settle-open" data-name="' + esc(b.name) + '">' + tr(b.net > 0 ? 'Got it' : 'I paid') + '</button>' +
+              (b.net > 0 ? '<button class="ghost small" data-action="ev-remind" data-name="' + esc(b.name) + '">' + tr('Remind') + '</button>' : '');
+        }
+        row += '</div>';
+        if (ui.evSettle === b.name && b.net !== 0) row += settleForm(ev, b);
+        return row;
+      }).join('') + '</div>';
+    }
+    html += ui.evAdd ? eventAddForm(ev) : '<div><button class="primary" data-action="ev-add-open">' + tr('Add a payment') + '</button></div>';
+    if (v.items.length) {
+      html += '<h3>' + tr('Payments') + '</h3><div class="list">' + v.items.slice().reverse().map((it) => {
+        const shares = Object.keys(it.shares).map((k) => whoName(k) + ' ' + inr(it.shares[k])).join(', ');
+        return '<div class="list-item"><div class="grow"><div class="title">' + esc(it.place || it.note || label(it.category)) + '</div>' +
+          '<div class="meta">' + fmtDate(it.date) + ' · ' + tr('paid by {who}', { who: esc(whoName(it.paidBy)) }) + ' · ' + esc(shares) + '</div></div>' +
+          '<div class="amt">' + inr(it.total) + '</div><button class="ghost small" data-action="ev-item-remove" data-id="' + esc(it.id) + '" aria-label="' + esc(tr('Remove {name}', { name: it.place || it.note || '' })) + '">✕</button></div>';
+      }).join('') + '</div>';
+    }
+    if (ui.evDelete) {
+      const open = v.balances.filter((b) => b.theyOwe || b.youOwe);
+      html += '<div class="callout warn"><b>' + tr('Delete “{name}”?', { name: esc(ev.name) }) + '</b><span class="hint">' +
+        tr('The payments stay in your list as they are: the money really moved.') + ' ' +
+        (open.length ? tr('Still open, kept under People: {list}.', { list: open.map((b) => esc(b.name) + ' ' + (b.net >= 0 ? '+' : '−') + inr(Math.abs(b.net))).join(', ') }) : '') + '</span>' +
+        '<div class="row"><button class="primary" data-action="ev-delete">' + tr('Delete') + '</button><button class="ghost" data-action="ev-delete-cancel">' + tr('Cancel') + '</button></div></div>';
+    } else if (!ui.evEdit) {
+      html += '<div class="row"><button class="ghost small" data-action="ev-edit">' + tr('Edit') + '</button><button class="ghost small" data-action="ev-delete-ask">' + tr('Delete event') + '</button></div>';
+    }
+    return html + '</section>';
+  }
+
+  // Add a payment: who paid, and each share, equal, by amounts or by shares. It always adds up to the rupee.
+  function eventAddForm(ev) {
+    const a = ui.evAdd;
+    const t = today();
+    const names = ['me'].concat(ev.people);
+    const payer = a.paidBy || 'me';
+    return '<div class="callout ea-form"><b>' + tr(a.txId ? 'Split this payment' : 'A payment in {name}', { name: esc(ev.name) }) + '</b><div class="form-grid">' +
+      '<label class="field" for="ea-total"><span>' + tr('Amount (₹)') + '</span><input id="ea-total" type="number" inputmode="numeric" min="1" max="1000000000" step="any" value="' + (a.total || '') + '"' + (a.txId ? ' readonly' : '') + '></label>' +
+      '<label class="field" for="ea-date"><span>' + tr('Date') + '</span><input id="ea-date" type="date" max="' + t + '" value="' + (a.date || t) + '"' + (a.txId ? ' readonly' : '') + '></label>' +
+      '<label class="field wide" for="ea-place"><span>' + tr('Place') + '</span><input id="ea-place" type="text" maxlength="60" placeholder="' + tr('Where it was paid') + '" value="' + esc(a.place || '') + '"></label>' +
+      '<label class="field" for="ea-cat"><span>' + tr('Category') + '</span><select id="ea-cat">' + categoryOptions(a.category || 'Travel') + '</select></label>' +
+      '<label class="field" for="ea-paidby"><span>' + tr('Paid by') + '</span><select id="ea-paidby"' + (a.txId ? ' disabled' : '') + '>' + names.map((n) => '<option value="' + esc(n) + '"' + (n === payer ? ' selected' : '') + '>' + esc(whoName(n)) + '</option>').join('') + '</select></label>' +
+      '<label class="field wide" for="ea-mode"><span>' + tr('Split') + '</span><select id="ea-mode">' +
+        [['equal', 'Equally, between those ticked'], ['amounts', 'By amounts (₹ each)'], ['shares', 'By shares (like 2, 1, 1)']].map((m) => '<option value="' + m[0] + '"' + (m[0] === (a.mode || 'equal') ? ' selected' : '') + '>' + tr(m[1]) + '</option>').join('') + '</select></label></div>' +
+      '<div class="ea-people">' + names.map((n, i) => '<div class="row ea-person"><label class="check"><input type="checkbox" id="ea-in-' + i + '" data-ea-name="' + esc(n) + '" checked> ' + esc(whoName(n)) + '</label>' +
+        '<input type="number" inputmode="numeric" min="0" max="1000000000" step="any" id="ea-val-' + i + '" aria-label="' + esc(tr('{name}’s part', { name: whoName(n) })) + '" placeholder="' + tr('amount or share') + '"></div>').join('') + '</div>' +
+      '<p class="hint ea-preview" aria-live="polite"></p>' +
+      (ui.evError ? '<p class="bad" role="alert">' + esc(ui.evError) + '</p>' : '') +
+      '<div class="row"><button class="primary" data-action="ev-add">' + tr('Save') + '</button><button class="ghost" data-action="ev-add-cancel">' + tr('Cancel') + '</button></div></div>';
+  }
+
+  // The add form as it stands, and the shares it makes (null when they don't add up).
+  function eventFormShares(ev) {
+    const val = (id) => (document.getElementById(id) || {}).value;
+    const total = Math.round(Number(val('ea-total')) || 0);
+    const mode = val('ea-mode') || 'equal';
+    const paidBy = ui.evAdd && ui.evAdd.txId ? 'me' : val('ea-paidby') || 'me';
+    const names = [];
+    const values = {};
+    ['me'].concat(ev.people).forEach((n, i) => {
+      const box = document.getElementById('ea-in-' + i);
+      const v = Number(val('ea-val-' + i)) || 0;
+      if (mode === 'equal' ? box && box.checked : v > 0) { names.push(n); values[n] = v; }
+    });
+    const shares = names.length ? Core.splitShares(total, names, mode, values, paidBy) : null;
+    return { total, mode, paidBy, shares, names };
+  }
+  function eventPreview() {
+    const ev = ui.evOpen && (state.events || []).find((e) => e.id === ui.evOpen);
+    const el = document.querySelector('.ea-preview');
+    if (!ev || !el) return;
+    const f = eventFormShares(ev);
+    if (!f.total) { el.textContent = ''; return; }
+    if (!f.shares) {
+      const sumIn = f.mode === 'amounts' ? f.names.reduce((s, n, i) => s + (Number((document.getElementById('ea-val-' + (['me'].concat(ev.people).indexOf(n))) || {}).value) || 0), 0) : 0;
+      el.className = 'hint ea-preview bad';
+      el.textContent = f.mode === 'amounts' && sumIn ? (sumIn < f.total ? tr('{amount} still to share out', { amount: inr(f.total - sumIn) }) : tr('{amount} too much', { amount: inr(sumIn - f.total) })) : tr('Tick who’s in, or fill in the parts.');
+      return;
+    }
+    el.className = 'hint ea-preview good';
+    el.textContent = Object.keys(f.shares).filter((k) => f.shares[k]).map((k) => whoName(k) + ' ' + inr(f.shares[k])).join(' · ') + ' = ' + inr(f.total) + ' ✓';
+  }
+
+  function settleForm(ev, b) {
+    const t = today();
+    const cands = Core.settleCandidates(state, ev.id, b.name);
+    return '<div class="callout"><div class="form-grid">' +
+      '<label class="field" for="es-amount"><span>' + tr('Amount (₹)') + '</span><input id="es-amount" type="number" inputmode="numeric" min="1" max="' + Math.abs(b.net) + '" step="any" value="' + Math.abs(b.net) + '"></label>' +
+      '<label class="field" for="es-date"><span>' + tr('Date') + '</span><input id="es-date" type="date" max="' + t + '" value="' + t + '"></label></div>' +
+      (cands.length ? '<p class="hint">' + tr(b.net > 0 ? 'Is it one of these money-in entries?' : 'Is it one of these payments?') + '</p>' + cands.map((c, i) =>
+        '<label class="check"><input type="radio" name="es-tx" value="' + esc(c.id) + '"' + (i === 0 ? ' checked' : '') + '> ' + inr(c.amount) + ' · ' + fmtDate(c.date) + ' · ' + esc(c.note || '') + '</label>').join('') +
+        '<label class="check"><input type="radio" name="es-tx" value=""> ' + tr('None of these: add it') + '</label>' : '') +
+      (b.theyOwe && b.youOwe ? '<p class="hint">' + tr('{a} and {b} cancel out first.', { a: inr(b.theyOwe), b: inr(b.youOwe) }) + '</p>' : '') +
+      '<div class="row"><button class="primary" data-action="ev-settle" data-name="' + esc(b.name) + '">' + tr('Save') + '</button><button class="ghost" data-action="ev-settle-cancel">' + tr('Cancel') + '</button></div></div>';
+  }
+
+  // A reminder the person sends themselves (WhatsApp, SMS…): each payment with date, place and share.
+  function eventReminderText(ev, name) {
+    const st = Core.eventStatement(state, ev.id, name);
+    const lines = st.lines.map((l) => '• ' + fmtDate(l.date) + (l.place ? ', ' + l.place : '') + ': ' +
+      (l.dir === 'theyOwe' ? tr('your share {amount} of {total}', { amount: inr(l.amount), total: inr(l.total) }) : tr('you paid my share {amount}', { amount: inr(l.amount) })));
+    return tr('Hi {name}, for {event} ({dates}):', { name: st.name, event: ev.name, dates: dateSpan(ev.from, ev.to) }) + '\n' + lines.join('\n') + '\n' +
+      tr('So it comes to {amount}. Please send it when you can. Thanks!', { amount: inr(st.net) });
+  }
+  function shareMessage(text) {
+    if (ShareFile && ShareFile.shareText) return ShareFile.shareText({ text, title: tr('Send the reminder') }).catch(() => toast(tr('Couldn’t open sharing.')));
+    if (navigator.share) return navigator.share({ text }).catch(() => {});
+    if (navigator.clipboard) return navigator.clipboard.writeText(text).then(() => toast(tr('Reminder copied. Paste it in a message.')), () => toast(text));
+    toast(text);
+    return null;
+  }
+
+  // In a payment's edit view: part of an event, or split it with friends.
+  function eventTxBox(x) {
+    if (x.eventId) {
+      const ev = (state.events || []).find((e) => e.id === x.eventId);
+      return '<div class="callout"><b>' + tr('In {name}', { name: esc(ev ? ev.name : '') }) + '</b><span class="hint">' +
+        (x.lentShare ? tr('Your share {mine}; {others} is others’ and not your spending.', { mine: inr(x.amount - x.lentShare), others: inr(x.lentShare) }) : x.paidBy ? tr('{who} paid; this is your share.', { who: esc(x.paidBy) }) : '') +
+        '</span><div><button class="ghost small" data-action="ev-goto" data-id="' + esc(x.eventId) + '">' + tr('Open the event') + '</button></div></div>';
+    }
+    if (!Core.isFlexible(x) || x.iouId || x.splitOf || x.maybeId || x.claimId || x.covered || x.refunded) return '';
+    const evs = (state.events || []).filter((e) => e.to >= Core.addDays(x.date, -30)).sort((a, b) => (a.from < b.from ? 1 : -1));
+    return '<div class="callout"><b>' + tr('Shared with friends or family?') + '</b><span class="hint">' + tr('Split it in a trip or event: only your share counts as your spending, and each person owes you theirs.') + '</span>' +
+      '<div class="row">' + evs.slice(0, 3).map((e) => '<button class="ghost small" data-action="ev-split-tx" data-id="' + esc(e.id) + '" data-tx="' + esc(x.id) + '">' + esc(e.name) + '</button>').join('') +
+      '<button class="ghost small" data-action="ev-new-from-tx" data-tx="' + esc(x.id) + '">' + tr('New trip or event') + '</button></div></div>';
+  }
+
   function maybePage() {
     const t = today();
     const r = Core.projectRunway(state, t);
@@ -3997,7 +4192,7 @@
         '<button class="ghost small" data-action="keep-use" data-id="' + esc(k.tx.id) + '" data-buy="' + esc(x.id) + '">' + tr('Paid from {name} ({left} left)', { name: esc(k.name), left: inr(k.left) }) + '</button>').join('') + '</div>' : '') +
       (x.covered ? '<p class="hint">' + tr('{amount} of it was paid from money kept for it, so it doesn’t use your budgets.', { amount: inr(x.covered) }) + '</p>' : '') +
       refundsBox(x) +
-      reimbBox(x) + maybeTxBox(x) + fixedTxBox(x) + refundTxBox(x) +
+      reimbBox(x) + maybeTxBox(x) + fixedTxBox(x) + refundTxBox(x) + eventTxBox(x) +
       notPaymentBox(x, flex || isIn || saved) +
       '</div></div>';
   }
@@ -4203,6 +4398,7 @@
       (onCard ? ' · <span class="warn">' + tr('on {card}', { card: cardLabel(onCard) }) + '</span>' : '') +
       (x.wallet && !Core.isTransfer(x) ? ' · ' + esc(walletName(x.wallet)) : '') +
       (x.splitOf ? ' · <span class="chip">' + tr('Split') + '</span>' : '') +
+      (x.eventId ? ' · <span class="chip">' + esc(((state.events || []).find((e) => e.id === x.eventId) || {}).name || '') + '</span>' : '') +
       (x.passedOn ? ' · <span class="chip">' + tr('Passed on') + '</span>' : '') +
       (x.iouId || x.iouPay ? ' · <span class="chip">' + tr('People') + '</span>' : '') +
       (x.claimId ? ' · <span class="chip">' + tr('Reimbursable') + '</span>' : '') +
@@ -6062,6 +6258,9 @@
     }
   });
 
+  document.addEventListener('input', (ev) => { if (ev.target.closest && ev.target.closest('.ea-form')) eventPreview(); });
+  document.addEventListener('change', (ev) => { if (ev.target.closest && ev.target.closest('.ea-form')) eventPreview(); });
+
   let searchTimer;
   document.addEventListener('input', (ev) => {
     if (ev.target.id !== 'debt-whatif') return;
@@ -6474,6 +6673,96 @@
         save(); rerenderKeepScroll(); offerUndo(tr('Not a fixed payment any more'), before);
         return;
       }
+      // Trips and events
+      case 'ev-form': ui.evForm = true; ui.evError = ''; break;
+      case 'ev-form-cancel': ui.evForm = false; ui.evError = ''; ui.evFromTx = null; break;
+      case 'ev-create': {
+        const val = (id) => (document.getElementById(id) || {}).value || '';
+        const name = val('ev-name').trim();
+        const people = val('ev-people').split(',');
+        if (!name) { ui.evError = tr('Give it a name.'); break; }
+        if (!people.some((p) => p.trim())) { ui.evError = tr('Add at least one person.'); break; }
+        const before = JSON.stringify(state);
+        const ev = Core.addEvent(state, { name, from: val('ev-from') || t, to: val('ev-to') || val('ev-from') || t, people, budget: Number(val('ev-budget')) || 0 }, t);
+        if (!ev) { ui.evError = tr('Check the name and people.'); break; }
+        ui.evForm = false; ui.evError = ''; ui.evOpen = ev.id;
+        // Made from a payment: go straight to splitting it.
+        const fromTx = ui.evFromTx && state.transactions.find((x) => x.id === ui.evFromTx);
+        ui.evAdd = fromTx ? { txId: fromTx.id, total: fromTx.amount, date: fromTx.date, place: fromTx.note || '', category: fromTx.category, paidBy: 'me' } : null;
+        ui.evFromTx = null;
+        save(); rerenderKeepScroll(); offerUndo(tr('{name} added', { name }), before); return;
+      }
+      case 'ev-open': ui.evOpen = btn.dataset.id; ui.evAdd = null; ui.evSettle = null; ui.evEdit = false; ui.evDelete = false; ui.evError = ''; window.scrollTo(0, 0); break;
+      case 'ev-close': ui.evOpen = null; ui.evAdd = null; ui.evSettle = null; ui.evEdit = false; ui.evDelete = false; break;
+      case 'ev-goto': ui.editTx = null; ui.evOpen = btn.dataset.id; ui.evAdd = null; openPage('spend', 'events'); return;
+      case 'ev-split-tx': case 'ev-new-from-tx': {
+        const x = state.transactions.find((y) => y.id === btn.dataset.tx);
+        if (!x) return;
+        ui.editTx = null;
+        if (btn.dataset.action === 'ev-new-from-tx') { ui.evOpen = null; ui.evForm = true; ui.evFromTx = x.id; ui.evError = ''; }
+        else { ui.evOpen = btn.dataset.id; ui.evAdd = { txId: x.id, total: x.amount, date: x.date, place: x.note || '', category: x.category, paidBy: 'me' }; ui.evError = ''; }
+        openPage('spend', 'events'); return;
+      }
+      case 'ev-add-open': ui.evAdd = { date: t, paidBy: 'me', mode: 'equal' }; ui.evError = ''; break;
+      case 'ev-add-cancel': ui.evAdd = null; ui.evError = ''; break;
+      case 'ev-add': {
+        const ev = (state.events || []).find((e) => e.id === ui.evOpen);
+        if (!ev) return;
+        const f = eventFormShares(ev);
+        const val = (id) => (document.getElementById(id) || {}).value || '';
+        if (!(f.total > 0)) { ui.evError = tr('Enter the amount.'); break; }
+        if (!f.shares) { ui.evError = tr('The parts don’t add up to {amount}.', { amount: inr(f.total) }); break; }
+        const before = JSON.stringify(state);
+        const it = Core.addEventExpense(state, ev.id, { date: val('ea-date') || t, total: f.total, paidBy: f.paidBy, shares: f.shares, place: val('ea-place'), category: val('ea-cat') || 'Travel', txId: ui.evAdd && ui.evAdd.txId });
+        if (!it) { ui.evError = tr('That payment can’t be split here.'); break; }
+        ui.evAdd = null; ui.evError = '';
+        save(); rerenderKeepScroll();
+        offerUndo(f.paidBy === 'me' ? tr('Your share {mine} counts as spending; {others} is owed to you.', { mine: inr(f.shares.me || 0), others: inr(f.total - (f.shares.me || 0)) })
+          : tr('Your share {mine} counts as spending; you owe {who}.', { mine: inr(f.shares.me || 0), who: f.paidBy }), before);
+        return;
+      }
+      case 'ev-item-remove': {
+        const before = JSON.stringify(state);
+        const res = Core.removeEventExpense(state, ui.evOpen, btn.dataset.id);
+        if (!res.ok) { toast(tr('Already settled with {name} for this. Undo that first.', { name: res.name || '' })); return; }
+        save(); rerenderKeepScroll(); offerUndo(tr('Payment taken out of the event'), before); return;
+      }
+      case 'ev-settle-open': ui.evSettle = btn.dataset.name; break;
+      case 'ev-settle-cancel': ui.evSettle = null; break;
+      case 'ev-net': case 'ev-settle': {
+        const before = JSON.stringify(state);
+        const pick = document.querySelector('input[name=es-tx]:checked');
+        const amount = btn.dataset.action === 'ev-net' ? 0 : Math.round(Number((document.getElementById('es-amount') || {}).value) || 0);
+        if (btn.dataset.action === 'ev-settle' && !(amount > 0)) { toast(tr('Enter the amount.')); return; }
+        const res = Core.settleEvent(state, ui.evOpen, btn.dataset.name, { amount, date: (document.getElementById('es-date') || {}).value || t, txId: pick && pick.value ? pick.value : null });
+        if (!res) { toast(tr('That entry doesn’t match. Pick another or add it.')); return; }
+        ui.evSettle = null;
+        save(); rerenderKeepScroll(); offerUndo(res.paid ? tr('{amount} settled with {name}. Not income or spending: money passed on.', { amount: inr(res.paid), name: btn.dataset.name }) : tr('Marked even with {name}.', { name: btn.dataset.name }), before);
+        return;
+      }
+      case 'ev-remind': {
+        const ev = (state.events || []).find((e) => e.id === ui.evOpen);
+        if (ev) shareMessage(eventReminderText(ev, btn.dataset.name));
+        return;
+      }
+      case 'ev-edit': ui.evEdit = true; break;
+      case 'ev-edit-cancel': ui.evEdit = false; break;
+      case 'ev-edit-save': {
+        const val = (id) => (document.getElementById(id) || {}).value || '';
+        const before = JSON.stringify(state);
+        if (!Core.editEvent(state, ui.evOpen, { name: val('ee-name'), from: val('ee-from'), to: val('ee-to'), people: val('ee-people').split(','), budget: Number(val('ee-budget')) || 0 })) {
+          toast(tr('Someone with a share can’t be taken out.')); return;
+        }
+        ui.evEdit = false; save(); rerenderKeepScroll(); offerUndo(tr('Saved'), before); return;
+      }
+      case 'ev-delete-ask': ui.evDelete = true; break;
+      case 'ev-delete-cancel': ui.evDelete = false; break;
+      case 'ev-delete': {
+        const before = JSON.stringify(state);
+        Core.deleteEvent(state, ui.evOpen);
+        ui.evOpen = null; ui.evDelete = false;
+        save(); rerenderKeepScroll(); offerUndo(tr('Event deleted'), before); return;
+      }
       case 'maybe-form': ui.maybeForm = true; ui.maybeError = ''; break;
       case 'maybe-form-cancel': ui.maybeForm = false; ui.maybeError = ''; break;
       case 'maybe-when': { const d = document.getElementById('mb-date'); if (d) d.value = Core.addDays(t, Number(btn.dataset.days) || 7); return; }
@@ -6812,6 +7101,11 @@
       case 'tx-delete': {
         const before = JSON.stringify(state);
         const tx = state.transactions.find((x) => x.id === btn.dataset.id);
+        // In a trip or event: its payment comes out of the event first (refused once someone's been paid back for it).
+        if (tx && tx.eventId) {
+          const res = Core.eventForgetTx(state, tx);
+          if (!res.ok) { toast(tr('Already settled with {name} for this. Undo that first.', { name: res.name || '' })); return; }
+        }
         if (tx && (Core.isIncome(tx) || Core.isMove(tx))) undoIncomeUse(tx);
         if (tx && Core.isBillPayment(tx)) Core.undoBillPayment(state, tx);
         if (tx && tx.fromFund) state.savings.emergencyBalance = (Number(state.savings.emergencyBalance) || 0) + tx.amount;
