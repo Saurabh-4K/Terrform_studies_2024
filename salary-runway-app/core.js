@@ -3184,6 +3184,20 @@
     if (wi.debt) L.push(wi.debt.extra ? 'With ' + R(wi.debt.extra) + ' extra a month on loans: debt-free ' + (wi.debt.free.plan ? M(wi.debt.free.plan) : 'never') + ', interest still to pay ' + R(wi.debt.interest.plan) +
       '. If nothing changes: ' + (wi.debt.free.now ? M(wi.debt.free.now) : 'never') + ', interest ' + R(wi.debt.interest.now) + '.'
       : 'Loans at this step: debt-free ' + (wi.debt.free.now ? M(wi.debt.free.now) : 'never') + ' as planned, interest still to pay ' + R(wi.debt.interest.now) + ' (extra goes to the fund first).');
+    // Where to cut, and this week's target: worked out here, so the plan quotes them instead of making them up.
+    const cu = cutOptions(state, todayIso);
+    L.push('', 'WHERE TO CUT (worked out by the app from their last 8 weeks; suggest only these cuts, with these amounts)');
+    L.push(cu.cuts.length ? 'Halving spending that is not essentials, until payday (' + cu.days + ' days): ' + cu.cuts.map((c) => c.category + ' from about ' + R(c.daily) + ' to ' + R(c.keep) + ' a day saves ' + R(c.toPayday) +
+      ' by payday (' + R(c.perMonth) + ' a month)').join('; ') + '. Together ' + R(cu.total) + ' by payday: at this pace payday comes with ' + R(cu.endPace) + ', with these cuts ' + R(cu.afterCuts) + '.' +
+      (cu.status === 'short' ? ' Even so, essentials alone are short by ' + R(cu.shortBy) + ': the cuts stop the gap growing, they do not close it.' : '')
+      : 'No cuts to suggest: not enough spending outside essentials, family and savings recorded in the last 8 weeks.');
+    const wt = weekTarget(state, todayIso);
+    L.push('', "THIS WEEK'S TARGET (worked out by the app from the month's plan; week_goal uses one of these, with exactly this amount)");
+    L.push('spend_cap ' + R(wt.cap) + ' for the week ' + D(wt.from) + ' to ' + D(wt.to) + ': ' + R(wt.spent) + ' already spent before today + ' + R(wt.daily) + ' a day for ' + wt.days + ' day' + (wt.days > 1 ? 's' : '') +
+      (wt.daysAfter ? ' + ' + R(wt.nextDaily) + ' a day for ' + wt.daysAfter + ' day' + (wt.daysAfter > 1 ? 's' : '') + ' after payday' : '') + '.');
+    L.push(wt.save ? wt.save.kind + ' ' + R(wt.save.amount) + ' this week: a week\'s share of the ' + R(wt.save.monthly) + ' a month plan, ' + (WHERE[wt.save.step] || 'for the step') + '.'
+      : 'No saving goal this week: ' + (wt.status !== 'ok' ? 'the round is ' + wt.status + '.' : 'at this pace the money does not last to payday.'));
+    L.push('no_card (amount 0): no credit card for daily spending this week.');
     // Official figures, searched once a month on government sites only (nothing about the person is sent for them).
     const RATE_NAMES = { repo_rate: 'RBI repo rate', cpi_inflation: 'Retail inflation (CPI, year on year)', ppf: 'PPF', ssy: 'Sukanya Samriddhi', scss: "Senior Citizens' Savings Scheme", nsc: 'NSC', po_savings: 'Post office savings account' };
     const rates = state.rates && (state.rates.figures || []).filter((x) => RATE_NAMES[x.key]);
@@ -3208,9 +3222,9 @@
       if (tr4.falling.length) L.push('Down three weeks in a row: ' + tr4.falling.map((x) => x.name + ' ' + x.values.map(R).join(' → ')).join('; ') + '.');
       if (tr4.streak.count) L.push('Weekly goals: ' + tr4.streak.kind + ' ' + tr4.streak.count + ' week' + (tr4.streak.count > 1 ? 's' : '') + ' in a row.');
       L.push("This week's goal should be " + {
-        easier: 'easier: the last goals were missed, so set it close to what they actually managed last week. A goal they reach beats a perfect one they don\'t.',
-        harder: 'a little harder (about 10% more) than last week\'s: the last goals were met.',
-        same: 'about as hard as last week\'s.',
+        easier: 'the simplest of THIS WEEK\'S TARGET (usually the spend cap or no card): the last goals were missed. Say one way to reach it. A goal they reach beats a perfect one they don\'t.',
+        harder: 'the saving target from THIS WEEK\'S TARGET when there is one: the last goals were met.',
+        same: 'any one of THIS WEEK\'S TARGET.',
       }[tr4.difficulty]);
     }
     const debts = (state.debts || []).filter((d) => d.balance > 0);
@@ -3505,6 +3519,142 @@
       limit: Math.round(r.dailyAllowance), limitCovers: r.dailyAllowance >= ess.daily, budgetsTooLow: r.limit.byBudget < ess.daily && r.limit.byMoney >= ess.daily,
       options: status === 'short' ? z.options : [],
     };
+  }
+
+  /*
+   * Where to cut: spending that isn't essentials, by category, at the
+   * person's own pace over the last 8 weeks (at least 2 weeks recorded).
+   * Halving each until payday: the new amount a day, what it saves by
+   * payday and in a month, and where payday then lands against the usual
+   * pace. Money for family, school, savings or uncategorised payments is
+   * never offered as a cut. Worked out here, so the screens and the AI
+   * never make up a cut.
+   */
+  const NOT_CUTS = ['family', 'education', 'school', 'kids', 'savings', 'rent', 'insurance', 'emergency', 'misc', 'medical'];
+  function cutOptions(state, todayIso) {
+    const r = projectRunway(state, todayIso);
+    const fe = feasibility(state, todayIso);
+    const from = addDays(todayIso, -56);
+    const recent = state.transactions.filter((t) => isFlexible(t) && !t.gap && t.date >= from && t.date < todayIso);
+    const first = recent.reduce((m, t) => (t.date < m ? t.date : m), todayIso);
+    const span = daysBetween(first, todayIso);
+    const ten = (n) => Math.round(n / 10) * 10;
+    const out = { status: fe.status, shortBy: fe.shortBy, days: fe.days, endPace: Math.round(r.endPace), cuts: [], total: 0, perMonth: 0, afterCuts: Math.round(r.endPace) };
+    if (span < 14 || fe.days < 1) return out;
+    const byCat = {};
+    recent.filter((t) => !isEssential(t) && NOT_CUTS.indexOf(String(t.category || '').toLowerCase()) === -1)
+      .forEach((t) => { byCat[t.category] = (byCat[t.category] || 0) + ownPart(t); });
+    out.cuts = Object.keys(byCat).map((c) => {
+      const daily = byCat[c] / span;
+      return { category: c, daily: ten(daily), keep: ten(daily / 2), toPayday: ten((daily / 2) * fe.days), perMonth: ten((daily / 2) * 30) };
+    }).filter((c) => c.perMonth >= 300 && c.toPayday > 0).sort((a, b) => b.perMonth - a.perMonth).slice(0, 4);
+    out.total = sum(out.cuts, (c) => c.toPayday);
+    out.perMonth = sum(out.cuts, (c) => c.perMonth);
+    out.afterCuts = out.endPace + out.total;
+    return out;
+  }
+
+  /*
+   * This week's target, from the month's plan, so each week's goal adds up
+   * to the month: a spending cap for the whole week (Monday to Sunday, as
+   * the goal is checked) = what's spent so far this week + today's limit
+   * (never below a day of essentials) for each day left before payday + the
+   * new round's daily budget after it. And, only when essentials are
+   * covered and this pace reaches payday, the week's share of the plan's
+   * monthly amount, for the ladder's step.
+   */
+  function weekTarget(state, todayIso) {
+    const from = weekStart(todayIso);
+    const to = addDays(from, 6);
+    const r = projectRunway(state, todayIso);
+    const fe = feasibility(state, todayIso);
+    const payday = Number(state.settings.payday) || 1;
+    const spent = Math.round(sum(state.transactions.filter((t) => isFlexible(t) && !t.gap && t.date >= from && t.date < todayIso), personalAmt));
+    const lastDay = addDays(r.cycle.next, -1);
+    const days = daysBetween(todayIso, to < lastDay ? to : lastDay) + 1;
+    const daily = Math.max(r.dailyAllowance, fe.essentialsDaily);
+    const daysAfter = to >= r.cycle.next ? daysBetween(r.cycle.next, to) + 1 : 0;
+    const nextDaily = daysAfter ? monthlyPlan(Object.assign({}, state, { adjustment: null }), r.cycle.next).flexTotal / cycleFor(r.cycle.next, payday).days : 0;
+    const cap = Math.round((spent + daily * days + nextDaily * daysAfter) / 10) * 10;
+    const wi = whatIf(state, todayIso);
+    const weekly = fe.status === 'ok' && r.endPace >= 0 && wi.per > 0 ? Math.max(100, Math.round((wi.per * 7) / 30 / 10) * 10) : 0;
+    return { from, to, cap, spent, days, daily: Math.round(daily), daysAfter, nextDaily: Math.round(nextDaily), status: fe.status,
+      save: weekly ? { kind: wi.step === 'debt' ? 'extra_loan' : 'save', amount: weekly, monthly: wi.per, step: wi.step } : null };
+  }
+
+  /*
+   * The AI's weekly goal, held to the week's target: the cap or the saving
+   * the app worked out, never another amount; a saving goal in a round that
+   * can't spare one becomes the cap. Returns the goal and whether it changed
+   * (then the app writes its words again).
+   */
+  function fitWeekGoal(goal, target) {
+    const g = Object.assign({}, goal || {});
+    const before = g.type + ':' + g.amount;
+    if (g.type === 'no_card') g.amount = 0;
+    else if ((g.type === 'save' || g.type === 'extra_loan') && target.save && target.save.kind === g.type) g.amount = target.save.amount;
+    else { g.type = 'spend_cap'; g.amount = target.cap; }
+    const amounts = rupeeAmounts(g.text);
+    const changed = before !== g.type + ':' + g.amount || amounts.some((n) => Math.abs(n - g.amount) > Math.max(1, g.amount * 0.02));
+    return { goal: g, changed };
+  }
+
+  // Rupee amounts in a text, Indian style (₹1,20,000; Rs 500; ₹1.2 lakh; ₹15k), Devanagari digits too.
+  function rupeeAmounts(text) {
+    const s = String(text || '').replace(/[०-९]/g, (d) => String('०१२३४५६७८९'.indexOf(d)));
+    const out = [];
+    const re = /(?:₹|\bRs\.?|\bINR)\s?(\d[\d,]*(?:\.\d+)?)(?:\s*(lakhs?|lacs?|लाख|crores?|करोड़|कोटी|k\b|K\b|हजार|हज़ार))?/gi;
+    let m;
+    while ((m = re.exec(s))) {
+      let n = Number(m[1].replace(/,/g, ''));
+      const u = (m[2] || '').toLowerCase();
+      if (/lakh|lac|लाख/.test(u)) n *= 1e5;
+      else if (/crore|करोड़|कोटी/.test(u)) n *= 1e7;
+      else if (u === 'k' || /हजार|हज़ार/.test(u)) n *= 1e3;
+      if (Number.isFinite(n)) out.push(Math.round(n));
+    }
+    return out;
+  }
+
+  /*
+   * Every rupee amount the AI wrote must come from the facts it was sent:
+   * the same amount (within 2%, or rounded to two figures, like ₹15,000 for
+   * ₹15,029), or simple arithmetic shown on the same line from amounts that
+   * are (two of them added or taken away, or a day, week, month or year of
+   * one: "₹273 a day is ₹1,911 a week"). A line with any other amount is
+   * left out; a headline or verdict with one is blanked. Returns the plan
+   * and how many lines went.
+   */
+  function checkAdviceNumbers(plan, facts) {
+    if (!plan) return { plan, dropped: 0 };
+    const known = Array.from(new Set(rupeeAmounts(facts).filter((n) => n > 0)));
+    const two = (a) => { const p = Math.pow(10, Math.max(0, String(Math.round(Math.abs(a))).length - 2)); return Math.round(a / p) * p; };
+    const direct = (n) => known.some((a) => Math.abs(n - a) <= Math.max(1, a * 0.02) || two(a) === n);
+    const same = (n, x) => Math.abs(n - x) <= 1 || Math.round(x / 10) * 10 === n || two(x) === n;
+    const derived = (n, base) => base.some((a) => [7, 30, 12].some((k) => same(n, a * k) || same(n, a / k))) ||
+      base.some((a, i) => base.some((b, j) => j !== i && (same(n, a + b) || same(n, a - b))));
+    // The texts of one line, and any amount fields that go with them.
+    const fine = (texts, nums) => {
+      const all = [].concat(...texts.map(rupeeAmounts)).concat((nums || []).filter((n) => Number(n) > 0).map(Number));
+      const base = all.filter(direct);
+      return all.every((n) => n <= 10 || direct(n) || derived(n, base));
+    };
+    let dropped = 0;
+    const keep = (list, test) => (list || []).filter((x) => { const y = test(x); if (!y) dropped++; return y; });
+    const out = Object.assign({}, plan);
+    if (!fine([plan.headline])) { out.headline = ''; dropped++; }
+    out.sections = (plan.sections || []).map((sec) => Object.assign({}, sec, { steps: keep(sec.steps, (st) => fine([st.action, st.why], [st.amount])) }))
+      .filter((sec) => sec.steps.length);
+    const d = plan.diagnosis;
+    if (d) {
+      out.diagnosis = Object.assign({}, d, {
+        verdict: fine([d.verdict]) ? d.verdict : (dropped++, ''),
+        causes: keep(d.causes, (c) => fine([c.title, c.text])),
+        actions: keep(d.actions, (a) => fine([a.action, a.by_when, a.changes], [a.how_much])),
+        checks: keep(d.checks, (c) => fine([c])),
+      });
+    }
+    return { plan: out, dropped };
   }
 
   /*
@@ -4291,6 +4441,7 @@
     insights, simulateDebts, compareDebtPlans, debtFreeDates, emergencyPlan, parseSms,
     splitSmsBatch, smsKey, categorize, normalizeMerchant, sinkingMonthly, inCycle,
     spendInRange, incomeInRange, incomeKept, isIncome, isMove, isBillPayment, isFixedPayment, isCashAdvance, emiLoans,
+    cutOptions, weekTarget, fitWeekGoal, rupeeAmounts, checkAdviceNumbers,
     linkRefund, unlinkRefund, forgetRefunds, refundMatches, isEarned, earnedIn, fixedPaidFor, fixedDueFor, payFixed, unpayFixed, fixedMatches, isFlexible, incomeOptions,
     salaryFor, salaryHistory, looksLikeSalary, paydayReset, suggestUse, freedomDays, interestLeak, nextPaydayPreview,
     billShare, billPot, billsMonthly, billPaidIn, billDue, billEnded, fixedEnded, loanEnd, billsFor, fixedFor, fixedTotal, paymentsLeft, lastDueFrom, nextFixedDue, payBill, undoBillPayment, zoneStatus, ESSENTIAL_CATEGORIES,

@@ -63,7 +63,7 @@ test('the AI summary gets the four weeks, the trends and the goal difficulty', (
   assert.match(f, /Up three weeks in a row: Food & dining ₹800 → ₹1,100 → ₹1,400\./);
   assert.match(f, /Down three weeks in a row: Groceries ₹2,000 → ₹1,500 → ₹1,000\./);
   assert.match(f, /Weekly goals: missed 2 weeks in a row\./);
-  assert.match(f, /This week's goal should be easier/);
+  assert.match(f, /This week's goal should be the simplest of THIS WEEK'S TARGET .*: the last goals were missed/);
   // Nothing recorded at all: no section
   const empty = household(); empty.transactions = [];
   assert.doesNotMatch(Core.planFacts(empty, T, null), /LAST 4 WEEKS/);

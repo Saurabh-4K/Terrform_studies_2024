@@ -4669,6 +4669,17 @@
       (wi.room.freed || []).map((e) => '<p class="hint good">' + tr('{name} ends in {month}: {amount} a month is free after that.', { name: esc(e.name), month: monthYear(e.last), amount: inr(e.emi) }) + '</p>').join('');
   }
 
+  // Where to cut: halving spending that isn't essentials, by category, with what it saves by payday and where payday lands.
+  function cutsBox(cu) {
+    if (!cu.days) return '';
+    if (!cu.cuts.length) return '<h3>' + tr('Where to cut') + '</h3><p class="hint">' + tr('Nothing to suggest yet: cuts show once two weeks of spending outside essentials are recorded.') + '</p>';
+    return '<h3>' + tr('Where to cut') + '</h3><div class="summary">' +
+      cu.cuts.map((c) => '<div class="line"><span>' + tr('{name}: {from} → {to} a day', { name: esc(label(c.category)), from: inr(c.daily), to: inr(c.keep) }) + '</span><span>' + tr('saves {amount}', { amount: inr(c.toPayday) }) + '</span></div>').join('') +
+      '<div class="line"><span><b>' + tr('Payday at this pace → with these cuts') + '</b></span><span><b>' + inr(cu.endPace) + ' → ' + inr(cu.afterCuts) + '</b></span></div></div>' +
+      '<p class="hint">' + tr('Halving each one until payday, from your last 8 weeks. In a month that’s {amount}.', { amount: inr(cu.perMonth) }) +
+      (cu.status === 'short' ? ' ' + tr('Essentials alone are still short by {amount}: cuts stop the gap growing, they don’t close it.', { amount: inr(cu.shortBy) }) : '') + '</p>';
+  }
+
   // Runway → Monthly review: the diagnosis report. The app's numbers (health check, what-ifs, ladder) always;
   // the AI's verdict, causes, plan and checks once a round, with the weekly plan on.
   function reviewCard() {
@@ -4693,6 +4704,7 @@
       '<span class="hint">' + tr('{available} after EMIs, bills and promises still due; essentials need about {essentials} ({daily} a day for {days} days).',
         { available: inr(fe.available), essentials: inr(fe.essentials), daily: inr(fe.essentialsDaily), days: fe.days }) +
       (fe.status === 'short' ? ' ' + tr('Nothing goes aside this round: closing the gap comes first.') : '') + '</span></div>';
+    html += cutsBox(Core.cutOptions(state, t));
     const wi = Core.whatIf(state, t);
     const rm = wi.room;
     html += '<h3>' + tr('What your pay can spare') + '</h3><div class="summary">' +
@@ -4814,7 +4826,8 @@
           '</div>';
       });
       if (!p.sections.some((sec) => sec.kind === 'fraud')) html += fraudBox();
-      html += '<p class="hint">' + tr('Made by AI on {date} from your numbers. It can be wrong: the app’s own numbers are the ones to trust.', { date: fmtDate(wp.made) }) + '</p>';
+      html += '<p class="hint">' + tr('Made by AI on {date} from your numbers. It can be wrong: the app’s own numbers are the ones to trust.', { date: fmtDate(wp.made) }) +
+        (p.numbersDropped ? ' ' + tr(p.numbersDropped === 1 ? '1 line was left out: its amount didn’t match your numbers.' : '{n} lines were left out: their amounts didn’t match your numbers.', { n: p.numbersDropped }) : '') + '</p>';
       html += wp.made === t
         ? '<p class="hint">' + tr('A new plan comes each Monday. You can remake it once a day.') + '</p>'
         : '<div><button class="ghost" data-action="plan-make"' + (ui.planBusy ? ' disabled' : '') + '>' + tr('Make a new plan') + '</button></div>';
@@ -4884,6 +4897,14 @@
       .then(() => clearTimeout(timer));
   }
 
+  // The week's goal in the app's words, when its amount had to be set to the week's target.
+  function weekGoalText(g) {
+    if (g.type === 'no_card') return tr('No credit card for daily spending this week.');
+    if (g.type === 'save') return tr('Move {amount} to savings this week.', { amount: inr(g.amount) });
+    if (g.type === 'extra_loan') return tr('Pay {amount} extra on loans this week.', { amount: inr(g.amount) });
+    return tr('Keep this week’s spending under {amount}.', { amount: inr(g.amount) });
+  }
+
   function requestPlan() {
     const cfg = aiCfg();
     if (!cfg.on || ui.planBusy) return;
@@ -4898,12 +4919,19 @@
     rerenderKeepScroll();
     const ctl = typeof AbortController === 'function' ? new AbortController() : null;
     const timer = setTimeout(() => { if (ctl) ctl.abort(); }, 120000);
+    let facts = '';
     const done = (plan, error) => {
       clearTimeout(timer);
       ui.planBusy = false;
       if (plan) {
         // No bank, fund, insurer or app names in what's kept, whatever the AI wrote.
         plan = Core.cleanAdvice(plan, state);
+        // Every rupee amount must come from the numbers sent; a line with another one is left out.
+        const checked = Core.checkAdviceNumbers(plan, facts);
+        plan = Object.assign({}, checked.plan, { numbersDropped: checked.dropped });
+        // The week's goal uses the week's target the app worked out from the month's plan.
+        const fit = Core.fitWeekGoal(plan.week_goal, Core.weekTarget(state, t));
+        plan.week_goal = fit.changed ? Object.assign(fit.goal, { text: weekGoalText(fit.goal) }) : fit.goal;
         // A finished week's goal is kept (8 weeks), so the trend can say how goals went.
         if (prev && prev.goal && prev.week < week) state.goalHistory = (state.goalHistory || []).filter((g) => g.week !== prev.goal.week).concat(prev.goal).slice(-8);
         // The round's diagnosis: the review is done, and its checks are followed up next month.
@@ -4916,10 +4944,10 @@
       } else ui.planError = error;
       rerenderKeepScroll();
     };
-    fetchRates(cfg).then(() => fetch(cfg.url + '/plan', {
+    fetchRates(cfg).then(() => { facts = Core.planFacts(state, t, lastGoal); }).then(() => fetch(cfg.url + '/plan', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-Invite-Code': cfg.code },
-      body: JSON.stringify({ facts: Core.planFacts(state, t, lastGoal), language: AI_LANG[I18N.getLang()] || 'English' }),
+      body: JSON.stringify({ facts, language: AI_LANG[I18N.getLang()] || 'English' }),
       signal: ctl ? ctl.signal : undefined,
     })).then((res) => res.json().catch(() => ({})).then((body) => ({ status: res.status, body }))).then(({ status, body }) => {
       if (status === 200 && body.plan && Array.isArray(body.plan.sections) && body.plan.week_goal) done(body.plan);
