@@ -3054,6 +3054,30 @@
       const res = goalResult(state, lastGoal);
       if (res) L.push("Last week's goal: " + (lastGoal.text || lastGoal.type) + ' (' + lastGoal.type + ' ' + R(lastGoal.amount) + '): ' + (res.met ? 'met' : 'not met') + ', actual ' + R(res.value) + '.');
     }
+    const rv = monthlyReview(state, todayIso);
+    const M = (iso) => { const d = parseISO(iso); return MON[d.getMonth()] + ' ' + d.getFullYear(); };
+    const STEP = { basics: 'cover basics and every minimum, borrow nothing new', buffer: 'a starter safety fund (one month of basics)',
+      debt: 'clear loans costing ' + COSTLY_RATE + '% a year or more, costliest first', fund: 'the full emergency fund (' + ((rv.fund && rv.fund.target) || 3) + ' months of basics)',
+      goals: 'savings goals', invest: 'learn about investing' };
+    const ms = rv.ladder.milestone;
+    L.push('', 'LONG TERM (the app works these out; the step is decided by the app)');
+    L.push('Money ladder, in order: 1 basics and minimums, 2 starter fund, 3 costly loans, 4 full emergency fund, 5 goals, 6 investing. Now on step ' +
+      rv.ladder.steps.find((x) => x.current).n + ': ' + STEP[rv.ladder.key] + '. ' + ({
+      basics: 'Next: ' + (ms.short ? 'the salary is short of basics and minimums by ' + R(ms.short) + ' a month' : 'a month with nothing new borrowed') + '.',
+      buffer: 'Next milestone: ' + R(ms.amount) + ' more in the emergency fund reaches ' + ms.target + ' days of basics (now ' + ms.days + ').',
+      debt: 'Next milestone: clear ' + ms.name + ' (' + ms.rate + '% a year, ' + R(ms.balance) + ' left)' + (ms.count > 1 ? ', then the other ' + (ms.count - 1) : '') + '.',
+      fund: 'Next milestone: ' + R(ms.amount) + ' more reaches ' + ms.months + ' months of basics.',
+      goals: 'Next milestone: ' + ms.name + ', ' + R(ms.left) + ' to go' + (ms.by ? ' by ' + M(ms.by) : '') + (ms.late ? ' (date passed)' : '') + '.',
+      invest: 'Ready to learn about investing.',
+    }[rv.ladder.key]));
+    if (rv.debtFree) L.push('Debt-free with the plan: ' + (rv.debtFree.plan ? M(rv.debtFree.plan) : 'never at these payments') + '; with minimums only: ' + (rv.debtFree.minimums ? M(rv.debtFree.minimums) : 'never') +
+      (rv.debtFree.moved ? '; ' + Math.abs(rv.debtFree.moved) + ' month' + (Math.abs(rv.debtFree.moved) > 1 ? 's' : '') + (rv.debtFree.moved < 0 ? ' sooner' : ' later') + ' than last payday' : '') + '.');
+    if (rv.worth.length > 1) L.push('Net worth by round: ' + rv.worth.map((w) => M(w.cycle) + ' ' + R(w.value)).join(' → ') + ' (' + (rv.worthChange >= 0 ? 'up ' : 'down ') + R(Math.abs(rv.worthChange)) + ').');
+    if (rv.fund) L.push('Emergency fund: ' + R(rv.fund.amount) + ' = ' + rv.fund.months + ' months of basics; target ' + rv.fund.target + ' months.');
+    if (rv.savedRate.length) L.push('Saved each round (to funds, investing and loans, beyond EMIs): ' + rv.savedRate.map((m) => M(m.start) + ' ' + m.pct + '% of pay (' + R(m.saved) + ')').join('; ') + '.');
+    if (rv.goals.length) L.push('Goals: ' + rv.goals.map((g) => g.name + ' ' + R(g.saved) + ' of ' + R(g.target) + (g.by ? ' by ' + M(g.by) : '') + (g.done ? ' (reached)' : g.late ? ' (date passed)' : '')).join('; ') + '.');
+    const monthly = !state.reviewDone || state.reviewDone < rv.round;
+    L.push('Monthly review this time: ' + (monthly ? 'yes (write the direction section)' : 'no') + '.');
     const tr4 = weekTrend(state, todayIso, 4);
     if (tr4.weeks.some((w) => !w.quiet)) {
       L.push('', 'LAST 4 WEEKS (Monday to Sunday, oldest first)');
@@ -3235,7 +3259,96 @@
   // What the loans add up to, and Days of Freedom: kept at the start of each round to compare at the end.
   function roundSnapshot(state, todayIso) {
     const f = freedomDays(state, todayIso);
-    return { date: todayIso, freedom: f ? f.days : 0, debt: Math.round(sum(state.debts, (d) => Math.max(0, Number(d.balance) || 0))) };
+    const dfd = debtFreeDates(state, todayIso);
+    return { date: todayIso, freedom: f ? f.days : 0, debt: Math.round(sum(state.debts, (d) => Math.max(0, Number(d.balance) || 0))),
+      free: dfd && !dfd.plan.never ? dfd.plan.date : null };
+  }
+
+  /*
+   * The priority ladder: the order money goes in, as banks and financial
+   * planners teach it. The app decides the step from the numbers; advice is
+   * only about that step, so it never suggests investing while a 40% card
+   * is open.
+   *   1 basics  cover basics and every minimum, nothing new borrowed
+   *   2 buffer  a starter fund: one month of basics
+   *   3 debt    clear loans costing 12% a year or more, costliest first
+   *             (paying them off is a sure return no investment beats)
+   *   4 fund    the full emergency fund (the months chosen, 3 by default)
+   *   5 goals   savings goals
+   *   6 invest  learn about investing
+   */
+  const COSTLY_RATE = 12;
+  function priorityLadder(state, todayIso) {
+    const plan = monthlyPlan(Object.assign({}, state, { adjustment: null }), todayIso);
+    const f = freedomDays(state, todayIso);
+    const days = f ? f.days : 0;
+    const daily = f ? f.daily : 0;
+    const months = Number(state.savings.emergencyTargetMonths) || 3;
+    const debts = (state.debts || []).filter((d) => Number(d.balance) > 0);
+    const costly = debts.filter((d) => (Number(d.rate) || 0) >= COSTLY_RATE).sort((a, b) => b.rate - a.rate || a.balance - b.balance);
+    const j = debtJourney(state, todayIso);
+    const short = Math.max(0, Math.round((f ? f.needs : plan.fixedTotal + plan.debtMin) - (Number(plan.salary) || 0)));
+    const last = lastBorrowed(state, todayIso);
+    const borrowedLately = !!last && daysBetween(last, todayIso) <= 30;
+    const goals = (state.goals || []).filter((g) => !goalStatus(state, g, todayIso).done);
+    const done = {
+      basics: !(j ? j.stage === 'survive' : short > 0 || borrowedLately),
+      buffer: days >= 30,
+      debt: !costly.length,
+      fund: days >= months * 30,
+      goals: !goals.length,
+    };
+    const order = ['basics', 'buffer', 'debt', 'fund', 'goals', 'invest'];
+    const key = order.find((k) => k === 'invest' || !done[k]);
+    const steps = order.map((k, i) => ({ n: i + 1, key: k, done: k !== 'invest' && done[k] && order.indexOf(key) > i, current: k === key }));
+    // What finishing this step takes, in rupees.
+    let milestone = null;
+    if (key === 'basics') milestone = { kind: 'basics', short, borrowedLately };
+    // The nearest milestone first: 7 days of basics, then 30.
+    else if (key === 'buffer') milestone = { kind: 'buffer', amount: f && f.next ? f.next.amount : 0, target: f && f.next ? f.next.target : 30, days };
+    else if (key === 'debt') {
+      const d = costly[0];
+      const sim = simulateDebts(debts, plan.debtExtra, payoffOrder(state), true);
+      milestone = { kind: 'debt', name: d.name, rate: Number(d.rate), balance: Math.round(d.balance), count: costly.length,
+        months: sim.neverPaysOff ? null : sim.months };
+    } else if (key === 'fund') milestone = { kind: 'fund', amount: Math.max(0, Math.ceil(months * 30 * daily - (f ? f.fund : 0))), months, days };
+    else if (key === 'goals') {
+      const g = goals.slice().sort((a, b) => (a.by || '9') < (b.by || '9') ? -1 : 1)[0];
+      const st = goalStatus(state, g, todayIso);
+      milestone = { kind: 'goals', name: g.name, left: st.left, by: g.by || null, late: st.late };
+    } else milestone = { kind: 'invest' };
+    return { key, steps, milestone };
+  }
+
+  /*
+   * The monthly review, made on payday: where the long run is heading.
+   * Debt-free date and how it moved since last payday, net worth over six
+   * rounds, the emergency fund in months, how much of the salary was saved
+   * each round, goals, and the step on the ladder.
+   */
+  function monthlyReview(state, todayIso) {
+    const payday = Number(state.settings.payday) || 1;
+    const cyc = cycleFor(todayIso, payday);
+    const prev = previousCycle(cyc, payday);
+    const rounds = state.rounds || {};
+    const dfd = debtFreeDates(state, todayIso);
+    const thenFree = rounds[prev.start] && rounds[prev.start].free;
+    const nowFree = dfd && !dfd.plan.never ? dfd.plan.date : null;
+    const moved = thenFree && nowFree ? (parseISO(nowFree).getFullYear() - parseISO(thenFree).getFullYear()) * 12 + parseISO(nowFree).getMonth() - parseISO(thenFree).getMonth() : null;
+    const log = state.worthLog || {};
+    const worth = Object.keys(log).sort().slice(-6).map((k) => ({ cycle: k, value: Math.round(Number(log[k]) || 0) }));
+    const f = freedomDays(state, todayIso);
+    const rate = spendTrend(state, todayIso, 4).filter((m) => !m.current && m.recorded && m.salary > 0)
+      .map((m) => ({ start: m.start, saved: Math.round(m.saved), salary: m.salary, pct: Math.round((m.saved / m.salary) * 100) }));
+    const goals = (state.goals || []).map((g) => { const st = goalStatus(state, g, todayIso); return { name: g.name, saved: st.saved, target: st.target, by: g.by || null, done: st.done, late: st.late, monthly: st.perPayday }; });
+    return {
+      round: cyc.start,
+      debtFree: dfd ? { plan: dfd.plan.never ? null : dfd.plan.date, minimums: dfd.now.never ? null : dfd.now.date, extra: dfd.extra, moved } : null,
+      debt: Math.round(sum(state.debts || [], (d) => Math.max(0, Number(d.balance) || 0))),
+      worth, worthChange: worth.length > 1 ? worth[worth.length - 1].value - worth[0].value : null,
+      fund: f ? { days: f.days, months: Math.round((f.days / 30) * 10) / 10, target: Number(state.savings.emergencyTargetMonths) || 3, amount: f.fund } : null,
+      savedRate: rate, goals, ladder: priorityLadder(state, todayIso),
+    };
   }
 
   /*
@@ -3883,7 +3996,7 @@
     recordCardPayment, keptFor, ownPart, coverPurchase, refundToPurchase, undoRefund, earmarkedIn, cleanState, accuracyStats, reimbView, syncReimb, addClaim, recordPayout, claimSet, reimbForget, reimbAmount, addCardEmi, isPassedOn, passThroughPair, passOn, iouLeft, openIous, addIou, payIou, undoIouTx, iouSummary, iouEvents, cardEmiFromBooking, looksLikeCardBill, spendToCardPayment, convertCardBalance, answerCardDue, cardLateFee, cardRate, CARD_RATE, undoCardConvert, cardFreeDays, byCategory, DEFAULT_SPLIT,
     isLoanCredit, borrowedThisCycle, borrowCheck, rolloverOptions, setTranslator,
     maybeOpen, maybeHeld, maybeDue, maybeIfHappens, addMaybe, maybeHappened, maybeDidnt, maybeReopen, maybeForget, maybeCandidates, maybeStats,
-    weekTrend, payoffOrder, tickDebts, debtJourney, lenderTasks, lastBorrowed,
+    weekTrend, priorityLadder, monthlyReview, payoffOrder, tickDebts, debtJourney, lenderTasks, lastBorrowed,
     encryptBackup, openBackup, backupInfo, toB64, fromB64, isTransfer, walletBalances, goalStatus, goalsMonthly, budgetEnvelopes, netWorth, reportRange, budgetHistory, aiFacts, planFacts, fraudSignals, investReady, goalResult, weekStart,
     daySpent, daySpending, dayTally, roundSnapshot, roundResult, weekRecap,
     monthReport, LEAKS, leakNames, leakOf, leakSummary, leakSuggestions, spendWhere, spendWhen, spendTrend, BASICS,

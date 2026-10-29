@@ -1107,6 +1107,12 @@ button.tx-title { display: flex; align-items: center; gap: 6px; background: none
 .plan-fraud h3 svg { fill: var(--bad); }
 .plan-steps { margin: 0; padding-left: 22px; display: grid; gap: 8px; }
 .plan-steps li b { display: block; }
+.ladder { margin: 4px 0 8px; padding-left: 26px; display: grid; gap: 6px; }
+.ladder li { color: var(--muted); }
+.ladder li.done b { color: var(--good); font-weight: 600; }
+.ladder li.current { color: inherit; padding: 8px 10px; border-radius: 12px; background: var(--accent-soft); }
+.ladder li.current b { font-size: 1rem; }
+.ladder li.current b, .ladder li.current span { display: block; margin-top: 4px; }
 .fraud-box { gap: 8px; background: var(--bad-soft); }
 .fraud-pay .ghost { white-space: nowrap; }
 .fraud-kind { display: grid; gap: 4px; }

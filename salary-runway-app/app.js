@@ -578,6 +578,11 @@
       'When the money comes in, match it to the claims it pays. Paid back in parts: the claim waits for the rest. Closed with something still missing: what didn’t come back becomes your spending.',
       'Paid back more than you spent: the extra counts once. This month’s spending: it’s added to your budget. Side vault: it’s kept apart from daily spending but counted in your net worth.',
     ]],
+    review: ['Monthly review', [
+      'Each payday, where the long run is heading: your debt-free date and how it moved, net worth, the emergency fund in months, how much of your pay you saved, and your goals.',
+      'The money ladder is the order money goes in, as banks and planners teach it: basics and every minimum, a starter fund, costly loans (12% a year or more), the full emergency fund, goals, then investing. The app works out your step from your numbers; advice is about that step only.',
+      'With the weekly plan on, the first plan after payday adds a direction for the month ahead, written by AI from these numbers.',
+    ]],
     maybe: ['Maybe expenses', [
       'Costs that may come: a wedding gift, a bike repair, a doctor’s visit. Add the amount, roughly when, and how likely it is.',
       'Likely: the money is held from today’s limit until payday, so you’re ready if it comes. Maybe: nothing changes, but you see what today’s limit would be if it comes. Unlikely: only listed, so it doesn’t surprise you.',
@@ -980,6 +985,8 @@
               '<div class="amt">' + inr(e.amount) + '</div></div>').join('') + '</div>'
             : '<p class="hint">' + tr('No more fixed payments this cycle.') + '</p>') + '</section>' },
       { key: 'payday', group: 'This month', icon: 'payday', label: 'Next payday', tone: 'mint', badge: { text: fmtDate(cyc.next) }, html: () => paydayPreviewCard() },
+      { key: 'review', group: 'This month', icon: 'target', label: 'Monthly review', tone: 'mint',
+        badge: (() => { const L = Core.priorityLadder(state, t); return { text: tr('Step {n} of 6', { n: L.steps.find((s) => s.current).n }) }; })(), html: () => reviewCard() },
       { key: 'big', group: 'Check & plan', icon: 'big', label: 'Big expense?', tone: 'amber', badge: null, html: () => bigExpenseCard() },
       { key: 'maybe', group: 'Check & plan', icon: 'scale', label: 'Maybe expenses', tone: 'amber',
         badge: (() => { const due = Core.maybeDue(state, t).length; return due ? { text: tr('{n} to answer', { n: due }), tone: 'bad' } : r.held ? { text: shortInr(r.held) } : null; })(), html: () => maybePage() },
@@ -4549,7 +4556,56 @@
     large_new: 'A big payment to a place you haven’t paid before.',
     many_new: 'Three or more new places paid on one day.',
   };
-  const PLAN_ICONS = { save: 'pot', loans: 'loan', fraud: 'shield', invest: 'sprout' };
+  const PLAN_ICONS = { direction: 'target', save: 'pot', loans: 'loan', fraud: 'shield', invest: 'sprout' };
+
+  // ---------- the monthly review and the money ladder ----------
+
+  const LADDER = {
+    basics: ['Basics and every minimum, nothing new borrowed', 'Late fees and new loans cost the most. Rent, food, medicine, school fees and every EMI come first.'],
+    buffer: ['A starter safety fund', 'A month of basics set aside, so a surprise doesn’t turn into a new loan.'],
+    debt: ['Clear costly loans', 'Loans costing 12% a year or more: paying them off is a sure return no investment beats. Costliest first.'],
+    fund: ['The full emergency fund', 'Months of basics set aside, so losing income or a big bill doesn’t undo your progress.'],
+    goals: ['Your savings goals', 'Saved for, not borrowed for.'],
+    invest: ['Learn about investing', 'With no costly loans and a full fund, money you won’t need for years can grow.'],
+  };
+
+  // What finishing the current step takes.
+  function ladderMilestone(ms) {
+    if (ms.kind === 'basics') return ms.short
+      ? tr('Your salary is {amount} short of basics and minimums each month. Closing that gap comes first: see Debts → Your journey.', { amount: inr(ms.short) })
+      : tr('A month with nothing new borrowed. Card spending counts until the bill is paid in full.');
+    if (ms.kind === 'buffer') return tr('{amount} more in your emergency fund reaches {target} days of basics (now {days}).', { amount: inr(ms.amount), target: ms.target, days: ms.days });
+    if (ms.kind === 'debt') return tr('Clear {name} first: {rate}% a year, {amount} left.', { name: esc(ms.name), rate: ms.rate, amount: inr(ms.balance) }) +
+      (ms.count > 1 ? ' ' + tr('Then {n} more, costliest first.', { n: ms.count - 1 }) : '');
+    if (ms.kind === 'fund') return tr('{amount} more reaches {months} months of basics.', { amount: inr(ms.amount), months: ms.months });
+    if (ms.kind === 'goals') return tr('{name}: {amount} to go.', { name: esc(ms.name), amount: inr(ms.left) }) + (ms.by ? ' ' + tr('By {date}.', { date: fmtDate(ms.by, true) }) : '');
+    return tr('Learn the types first (PPF, deposits, an index fund). Talk to a SEBI-registered investment adviser before investing.');
+  }
+
+  // Runway → Monthly review: the ladder, where the long run is heading, and the AI's direction for the round.
+  function reviewCard() {
+    const t = today();
+    const rv = Core.monthlyReview(state, t);
+    const L = rv.ladder;
+    const line = (name, val) => '<div class="line"><span>' + name + '</span><span>' + val + '</span></div>';
+    const monthYear = (iso) => monthName(Core.parseISO(iso).getMonth()) + ' ' + Core.parseISO(iso).getFullYear();
+    const wp = state.weeklyPlan;
+    const dir = wp && wp.plan && wp.made >= rv.round ? (wp.plan.sections || []).find((s) => s.kind === 'direction') : null;
+    let html = '<section class="card"><div class="card-head">' + titled('Monthly review', 'review') + '<span class="hint">' + tr('Since payday, {date}', { date: fmtDate(rv.round) }) + '</span></div>';
+    html += '<ol class="ladder">' + L.steps.map((s) => '<li class="' + (s.current ? 'current' : s.done ? 'done' : '') + '"><b>' + (s.done ? '✓ ' : '') + tr(LADDER[s.key][0]) + '</b>' +
+      (s.current ? '<span class="hint">' + tr(LADDER[s.key][1]) + '</span><span>' + ladderMilestone(L.milestone) + '</span>' : '') + '</li>').join('') + '</ol>';
+    if (dir) html += '<div class="plan-sec plan-direction"><h3>' + esc(dir.title) + '</h3>' + planSteps(dir) + '<p class="hint">' + tr('Made by AI from your numbers. It can be wrong: the app’s own numbers are the ones to trust.') + '</p></div>';
+    html += '<div class="summary">' +
+      (rv.debtFree ? line(tr('Debt-free with your plan'), rv.debtFree.plan ? monthYear(rv.debtFree.plan) : tr('Not at these payments')) +
+        (rv.debtFree.moved ? line(tr('Since last payday'), '<span class="' + (rv.debtFree.moved < 0 ? 'good' : 'warn') + '">' +
+          tr(rv.debtFree.moved < 0 ? '{n} months sooner' : '{n} months later', { n: Math.abs(rv.debtFree.moved) }) + '</span>') : '') : '') +
+      (rv.worthChange !== null ? line(tr('Net worth over {n} rounds', { n: rv.worth.length }), '<span class="' + (rv.worthChange >= 0 ? 'good' : 'warn') + '">' + (rv.worthChange >= 0 ? '+' : '−') + inr(Math.abs(rv.worthChange)) + '</span>') : '') +
+      (rv.fund ? line(tr('Emergency fund'), tr('{months} of {target} months', { months: rv.fund.months, target: rv.fund.target })) : '') +
+      rv.savedRate.map((m) => line(tr('Saved in {month}', { month: monthYear(m.start) }), tr('{pct}% of pay', { pct: m.pct }))).join('') +
+      rv.goals.map((g) => line(esc(g.name), g.done ? tr('Reached ✓') : inr(g.saved) + ' / ' + inr(g.target))).join('') + '</div>';
+    if (!dir && aiCfg().on) html += '<p class="hint">' + tr('Your weekly plan after payday adds a direction for the month ahead.') + '</p>';
+    return html + '</section>';
+  }
 
   // Payments worth a second look, worked out on this phone. Works with the AI plan off too.
   function fraudBox() {
@@ -4620,7 +4676,7 @@
         html += '<div class="callout plan-goal"><span class="eyebrow">' + tr('This week’s goal') + '</span><b>' + esc(g.text) + '</b>' + (progress ? '<span class="hint">' + progress + '</span>' : '') + '</div>';
       }
       const ready = Core.investReady(state, t).ready;
-      p.sections.filter((sec) => sec.kind !== 'invest' || ready).forEach((sec) => {
+      p.sections.filter((sec) => (sec.kind !== 'invest' || ready) && sec.kind !== 'direction').forEach((sec) => {
         html += '<div class="plan-sec plan-' + sec.kind + '"><h3><svg viewBox="0 0 24 24" fill-rule="evenodd" aria-hidden="true">' + HUB_ICONS[PLAN_ICONS[sec.kind]] + '</svg>' + esc(sec.title) + '</h3>' + planSteps(sec) +
           (sec.kind === 'fraud' ? fraudBox() : '') +
           (sec.kind === 'invest' ? '<div class="callout warn"><b>' + tr('General information, not advice') + '</b><span class="hint">' + tr('Before investing, talk to a SEBI-registered investment adviser. Every investment can lose value, and the decision is yours.') + '</span></div>' : '') +
@@ -4698,6 +4754,7 @@
       if (plan) {
         // A finished week's goal is kept (8 weeks), so the trend can say how goals went.
         if (prev && prev.goal && prev.week < week) state.goalHistory = (state.goalHistory || []).filter((g) => g.week !== prev.goal.week).concat(prev.goal).slice(-8);
+        if ((plan.sections || []).some((s) => s.kind === 'direction')) state.reviewDone = Core.cycleFor(t, Number(state.settings.payday) || 1).start;
         state.weeklyPlan = { week, made: t, plan, goal: Object.assign({}, plan.week_goal, { week }), lastGoal: lastGoal || null,
           lastResult: lastGoal ? Core.goalResult(state, lastGoal) : null, seen: false };
         save(true);

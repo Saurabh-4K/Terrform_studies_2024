@@ -20,6 +20,7 @@ Write the plan for this week:
 - headline: one sentence on where they stand and the single most important thing to do this week.
 - week_goal: one measurable goal the app can check next week. type is one of: spend_cap (keep flexible spending this week at or under amount), save (move at least amount to savings), extra_loan (pay at least amount extra on loans), no_card (no credit card spending; amount 0). Pick an amount they can actually reach from their numbers. text says it in plain words.
 - sections, in this order, each with 1 to 3 steps. Each step: action (what to do, concrete, with a rupee amount where it helps), why (one short sentence using their numbers), amount (the rupees involved, or null).
+  - direction: only when the facts say "Monthly review this time: yes". The months ahead, for the step on the money ladder the facts name (the app decides the step; never skip ahead, e.g. never investing while a costly loan is open). Title it with their next milestone. Steps: what to do each month to reach that milestone, and roughly when they'll get there at that pace; say what changed since last payday (debt-free date, net worth, the fund) in plain words.
   - save: where this week's spending was above the usual week, little leaks and small payments; name the category and a realistic cut. Protect basics: never suggest cutting groceries below need, medicine, rent or school fees.
   - loans: only if they have loans. Which loan to put extra on and how much, using the loan options in the facts. If money is tight, say to keep paying every minimum on time first.
   - fraud: always include. If the facts list payments to double-check, tell them to look at those in the app and what to do if one isn't theirs: call the bank to block the card or UPI, and report it on the National Cyber Crime Helpline 1930 or cybercrime.gov.in, quickly. Add one or two short safety habits that fit (never share an OTP or UPI PIN; a UPI PIN is only for paying, never for receiving money; banks never ask for KYC updates by call, SMS link or screen-sharing apps; avoid instant loan apps).
@@ -61,7 +62,7 @@ export const PLAN_SCHEMA = {
       items: {
         type: "object",
         properties: {
-          kind: { type: "string", enum: ["save", "loans", "fraud", "invest"] },
+          kind: { type: "string", enum: ["direction", "save", "loans", "fraud", "invest"] },
           title: { type: "string" },
           steps: { type: "array", items: STEP },
         },
@@ -104,7 +105,7 @@ export function buildRequest(body, model) {
 
 // The plan as the app draws it: at most 4 sections and 3 steps each, in order. Exported for tests.
 export function cleanPlan(plan) {
-  const order = ["save", "loans", "fraud", "invest"];
+  const order = ["direction", "save", "loans", "fraud", "invest"];
   const seen = new Set();
   const sections = (plan.sections || [])
     .filter((s) => order.includes(s.kind) && !seen.has(s.kind) && seen.add(s.kind))

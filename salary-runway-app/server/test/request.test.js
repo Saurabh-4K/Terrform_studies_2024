@@ -40,6 +40,10 @@ test("the plan is cleaned to known sections, in order, at most 3 steps each", ()
     ],
   });
   assert.deepEqual(p.sections.map((s) => s.kind), ["save", "fraud"]);
+  // The monthly direction comes first when there is one.
+  const q = cleanPlan({ headline: "h", week_goal: { type: "save", amount: 1, text: "t" },
+    sections: [{ kind: "fraud", title: "F", steps: [step] }, { kind: "direction", title: "D", steps: [step] }] });
+  assert.deepEqual(q.sections.map((s) => s.kind), ["direction", "fraud"]);
   assert.equal(p.sections[0].steps.length, 3);
 });
 
