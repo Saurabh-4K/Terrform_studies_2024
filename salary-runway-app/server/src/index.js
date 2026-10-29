@@ -18,9 +18,13 @@ The app has already worked out every number in <facts>, including the loan optio
 
 Write the plan for this week:
 - headline: one sentence on where they stand and the single most important thing to do this week.
+- diagnosis: null unless the facts say "Monthly review this time: yes". Then a short report the person should finish thinking "yes, that's exactly my situation, and this is what I'll do". Plain words, no jargon, warm and direct.
+  - verdict: one honest sentence on their money right now (for example: "Your salary covers everything, but nothing is left for surprises").
+  - causes: 2 or 3, the root causes behind the HEALTH CHECK, not its symptoms. title: a few words. text: 2 to 4 sentences with the evidence from the facts (the rupee figures and shares), and why it matters for them. Never contradict the health check.
+  - actions: exactly 3, in order, for the money ladder step the facts name. action: what to do. how_much: rupees a month or once (or null). by_when: a month or a simple time ("from this payday", "by March 2027"). changes: what it changes, quoting only the WHAT IF numbers (for example "7 days of safety in 5 months instead of never"). Use money that frees up (an EMI ending) where the facts show it. If the facts list last month's checks, the first cause or action says plainly how they went.
+  - checks: 2 or 3 targets for next month that their numbers will show (for example "₹5,500 in the emergency fund", "no card spending").
 - week_goal: one measurable goal the app can check next week. type is one of: spend_cap (keep flexible spending this week at or under amount), save (move at least amount to savings), extra_loan (pay at least amount extra on loans), no_card (no credit card spending; amount 0). Pick an amount they can actually reach from their numbers. text says it in plain words.
 - sections, in this order, each with 1 to 3 steps. Each step: action (what to do, concrete, with a rupee amount where it helps), why (one short sentence using their numbers), amount (the rupees involved, or null), basis ("numbers" when it rests on the facts; "general" when it is general guidance from your own knowledge that they should check).
-  - direction: only when the facts say "Monthly review this time: yes". The months ahead, for the step on the money ladder the facts name (the app decides the step; never skip ahead, e.g. never investing while a costly loan is open). Title it with their next milestone. Steps: what to do each month to reach that milestone, and roughly when they'll get there at that pace; say what changed since last payday (debt-free date, net worth, the fund) in plain words.
   - advisor: only when the facts say "Monthly review this time: yes". Here you act as a careful financial adviser for India and may use your own knowledge, not only the facts: the two or three things that matter most for their situation and their ladder step, beyond what the other sections say (for example: ask the bank to convert a costly card balance to a lower-rate EMI; paying only a card's minimum costs the most interest and hurts the credit score; term insurance before investing if anyone depends on their income; checking which tax regime suits them; what a loan's rate and processing fee should not exceed). Mark each step's basis. Never state a current interest rate, tax slab, tax limit or scheme rate as a fact: say to check the current figure on the official site. Suggest areas of investing (such as an index fund SIP for money not needed for 5 years or more) only when the ladder step is 6.
   - save: where this week's spending was above the usual week, little leaks and small payments; name the category and a realistic cut. Protect basics: never suggest cutting groceries below need, medicine, rent or school fees.
   - loans: only if they have loans. Which loan to put extra on and how much, using the loan options in the facts. If money is tight, say to keep paying every minimum on time first.
@@ -46,10 +50,45 @@ const STEP = {
   additionalProperties: false,
 };
 
+// The monthly diagnosis: null on ordinary weeks.
+const DIAGNOSIS = {
+  anyOf: [
+    { type: "null" },
+    {
+      type: "object",
+      properties: {
+        verdict: { type: "string" },
+        causes: {
+          type: "array",
+          items: { type: "object", properties: { title: { type: "string" }, text: { type: "string" } }, required: ["title", "text"], additionalProperties: false },
+        },
+        actions: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              action: { type: "string" },
+              how_much: { anyOf: [{ type: "integer" }, { type: "null" }] },
+              by_when: { type: "string" },
+              changes: { type: "string" },
+            },
+            required: ["action", "how_much", "by_when", "changes"],
+            additionalProperties: false,
+          },
+        },
+        checks: { type: "array", items: { type: "string" } },
+      },
+      required: ["verdict", "causes", "actions", "checks"],
+      additionalProperties: false,
+    },
+  ],
+};
+
 export const PLAN_SCHEMA = {
   type: "object",
   properties: {
     headline: { type: "string" },
+    diagnosis: DIAGNOSIS,
     week_goal: {
       type: "object",
       properties: {
@@ -74,7 +113,7 @@ export const PLAN_SCHEMA = {
       },
     },
   },
-  required: ["headline", "week_goal", "sections"],
+  required: ["headline", "diagnosis", "week_goal", "sections"],
   additionalProperties: false,
 };
 
@@ -116,7 +155,14 @@ export function cleanPlan(plan) {
     .map((s) => ({ kind: s.kind, title: String(s.title),
       steps: (s.steps || []).slice(0, 3).map((st) => ({ ...st, basis: st.basis === "general" ? "general" : "numbers" })) }))
     .filter((s) => s.steps.length);
-  return { headline: String(plan.headline || ""), week_goal: plan.week_goal, sections };
+  const d = plan.diagnosis;
+  const diagnosis = d && typeof d === "object" && d.verdict ? {
+    verdict: String(d.verdict),
+    causes: (d.causes || []).slice(0, 3).map((c) => ({ title: String(c.title || ""), text: String(c.text || "") })).filter((c) => c.text),
+    actions: (d.actions || []).slice(0, 3).map((a) => ({ action: String(a.action || ""), how_much: Number.isInteger(a.how_much) ? a.how_much : null, by_when: String(a.by_when || ""), changes: String(a.changes || "") })).filter((a) => a.action),
+    checks: (d.checks || []).slice(0, 3).map(String),
+  } : null;
+  return { headline: String(plan.headline || ""), diagnosis, week_goal: plan.week_goal, sections };
 }
 
 export default {

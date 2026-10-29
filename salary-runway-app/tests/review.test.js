@@ -88,5 +88,48 @@ test('adviser\'s view: a step naming a bank, fund house or app is dropped; your 
   // Ordinary words aren't names
   assert.equal(Core.namesBrand('Put a slice of your pay aside, by Bob’s advice', []), null);
   assert.equal(Core.namesBrand('Ask ICICI for a lower rate', []), '=icici');
-  assert.match(Core.planFacts(s, T, null), /write the direction and advisor sections/);
+  assert.match(Core.planFacts(s, T, null), /write the diagnosis and the advisor section/);
+});
+
+test('health check: each area\'s number and status, the bank and planner lines', () => {
+  const s = house({ debts: [{ id: 'cc', name: 'Card', balance: 50000, rate: 36, minPayment: 2500, dueDay: 20 }] });
+  s.savings.emergencyBalance = 1000;
+  const hc = Core.healthCheck(s, T);
+  const by = Object.fromEntries(hc.areas.map((a) => [a.area, a]));
+  // Rent ₹15,000 + EMI ₹2,500 = ₹17,500 = 29% of ₹60,000
+  assert.deepEqual([by.cash.committed, by.cash.pct, by.cash.status], [17500, 29, 'good']);
+  // EMIs 4% of pay, but a 36% card needs watching
+  assert.deepEqual([by.debt.pct, by.debt.status], [4, 'watch']);
+  assert.deepEqual([by.fund.days, by.fund.status], [1, 'bad']);
+  // Nothing recorded last round: not judged
+  assert.deepEqual([by.spend.status, by.save.status], ['unknown', 'unknown']);
+  // EMIs over half the pay: what banks refuse
+  s.debts[0].minPayment = 32000;
+  assert.equal(Core.healthCheck(s, T).areas.find((a) => a.area === 'debt').status, 'bad');
+});
+
+test('what if: the plan is 5% of pay on the step; the numbers come from the app', () => {
+  const s = house({ debts: [{ id: 'cc', name: 'Card', balance: 50000, rate: 36, minPayment: 2500, dueDay: 20 }] });
+  s.savings.emergencyBalance = 1000;
+  const wi = Core.whatIf(s, T);
+  // 5% of ₹60,000 = ₹3,000; ₹3,084 to 7 days of basics: 2 months; nothing put aside last round: never
+  assert.deepEqual([wi.step, wi.per, wi.pace, wi.fund.need, wi.fund.months.plan, wi.fund.months.now], ['buffer', 3000, 0, 3084, 2, null]);
+  // In 3 months: (1,000 + 9,000) ÷ 583.33 = 17 days, against 1
+  assert.deepEqual(wi.fund.daysIn3, { now: 1, plan: 17 });
+  // On the debt step, ₹3,000 extra a month brings debt-free sooner and cuts interest
+  s.savings.emergencyBalance = 20000;
+  const d = Core.whatIf(s, T);
+  assert.equal(d.step, 'debt');
+  assert.ok(d.debt.free.plan < d.debt.free.now && d.debt.interest.plan < d.debt.interest.now);
+  assert.match(Core.planFacts(s, T, null), /HEALTH CHECK/);
+  assert.match(Core.planFacts(s, T, null), /With ₹3,000 extra a month on loans: debt-free/);
+});
+
+test('the diagnosis passes the name check too', () => {
+  const s = house({ debts: [{ id: 'cc', name: 'Card', balance: 50000, rate: 36, minPayment: 2500, dueDay: 20 }] });
+  const out = Core.cleanAdvice({ headline: 'h', sections: [], diagnosis: { verdict: 'No cushion yet.',
+    causes: [{ title: 'Bills first', text: 'Rent and EMIs take 29% of pay.' }, { title: 'Bank', text: 'Your Axis account pays little.' }],
+    actions: [{ action: 'Move ₹3,000 a month to the fund', how_much: 3000, by_when: 'from this payday', changes: '7 days in 2 months' }, { action: 'Open an RD with SBI', how_much: 3000, by_when: 'now', changes: 'x' }],
+    checks: ['₹3,000 in the fund', 'Use Paytm less'] } }, s);
+  assert.deepEqual([out.diagnosis.causes.length, out.diagnosis.actions.length, out.diagnosis.checks], [1, 1, ['₹3,000 in the fund']]);
 });

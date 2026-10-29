@@ -4583,7 +4583,46 @@
     return tr('Learn the types first (PPF, deposits, an index fund). Talk to a SEBI-registered investment adviser before investing.');
   }
 
-  // Runway → Monthly review: the ladder, where the long run is heading, and the AI's direction for the round.
+  // The health check: five areas, worked out by the app, each with its number and a status in words (never colour alone).
+  const HEALTH_STATUS = { good: ['✓', 'Good', 'good'], watch: ['!', 'Watch', 'warn'], bad: ['✗', 'Needs action', 'bad'], unknown: ['–', 'Not enough recorded', 'hint'] };
+  function healthRows(hc) {
+    const val = (a) => ({
+      cash: () => tr('{pct}% of pay goes on fixed payments, EMIs and bills', { pct: a.pct === null ? '–' : a.pct }),
+      debt: () => a.costliest ? tr('EMIs take {pct}% of pay; costliest {rate}% a year', { pct: a.pct === null ? '–' : a.pct, rate: a.costliest.rate }) : tr('No loans'),
+      fund: () => tr('{days} days of basics', { days: a.days }),
+      spend: () => a.status === 'unknown' ? tr('Under half the days have entries') : tr('{spent} of {budget}', { spent: inr(a.spent), budget: inr(a.budget) }) + (a.borrowed ? ' · ' + tr('{amount} borrowed', { amount: inr(a.borrowed) }) : ''),
+      save: () => a.status === 'unknown' ? tr('Under half the days have entries') : tr('{pct}% of pay', { pct: a.pct }),
+    }[a.area])();
+    const NAME = { cash: 'Cash flow', debt: 'Debt', fund: 'Safety fund', spend: 'Spending last round', save: 'Saving last round' };
+    return '<div class="health">' + hc.areas.map((a) => { const s = HEALTH_STATUS[a.status];
+      return '<div class="health-row"><span class="health-mark ' + s[2] + '" aria-hidden="true">' + s[0] + '</span><div class="grow"><b>' + tr(NAME[a.area]) + '</b><span class="hint">' + val(a) + '</span></div>' +
+        '<span class="chip ' + s[2] + '">' + tr(s[1]) + '</span></div>'; }).join('') + '</div>';
+  }
+
+  // If nothing changes, and with the plan: the app's own numbers, side by side.
+  function whatIfTable(wi) {
+    const rows = [];
+    const months = (n) => tr(n === 1 ? 'in {n} month' : 'in {n} months', { n });
+    const monthYear = (iso) => monthName(Core.parseISO(iso).getMonth()) + ' ' + Core.parseISO(iso).getFullYear();
+    if (wi.fund) {
+      rows.push([tr('{days} days of safety', { days: wi.fund.target }), wi.fund.months.now ? months(wi.fund.months.now) : tr('Not at this pace'), months(wi.fund.months.plan)]);
+      rows.push([tr('Fund in 3 months'), tr('{days} days of basics', { days: wi.fund.daysIn3.now }), tr('{days} days of basics', { days: wi.fund.daysIn3.plan })]);
+    }
+    if (wi.debt && wi.debt.extra) {
+      rows.push([tr('Debt-free'), wi.debt.free.now ? monthYear(wi.debt.free.now) : tr('Never'), wi.debt.free.plan ? monthYear(wi.debt.free.plan) : tr('Never')]);
+      rows.push([tr('Interest still to pay'), inr(wi.debt.interest.now), inr(wi.debt.interest.plan)]);
+    }
+    if (!rows.length) return '';
+    const to = wi.fund ? tr('into the emergency fund') : tr('extra on loans');
+    return '<h3>' + tr('If nothing changes, and with the plan') + '</h3><div class="table-wrap"><table><thead><tr><th></th><th>' + tr('If nothing changes') + '</th><th>' +
+      tr('With {amount} a month', { amount: inr(wi.per) }) + '</th></tr></thead><tbody>' +
+      rows.map((r) => '<tr><td>' + r[0] + '</td><td class="amt">' + r[1] + '</td><td class="amt good">' + r[2] + '</td></tr>').join('') + '</tbody></table></div>' +
+      '<p class="hint">' + tr('The plan: {amount} a month {to}, about 5% of your pay.', { amount: inr(wi.per), to: to }) + '</p>' +
+      (wi.ending || []).map((e) => '<p class="hint good">' + tr('{name} ends in {month}: {amount} a month is free after that.', { name: esc(e.name), month: monthYear(e.last), amount: inr(e.emi) }) + '</p>').join('');
+  }
+
+  // Runway → Monthly review: the diagnosis report. The app's numbers (health check, what-ifs, ladder) always;
+  // the AI's verdict, causes, plan and checks once a round, with the weekly plan on.
   function reviewCard() {
     const t = today();
     const rv = Core.monthlyReview(state, t);
@@ -4591,29 +4630,40 @@
     const line = (name, val) => '<div class="line"><span>' + name + '</span><span>' + val + '</span></div>';
     const monthYear = (iso) => monthName(Core.parseISO(iso).getMonth()) + ' ' + Core.parseISO(iso).getFullYear();
     const wp = state.weeklyPlan;
-    const dir = wp && wp.plan && wp.made >= rv.round ? (wp.plan.sections || []).find((s) => s.kind === 'direction') : null;
-    let html = '<section class="card"><div class="card-head">' + titled('Monthly review', 'review') + '<span class="hint">' + tr('Since payday, {date}', { date: fmtDate(rv.round) }) + '</span></div>';
-    html += '<ol class="ladder">' + L.steps.map((s) => '<li class="' + (s.current ? 'current' : s.done ? 'done' : '') + '"><b>' + (s.done ? '✓ ' : '') + tr(LADDER[s.key][0]) + '</b>' +
+    const fresh = wp && wp.plan && wp.made >= rv.round;
+    const dg = fresh ? wp.plan.diagnosis : null;
+    const dir = fresh ? (wp.plan.sections || []).find((s) => s.kind === 'direction') : null;
+    const adv = fresh ? (wp.plan.sections || []).find((s) => s.kind === 'advisor') : null;
+    let html = '<section class="card review"><div class="card-head">' + titled('Monthly review', 'review') + '<span class="hint">' + tr('Since payday, {date}', { date: fmtDate(rv.round) }) + '</span></div>';
+    if (dg && dg.verdict) html += '<p class="plan-headline">' + esc(dg.verdict) + '</p>';
+    html += '<h3>' + tr('Health check') + '</h3>' + healthRows(Core.healthCheck(state, t));
+    if (dg && dg.causes.length) html += '<h3>' + tr('What’s behind it') + '</h3>' + dg.causes.map((c) => '<div class="cause"><b>' + esc(c.title) + '</b><p>' + esc(c.text) + '</p></div>').join('');
+    html += whatIfTable(Core.whatIf(state, t));
+    if (dg && dg.actions.length) {
+      html += '<h3>' + tr('The plan') + '</h3><ol class="plan-steps">' + dg.actions.map((a) => '<li><b>' + esc(a.action) + '</b>' +
+        '<span class="hint">' + [a.how_much ? inr(a.how_much) : '', esc(a.by_when)].filter(Boolean).join(' · ') + '</span>' + (a.changes ? '<span>' + esc(a.changes) + '</span>' : '') + '</li>').join('') + '</ol>';
+    } else if (dir) html += '<div class="plan-sec plan-direction"><h3>' + esc(dir.title) + '</h3>' + planSteps(dir) + '</div>';
+    html += '<h3>' + tr('Your step on the money ladder') + '</h3><ol class="ladder">' + L.steps.map((s) => '<li class="' + (s.current ? 'current' : s.done ? 'done' : '') + '"><b>' + (s.done ? '✓ ' : '') + tr(LADDER[s.key][0]) + '</b>' +
       (s.current ? '<span class="hint">' + tr(LADDER[s.key][1]) + '</span><span>' + ladderMilestone(L.milestone) + '</span>' : '') + '</li>').join('') + '</ol>';
-    if (dir) html += '<div class="plan-sec plan-direction"><h3>' + esc(dir.title) + '</h3>' + planSteps(dir) + '<p class="hint">' + tr('Made by AI from your numbers. It can be wrong: the app’s own numbers are the ones to trust.') + '</p></div>';
-    // The adviser's view: each point says whether it rests on your numbers or is general guidance to check.
-    const adv = wp && wp.plan && wp.made >= rv.round ? (wp.plan.sections || []).find((s) => s.kind === 'advisor') : null;
     if (adv) {
       html += '<div class="plan-sec plan-advisor"><h3><svg viewBox="0 0 24 24" fill-rule="evenodd" aria-hidden="true">' + HUB_ICONS.chat + '</svg>' + tr('Adviser’s view') + '</h3>' +
         '<ol class="plan-steps">' + adv.steps.map((st) => '<li><b>' + esc(st.action) + '</b>' + (st.why ? '<span class="hint">' + esc(st.why) + '</span>' : '') +
-          '<span class="chip' + (st.basis === 'general' ? ' warn' : '') + '">' + tr(st.basis === 'general' ? 'General guidance: please check' : 'From your numbers') + '</span></li>').join('') + '</ol>' +
-        '<div class="callout warn"><b>' + tr('Made by AI. It can be wrong or out of date.') + '</b><span class="hint">' +
-          tr('General guidance, not personal financial advice: check before acting. For investing, talk to a SEBI-registered investment adviser.') + '</span></div></div>';
+          '<span class="chip' + (st.basis === 'general' ? ' warn' : '') + '">' + tr(st.basis === 'general' ? 'General guidance: please check' : 'From your numbers') + '</span></li>').join('') + '</ol></div>';
     }
-    html += '<div class="summary">' +
+    if (dg && dg.checks.length) html += '<h3>' + tr('Next month we’ll check') + '</h3><ul class="checks">' + dg.checks.map((c) => '<li>' + esc(c) + '</li>').join('') + '</ul>';
+    if (dg || dir || adv) {
+      html += '<div class="callout warn"><b>' + tr('Made by AI. It can be wrong or out of date.') + '</b><span class="hint">' +
+        tr('The health check, the numbers and your step are worked out by the app. The rest is written by AI from them: general guidance, not personal financial advice. Check before acting; for investing, talk to a SEBI-registered investment adviser.') + '</span></div>';
+    }
+    html += '<h3>' + tr('The long run') + '</h3><div class="summary">' +
       (rv.debtFree ? line(tr('Debt-free with your plan'), rv.debtFree.plan ? monthYear(rv.debtFree.plan) : tr('Not at these payments')) +
         (rv.debtFree.moved ? line(tr('Since last payday'), '<span class="' + (rv.debtFree.moved < 0 ? 'good' : 'warn') + '">' +
           tr(rv.debtFree.moved < 0 ? '{n} months sooner' : '{n} months later', { n: Math.abs(rv.debtFree.moved) }) + '</span>') : '') : '') +
       (rv.worthChange !== null ? line(tr('Net worth over {n} rounds', { n: rv.worth.length }), '<span class="' + (rv.worthChange >= 0 ? 'good' : 'warn') + '">' + (rv.worthChange >= 0 ? '+' : '−') + inr(Math.abs(rv.worthChange)) + '</span>') : '') +
       (rv.fund ? line(tr('Emergency fund'), tr('{months} of {target} months', { months: rv.fund.months, target: rv.fund.target })) : '') +
-      rv.savedRate.map((m) => line(tr('Saved in {month}', { month: monthYear(m.start) }), tr('{pct}% of pay', { pct: m.pct }))).join('') +
       rv.goals.map((g) => line(esc(g.name), g.done ? tr('Reached ✓') : inr(g.saved) + ' / ' + inr(g.target))).join('') + '</div>';
-    if (!dir && aiCfg().on) html += '<p class="hint">' + tr('Your weekly plan after payday adds a direction for the month ahead.') + '</p>';
+    if (!dg && aiCfg().on) html += '<p class="hint">' + tr('Your first weekly plan after payday adds the diagnosis: what’s behind these numbers, a plan, and what to check next month.') + '</p>';
+    else if (!aiCfg().on) html += '<p class="hint">' + tr('Turn on the weekly plan for the full diagnosis: what’s behind these numbers, a plan, and what to check next month.') + '</p>';
     return html + '</section>';
   }
 
@@ -4766,7 +4816,10 @@
         plan = Core.cleanAdvice(plan, state);
         // A finished week's goal is kept (8 weeks), so the trend can say how goals went.
         if (prev && prev.goal && prev.week < week) state.goalHistory = (state.goalHistory || []).filter((g) => g.week !== prev.goal.week).concat(prev.goal).slice(-8);
-        if ((plan.sections || []).some((s) => s.kind === 'direction')) state.reviewDone = Core.cycleFor(t, Number(state.settings.payday) || 1).start;
+        // The round's diagnosis: the review is done, and its checks are followed up next month.
+        const round = Core.cycleFor(t, Number(state.settings.payday) || 1).start;
+        if (plan.diagnosis || (plan.sections || []).some((s) => s.kind === 'direction')) state.reviewDone = round;
+        if (plan.diagnosis && (plan.diagnosis.checks || []).length) state.reviewChecks = { round, checks: plan.diagnosis.checks };
         state.weeklyPlan = { week, made: t, plan, goal: Object.assign({}, plan.week_goal, { week }), lastGoal: lastGoal || null,
           lastResult: lastGoal ? Core.goalResult(state, lastGoal) : null, seen: false };
         save(true);

@@ -3076,8 +3076,36 @@
     if (rv.fund) L.push('Emergency fund: ' + R(rv.fund.amount) + ' = ' + rv.fund.months + ' months of basics; target ' + rv.fund.target + ' months.');
     if (rv.savedRate.length) L.push('Saved each round (to funds, investing and loans, beyond EMIs): ' + rv.savedRate.map((m) => M(m.start) + ' ' + m.pct + '% of pay (' + R(m.saved) + ')').join('; ') + '.');
     if (rv.goals.length) L.push('Goals: ' + rv.goals.map((g) => g.name + ' ' + R(g.saved) + ' of ' + R(g.target) + (g.by ? ' by ' + M(g.by) : '') + (g.done ? ' (reached)' : g.late ? ' (date passed)' : '')).join('; ') + '.');
+    // The health check and the what-ifs: what the diagnosis is built on, never recalculated by the AI.
+    const hc = healthCheck(state, todayIso);
+    const ST = { good: 'good', watch: 'needs watching', bad: 'needs action', unknown: 'not enough recorded to judge' };
+    L.push('', 'HEALTH CHECK (worked out by the app; agree with these, never contradict them)');
+    hc.areas.forEach((a) => {
+      const line = {
+        cash: () => 'Cash flow: ' + ST[a.status] + '. Fixed payments, EMIs and bills take ' + R(a.committed) + (a.pct !== null ? ' = ' + a.pct + '% of pay' : '') + '; zone ' + a.zone + '.',
+        debt: () => 'Debt: ' + ST[a.status] + '. EMIs and minimums ' + R(a.emis) + (a.pct !== null ? ' = ' + a.pct + '% of pay (banks see over 50% as too much, over 30% as heavy)' : '') +
+          (a.costliest ? '; costliest: ' + a.costliest.name + ' at ' + a.costliest.rate + '% a year' : '; no loans') + '.',
+        fund: () => 'Safety fund: ' + ST[a.status] + '. ' + R(a.amount) + ' = ' + a.days + ' days of basics (30 is a month safe, 90 three months).',
+        spend: () => 'Spending last round: ' + ST[a.status] + (a.status === 'unknown' ? ' (under half its days have entries).' : '. ' + R(a.spent) + ' of a ' + R(a.budget) + ' flexible budget; borrowed ' + R(a.borrowed) + '.'),
+        save: () => 'Saving last round: ' + ST[a.status] + (a.status === 'unknown' ? '.' : '. ' + R(a.saved) + ' = ' + a.pct + '% of pay (20% is the usual healthy mark).'),
+      }[a.area];
+      L.push(line());
+    });
+    const wi = whatIf(state, todayIso);
+    L.push('', 'WHAT IF (worked out by the app; quote these, never make up other projections)');
+    const WHERE = { basics: 'into the emergency fund', buffer: 'into the emergency fund', fund: 'into the emergency fund', debt: 'extra on the costliest loans' };
+    if (WHERE[wi.step]) L.push('The plan: ' + R(wi.per) + ' a month (5% of pay) ' + WHERE[wi.step] + '. What reached the fund last round: ' + R(wi.pace) + '.');
+    if (wi.fund) L.push('Fund target ' + wi.fund.target + ' days of basics, ' + R(wi.fund.need) + ' to go. With the plan: reached in ' + wi.fund.months.plan + ' month' + (wi.fund.months.plan > 1 ? 's' : '') +
+      ', and in 3 months the fund covers ' + wi.fund.daysIn3.plan + ' days. If nothing changes: ' + (wi.fund.months.now ? 'reached in ' + wi.fund.months.now + ' months' : 'not reached at this pace') +
+      ', and in 3 months it covers ' + wi.fund.daysIn3.now + ' days.');
+    if (wi.debt) L.push(wi.debt.extra ? 'With ' + R(wi.debt.extra) + ' extra a month on loans: debt-free ' + (wi.debt.free.plan ? M(wi.debt.free.plan) : 'never') + ', interest still to pay ' + R(wi.debt.interest.plan) +
+      '. If nothing changes: ' + (wi.debt.free.now ? M(wi.debt.free.now) : 'never') + ', interest ' + R(wi.debt.interest.now) + '.'
+      : 'Loans at this step: debt-free ' + (wi.debt.free.now ? M(wi.debt.free.now) : 'never') + ' as planned, interest still to pay ' + R(wi.debt.interest.now) + ' (extra goes to the fund first).');
+    if (wi.ending && wi.ending.length) L.push('EMIs ending within a year, whose money is then free: ' + wi.ending.map((e) => e.name + ' ' + R(e.emi) + ' a month, last in ' + M(e.last)).join('; ') + '.');
+    const prevChecks = (state.reviewChecks || {});
+    if (prevChecks.round && prevChecks.round < rv.round && (prevChecks.checks || []).length) L.push("Last month's checks to follow up: " + prevChecks.checks.join('; ') + '.');
     const monthly = !state.reviewDone || state.reviewDone < rv.round;
-    L.push('Monthly review this time: ' + (monthly ? 'yes (write the direction and advisor sections)' : 'no') + '.');
+    L.push('Monthly review this time: ' + (monthly ? 'yes (write the diagnosis and the advisor section)' : 'no (diagnosis null)') + '.');
     const tr4 = weekTrend(state, todayIso, 4);
     if (tr4.weeks.some((w) => !w.quiet)) {
       L.push('', 'LAST 4 WEEKS (Monday to Sunday, oldest first)');
@@ -3318,6 +3346,89 @@
       milestone = { kind: 'goals', name: g.name, left: st.left, by: g.by || null, late: st.late };
     } else milestone = { kind: 'invest' };
     return { key, steps, milestone };
+  }
+
+  /*
+   * The health check behind the monthly diagnosis: five areas, each with the
+   * number that decides it and a status (good, watch, bad, or unknown when
+   * too little is recorded). The lines are the usual bank and planner ones:
+   * - Cash flow: fixed payments, EMIs and bills as a share of pay (over 90%
+   *   leaves no room; red zone is bad whatever the share).
+   * - Debt: EMIs as a share of pay, as banks measure it (over 50% is what
+   *   lenders refuse; over 30% is heavy) and the costliest rate.
+   * - Safety fund: days of basics (30 a month safe, 90 three months).
+   * - Spending, last round: within the flexible budgets, nothing borrowed.
+   * - Saving, last round: share of pay saved (20% is the usual healthy mark).
+   */
+  function healthCheck(state, todayIso) {
+    const plan = monthlyPlan(Object.assign({}, state, { adjustment: null }), todayIso);
+    const salary = Number(plan.salary) || 0;
+    const r = projectRunway(state, todayIso);
+    const zone = zoneStatus(state, todayIso, r).zone;
+    const committed = plan.fixedTotal + plan.debtMin + plan.variableBills;
+    const pct = (n) => (salary > 0 ? Math.round((n / salary) * 100) : null);
+    const debts = (state.debts || []).filter((d) => Number(d.balance) > 0);
+    const costliest = debts.slice().sort((a, b) => b.rate - a.rate)[0] || null;
+    const f = freedomDays(state, todayIso);
+    const days = f ? f.days : 0;
+    const res = roundResult(state, todayIso);
+    const flex = res.rows.find((x) => x.key === 'flex');
+    // Too little recorded last round (under half its days) says nothing about spending.
+    const recordedLast = res.tally && res.tally.total > 0 && res.tally.logged >= res.tally.total / 2;
+    const saved = spendTrend(state, todayIso, 2).filter((m) => !m.current && m.recorded && m.salary > 0)[0];
+    const cash = { area: 'cash', committed: Math.round(committed), pct: pct(committed), zone,
+      status: zone === 'red' || pct(committed) > 90 ? 'bad' : pct(committed) > 70 || zone === 'amber' ? 'watch' : 'good' };
+    const emiPct = pct(plan.debtMin);
+    const debt = { area: 'debt', emis: Math.round(plan.debtMin), pct: emiPct, costliest: costliest ? { name: costliest.name, rate: Number(costliest.rate) } : null,
+      status: !debts.length ? 'good' : emiPct > 50 ? 'bad' : emiPct > 30 || (costliest && costliest.rate >= 24) ? 'watch' : 'good' };
+    const fund = { area: 'fund', days, amount: f ? f.fund : 0, status: days >= 90 ? 'good' : days >= 30 ? 'watch' : 'bad' };
+    const spend = { area: 'spend', spent: flex ? flex.actual : 0, budget: flex ? flex.planned : 0, borrowed: Math.round(res.borrowed || 0),
+      status: !recordedLast ? 'unknown' : res.borrowed > 0 || (flex && flex.actual > flex.planned * 1.1) ? 'bad' : flex && flex.actual > flex.planned ? 'watch' : 'good' };
+    const save = saved ? { area: 'save', saved: Math.round(saved.saved), pct: Math.round((saved.saved / saved.salary) * 100) } : { area: 'save', saved: 0, pct: null };
+    save.status = save.pct === null || !recordedLast ? 'unknown' : save.pct >= 20 ? 'good' : save.pct >= 10 ? 'watch' : 'bad';
+    return { salary, areas: [cash, debt, fund, spend, save] };
+  }
+
+  /*
+   * If nothing changes, and with the plan: the numbers the diagnosis may
+   * quote, worked out here so the AI never makes up a projection. The plan
+   * puts a set amount a month (5% of pay, at least ₹1,000, in ₹500s) on the
+   * ladder's step: into the fund for steps 1, 2 and 4, on the costliest loans
+   * for step 3. Also EMIs ending within a year, whose money is then free.
+   */
+  function whatIf(state, todayIso) {
+    const L = priorityLadder(state, todayIso);
+    const plan = monthlyPlan(Object.assign({}, state, { adjustment: null }), todayIso);
+    const salary = Number(plan.salary) || 0;
+    const per = Math.max(1000, Math.round((salary * 0.05) / 500) * 500);
+    const f = freedomDays(state, todayIso);
+    const payday = Number(state.settings.payday) || 1;
+    const last = previousCycle(cycleFor(todayIso, payday), payday);
+    // What reached the fund last round: the pace if nothing changes.
+    const pace = Math.round(sum(state.transactions.filter((t) => inCycle(t.date, last) && ((isMove(t) && t.useFor === 'emergency') || (isIncome(t) && t.useFor === 'emergency'))), (t) => t.amount));
+    const out = { step: L.key, per, pace };
+    if (f && ['basics', 'buffer', 'fund'].indexOf(L.key) !== -1) {
+      const target = L.key === 'fund' ? (Number(state.savings.emergencyTargetMonths) || 3) * 30 : L.key === 'buffer' ? L.milestone.target : 7;
+      const need = Math.max(0, Math.ceil(target * f.daily - f.fund));
+      out.fund = { target, need, daysIn3: { now: Math.floor((f.fund + 3 * pace) / f.daily), plan: Math.floor((f.fund + 3 * (pace + per)) / f.daily) },
+        // Over five years away isn't a plan: "not at this pace".
+        months: { now: pace > 0 && need / pace <= 60 ? Math.ceil(need / pace) : null, plan: Math.ceil(need / (pace + per)) } };
+    }
+    const debts = (state.debts || []).filter((d) => d.balance > 0);
+    if (debts.length) {
+      const how = payoffOrder(state);
+      const base = plan.debtExtra;
+      const now = simulateDebts(debts, base, how, true);
+      const more = simulateDebts(debts, base + per, how, true);
+      // Dated as debtFreeDates does, from the next EMI.
+      const dfd = debtFreeDates(state, todayIso);
+      const when = (sim) => (sim.neverPaysOff || !dfd.plan.date ? null : addMonths(dfd.plan.date, sim.months - now.months));
+      out.debt = { extra: L.key === 'debt' ? per : 0, free: { now: when(now), plan: when(L.key === 'debt' ? more : now) },
+        interest: { now: Math.round(now.totalInterest), plan: Math.round((L.key === 'debt' ? more : now).totalInterest) } };
+      out.ending = debts.map((d) => ({ d, e: loanEnd(state, d, todayIso) })).filter((x) => x.e && !x.e.never && x.e.last <= addMonths(todayIso, 12))
+        .map((x) => ({ name: x.d.name, emi: Number(x.d.minPayment) || 0, last: x.e.last })).sort((a, b) => (a.last < b.last ? -1 : 1));
+    }
+    return out;
   }
 
   /*
@@ -3757,9 +3868,17 @@
     if (!plan || !Array.isArray(plan.sections)) return plan;
     const own = [].concat(state.debts || [], state.cards || [], state.goals || [], state.fixed || [], state.bills || []).map((x) => x && x.name);
     const ok = (st) => !namesBrand([st.action, st.why].join(' '), own);
+    const clean = (s) => !namesBrand(s, own);
+    const d = plan.diagnosis;
     return Object.assign({}, plan, {
       headline: namesBrand(plan.headline, own) ? '' : plan.headline,
       sections: plan.sections.map((sec) => Object.assign({}, sec, { steps: (sec.steps || []).filter(ok) })).filter((sec) => sec.steps.length),
+      diagnosis: d && d.verdict ? Object.assign({}, d, {
+        verdict: clean(d.verdict) ? d.verdict : '',
+        causes: (d.causes || []).filter((c) => clean(c.title + ' ' + c.text)),
+        actions: (d.actions || []).filter((a) => clean([a.action, a.by_when, a.changes].join(' '))),
+        checks: (d.checks || []).filter(clean),
+      }) : null,
     });
   }
 
@@ -4023,7 +4142,7 @@
     recordCardPayment, keptFor, ownPart, coverPurchase, refundToPurchase, undoRefund, earmarkedIn, cleanState, accuracyStats, reimbView, syncReimb, addClaim, recordPayout, claimSet, reimbForget, reimbAmount, addCardEmi, isPassedOn, passThroughPair, passOn, iouLeft, openIous, addIou, payIou, undoIouTx, iouSummary, iouEvents, cardEmiFromBooking, looksLikeCardBill, spendToCardPayment, convertCardBalance, answerCardDue, cardLateFee, cardRate, CARD_RATE, undoCardConvert, cardFreeDays, byCategory, DEFAULT_SPLIT,
     isLoanCredit, borrowedThisCycle, borrowCheck, rolloverOptions, setTranslator,
     maybeOpen, maybeHeld, maybeDue, maybeIfHappens, addMaybe, maybeHappened, maybeDidnt, maybeReopen, maybeForget, maybeCandidates, maybeStats,
-    weekTrend, priorityLadder, monthlyReview, namesBrand, cleanAdvice, payoffOrder, tickDebts, debtJourney, lenderTasks, lastBorrowed,
+    weekTrend, priorityLadder, monthlyReview, healthCheck, whatIf, namesBrand, cleanAdvice, payoffOrder, tickDebts, debtJourney, lenderTasks, lastBorrowed,
     encryptBackup, openBackup, backupInfo, toB64, fromB64, isTransfer, walletBalances, goalStatus, goalsMonthly, budgetEnvelopes, netWorth, reportRange, budgetHistory, aiFacts, planFacts, fraudSignals, investReady, goalResult, weekStart,
     daySpent, daySpending, dayTally, roundSnapshot, roundResult, weekRecap,
     monthReport, LEAKS, leakNames, leakOf, leakSummary, leakSuggestions, spendWhere, spendWhen, spendTrend, BASICS,

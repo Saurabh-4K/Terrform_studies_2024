@@ -59,3 +59,12 @@ test("no invite code, no plan", async () => {
   const res2 = await worker.fetch(new Request("https://x.dev/ask", { method: "POST" }), { INVITE_CODES: "a" });
   assert.equal(res2.status, 404);
 });
+
+test("the monthly diagnosis is kept, trimmed to 3 causes, 3 actions and 3 checks; ordinary weeks have none", () => {
+  const step = { action: "a", why: "b", amount: null, basis: "numbers" };
+  const many = (n, f) => Array.from({ length: n }, (_, i) => f(i));
+  const p = cleanPlan({ headline: "h", week_goal: { type: "save", amount: 1, text: "t" }, sections: [{ kind: "save", title: "S", steps: [step] }],
+    diagnosis: { verdict: "No cushion.", causes: many(4, (i) => ({ title: "c" + i, text: "t" })), actions: many(4, (i) => ({ action: "a" + i, how_much: 5500, by_when: "now", changes: "x" })), checks: ["a", "b", "c", "d"] } });
+  assert.deepEqual([p.diagnosis.verdict, p.diagnosis.causes.length, p.diagnosis.actions.length, p.diagnosis.checks.length], ["No cushion.", 3, 3, 3]);
+  assert.equal(cleanPlan({ headline: "h", week_goal: {}, sections: [], diagnosis: null }).diagnosis, null);
+});
