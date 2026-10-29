@@ -133,3 +133,15 @@ test('the diagnosis passes the name check too', () => {
     checks: ['₹3,000 in the fund', 'Use Paytm less'] } }, s);
   assert.deepEqual([out.diagnosis.causes.length, out.diagnosis.actions.length, out.diagnosis.checks], [1, 1, ['₹3,000 in the fund']]);
 });
+
+test('official figures reach the plan with their period and source; none, no section', () => {
+  const s = house({});
+  assert.doesNotMatch(Core.planFacts(s, T, null), /OFFICIAL FIGURES/);
+  s.rates = { fetched: '2026-11-02', figures: [
+    { key: 'cpi_inflation', value: 4.8, period: 'Sep 2026', url: 'https://www.mospi.gov.in/cpi' },
+    { key: 'ppf', value: 7.1, period: 'Oct-Dec 2026 quarter', url: 'https://www.nsiindia.gov.in/x' }] };
+  const f = Core.planFacts(s, T, null);
+  assert.match(f, /OFFICIAL FIGURES \(found on government sites on 2 Nov/);
+  assert.match(f, /Retail inflation \(CPI, year on year\): 4\.8% \(Sep 2026; mospi\.gov\.in\)\./);
+  assert.match(f, /PPF: 7\.1% \(Oct-Dec 2026 quarter; nsiindia\.gov\.in\)\./);
+});

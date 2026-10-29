@@ -3102,6 +3102,13 @@
       '. If nothing changes: ' + (wi.debt.free.now ? M(wi.debt.free.now) : 'never') + ', interest ' + R(wi.debt.interest.now) + '.'
       : 'Loans at this step: debt-free ' + (wi.debt.free.now ? M(wi.debt.free.now) : 'never') + ' as planned, interest still to pay ' + R(wi.debt.interest.now) + ' (extra goes to the fund first).');
     if (wi.ending && wi.ending.length) L.push('EMIs ending within a year, whose money is then free: ' + wi.ending.map((e) => e.name + ' ' + R(e.emi) + ' a month, last in ' + M(e.last)).join('; ') + '.');
+    // Official figures, searched once a month on government sites only (nothing about the person is sent for them).
+    const RATE_NAMES = { repo_rate: 'RBI repo rate', cpi_inflation: 'Retail inflation (CPI, year on year)', ppf: 'PPF', ssy: 'Sukanya Samriddhi', scss: "Senior Citizens' Savings Scheme", nsc: 'NSC', po_savings: 'Post office savings account' };
+    const rates = state.rates && (state.rates.figures || []).filter((x) => RATE_NAMES[x.key]);
+    if (rates && rates.length) {
+      L.push('', 'OFFICIAL FIGURES (found on government sites on ' + D(state.rates.fetched) + '; quote them with their period and source; for any other rate or tax figure, say to check the official site)');
+      rates.forEach((x) => { let site = ''; try { site = new URL(x.url).hostname.replace(/^www\./, ''); } catch (e) { site = ''; } L.push(RATE_NAMES[x.key] + ': ' + x.value + '% (' + x.period + '; ' + site + ').'); });
+    }
     const prevChecks = (state.reviewChecks || {});
     if (prevChecks.round && prevChecks.round < rv.round && (prevChecks.checks || []).length) L.push("Last month's checks to follow up: " + prevChecks.checks.join('; ') + '.');
     const monthly = !state.reviewDone || state.reviewDone < rv.round;

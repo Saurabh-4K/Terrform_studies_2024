@@ -5,6 +5,9 @@ A small Cloudflare Worker for the app's optional **AI weekly plan**. It holds yo
 ## What it receives
 Once a week per tester (plus at most one remake a day): the app's language and a summary of numbers the app has already worked out (`Core.planFacts` in `core.js`): today's limit, zone, spending by category this week and usually, budgets, bills to come, maybe expenses, the monthly review (ladder step, debt-free date, net worth by round), past rounds, loans, cards and goals by the names the person gave them, fraud-check counts and amounts, and loan options. It answers with the plan in a fixed JSON format. Never SMS text, shop names, notes or account numbers. Testers can see the summary word for word in Profile → AI weekly plan → *See exactly what's sent*.
 
+## Official rates
+Once a month, before the plan with the monthly review, the app asks `/rates`. The server lets Claude search only government sites (RBI, MoSPI, NSI, India Post, PIB, the Finance Ministry, the income tax site) for the repo rate, CPI inflation and the small savings rates, and returns each with its period and page. It keeps only figures from those sites, found in that search, within a believable range. The request carries nothing about the person. Cost: a few searches ($10 per 1,000) and a little text, roughly ₹2–4 a month per tester.
+
 ## Set it up (about 15 minutes, all in a browser)
 1. **Claude Console** (platform.claude.com, separate from Claude Pro):
    - Billing → buy $5 of credits.

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import worker, { buildRequest, cleanPlan, PLAN_SCHEMA } from "../src/index.js";
+import worker, { buildRequest, cleanPlan, PLAN_SCHEMA, cleanRates, seenUrls, RATE_SITES } from "../src/index.js";
 
 test("builds a Sonnet request with a fixed plan format and the facts", () => {
   const r = buildRequest({ facts: "Today's limit: ₹290", language: "Marathi" }, "claude-sonnet-5-5");
@@ -67,4 +67,28 @@ test("the monthly diagnosis is kept, trimmed to 3 causes, 3 actions and 3 checks
     diagnosis: { verdict: "No cushion.", causes: many(4, (i) => ({ title: "c" + i, text: "t" })), actions: many(4, (i) => ({ action: "a" + i, how_much: 5500, by_when: "now", changes: "x" })), checks: ["a", "b", "c", "d"] } });
   assert.deepEqual([p.diagnosis.verdict, p.diagnosis.causes.length, p.diagnosis.actions.length, p.diagnosis.checks.length], ["No cushion.", 3, 3, 3]);
   assert.equal(cleanPlan({ headline: "h", week_goal: {}, sections: [], diagnosis: null }).diagnosis, null);
+});
+
+test("official rates: only government pages found in this search, believable values, one of each", () => {
+  const content = [{ type: "web_search_tool_result", content: [
+    { type: "web_search_result", url: "https://www.rbi.org.in/Scripts/BS_PressReleaseDisplay.aspx?prid=1", title: "RBI" },
+    { type: "web_search_result", url: "https://www.nsiindia.gov.in/InternalPage.aspx?Id_Pk=181", title: "NSI" },
+    { type: "web_search_result", url: "https://mospi.gov.in/cpi", title: "CPI" }] }];
+  const seen = seenUrls(content);
+  const out = cleanRates({ figures: [
+    { key: "repo_rate", value: 5.5, period: "from 1 Oct 2026", url: "https://www.rbi.org.in/Scripts/BS_PressReleaseDisplay.aspx?prid=1" },
+    { key: "ppf", value: 7.1, period: "Oct-Dec 2026 quarter", url: "https://www.nsiindia.gov.in/InternalPage.aspx?Id_Pk=181" },
+    { key: "cpi_inflation", value: 4.8, period: "Sep 2026", url: "https://mospi.gov.in/cpi" },
+    { key: "repo_rate", value: 6, period: "x", url: "https://www.rbi.org.in/Scripts/BS_PressReleaseDisplay.aspx?prid=1" },
+    { key: "ssy", value: 8.2, period: "x", url: "https://somebank.com/ssy" },
+    { key: "nsc", value: 7.7, period: "x", url: "https://www.nsiindia.gov.in/made-up-page" },
+    { key: "scss", value: 82, period: "x", url: "https://www.nsiindia.gov.in/InternalPage.aspx?Id_Pk=181" },
+    { key: "gold", value: 1, period: "x", url: "https://mospi.gov.in/cpi" }] }, seen);
+  assert.deepEqual(out.map((f) => [f.key, f.value]), [["repo_rate", 5.5], ["ppf", 7.1], ["cpi_inflation", 4.8]]);
+  assert.ok(RATE_SITES.includes("rbi.org.in"));
+});
+
+test("rates and plans need an invite code; other paths are not found", async () => {
+  const res = await worker.fetch(new Request("https://x.dev/rates", { method: "POST", headers: { "X-Invite-Code": "nope" } }), { INVITE_CODES: "a" });
+  assert.equal(res.status, 401);
 });

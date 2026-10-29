@@ -25,7 +25,7 @@ Write the plan for this week:
   - checks: 2 or 3 targets for next month that their numbers will show (for example "₹5,500 in the emergency fund", "no card spending").
 - week_goal: one measurable goal the app can check next week. type is one of: spend_cap (keep flexible spending this week at or under amount), save (move at least amount to savings), extra_loan (pay at least amount extra on loans), no_card (no credit card spending; amount 0). Pick an amount they can actually reach from their numbers. text says it in plain words.
 - sections, in this order, each with 1 to 3 steps. Each step: action (what to do, concrete, with a rupee amount where it helps), why (one short sentence using their numbers), amount (the rupees involved, or null), basis ("numbers" when it rests on the facts; "general" when it is general guidance from your own knowledge that they should check).
-  - advisor: only when the facts say "Monthly review this time: yes". Here you act as a careful financial adviser for India and may use your own knowledge, not only the facts: the two or three things that matter most for their situation and their ladder step, beyond what the other sections say (for example: ask the bank to convert a costly card balance to a lower-rate EMI; paying only a card's minimum costs the most interest and hurts the credit score; term insurance before investing if anyone depends on their income; checking which tax regime suits them; what a loan's rate and processing fee should not exceed). Mark each step's basis. Never state a current interest rate, tax slab, tax limit or scheme rate as a fact: say to check the current figure on the official site. Suggest areas of investing (such as an index fund SIP for money not needed for 5 years or more) only when the ladder step is 6.
+  - advisor: only when the facts say "Monthly review this time: yes". Here you act as a careful financial adviser for India and may use your own knowledge, not only the facts: the two or three things that matter most for their situation and their ladder step, beyond what the other sections say (for example: ask the bank to convert a costly card balance to a lower-rate EMI; paying only a card's minimum costs the most interest and hurts the credit score; term insurance before investing if anyone depends on their income; checking which tax regime suits them; what a loan's rate and processing fee should not exceed). Mark each step's basis. Never state a current interest rate, tax slab, tax limit or scheme rate as a fact unless it is in OFFICIAL FIGURES in the facts: quote those with their period and source (for example "inflation was 4.8% in Sep 2026, per mospi.gov.in"), and use them where they help (money earning less than inflation loses value). For anything else, say to check the current figure on the official site. Suggest areas of investing (such as an index fund SIP for money not needed for 5 years or more) only when the ladder step is 6.
   - save: where this week's spending was above the usual week, little leaks and small payments; name the category and a realistic cut. Protect basics: never suggest cutting groceries below need, medicine, rent or school fees.
   - loans: only if they have loans. Which loan to put extra on and how much, using the loan options in the facts. If money is tight, say to keep paying every minimum on time first.
   - fraud: always include. If the facts list payments to double-check, tell them to look at those in the app and what to do if one isn't theirs: call the bank to block the card or UPI, and report it on the National Cyber Crime Helpline 1930 or cybercrime.gov.in, quickly. Add one or two short safety habits that fit (never share an OTP or UPI PIN; a UPI PIN is only for paying, never for receiving money; banks never ask for KYC updates by call, SMS link or screen-sharing apps; avoid instant loan apps).
@@ -165,15 +165,115 @@ export function cleanPlan(plan) {
   return { headline: String(plan.headline || ""), diagnosis, week_goal: plan.week_goal, sections };
 }
 
+/*
+ * Official rates, for the monthly review: searched only on Indian government
+ * sites, each with the period it applies to and the page it came from. The
+ * request carries nothing about the person: it's the same for everyone.
+ */
+export const RATE_SITES = ["rbi.org.in", "mospi.gov.in", "nsiindia.gov.in", "indiapost.gov.in", "pib.gov.in", "dea.gov.in", "finmin.nic.in", "incometaxindia.gov.in"];
+// Each figure and the range a real value falls in; anything outside is a misread.
+export const RATE_KEYS = {
+  repo_rate: [0, 15], cpi_inflation: [-5, 25], ppf: [3, 12], ssy: [3, 12], scss: [3, 12], nsc: [3, 12], po_savings: [1, 8],
+};
+const RATES_SCHEMA = {
+  type: "object",
+  properties: {
+    figures: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          key: { type: "string", enum: Object.keys(RATE_KEYS) },
+          value: { type: "number" },
+          period: { type: "string" },
+          url: { type: "string" },
+        },
+        required: ["key", "value", "period", "url"],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ["figures"],
+  additionalProperties: false,
+};
+const RATES_SYSTEM = `Find India's latest official figures, using only the web search tool (it only searches government sites):
+- repo_rate: the RBI policy repo rate, % a year.
+- cpi_inflation: the latest all-India CPI (combined) inflation, year on year, %.
+- ppf, ssy, scss, nsc: the current quarter's interest rates for the Public Provident Fund, Sukanya Samriddhi, the Senior Citizens' Savings Scheme and the National Savings Certificate, % a year.
+- po_savings: the post office savings account rate, % a year.
+For each: value as a number, period (the month, quarter or date it applies to, e.g. "Oct-Dec 2026 quarter", "Sep 2026", "from 6 Aug 2026"), and url: the address of the page you found it on, exactly as in the search results. Leave out any figure you can't find on those pages. Never guess and never use what you remember: an old figure is worse than none.`;
+
+// Keeps only figures from the government sites, found in this search, with a believable value. Exported for tests.
+export function cleanRates(out, seen) {
+  const host = (u) => { try { const x = new URL(u); return x.protocol === "https:" || x.protocol === "http:" ? x.hostname.toLowerCase() : ""; } catch (e) { return ""; } };
+  const official = (u) => RATE_SITES.some((s) => host(u) === s || host(u).endsWith("." + s));
+  const done = new Set();
+  return ((out && out.figures) || []).filter((f) => {
+    const range = RATE_KEYS[f.key];
+    if (!range || done.has(f.key) || typeof f.value !== "number" || !(f.value >= range[0] && f.value <= range[1])) return false;
+    if (!official(f.url)) return false;
+    // A page Claude really found, not one it made up.
+    if (seen && seen.size && !seen.has(String(f.url).replace(/\/+$/, ""))) return false;
+    done.add(f.key);
+    return true;
+  }).map((f) => ({ key: f.key, value: Math.round(f.value * 100) / 100, period: String(f.period || "").slice(0, 60), url: f.url }));
+}
+
+// Every page the searches returned, wherever they sit in the response.
+export function seenUrls(content) {
+  const seen = new Set();
+  const walk = (x) => {
+    if (!x || typeof x !== "object") return;
+    if (Array.isArray(x)) { x.forEach(walk); return; }
+    if ((x.type === "web_search_result" || x.type === "web_search_result_location") && x.url) seen.add(String(x.url).replace(/\/+$/, ""));
+    Object.values(x).forEach(walk);
+  };
+  walk(content);
+  return seen;
+}
+
+async function officialRates(env) {
+  const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
+  const params = {
+    model: env.MODEL || "claude-sonnet-5-5",
+    max_tokens: 8000,
+    system: RATES_SYSTEM,
+    tools: [{ type: "web_search_20260209", name: "web_search", max_uses: 8, allowed_domains: RATE_SITES }],
+    output_config: { effort: "low", format: { type: "json_schema", schema: RATES_SCHEMA } },
+    messages: [{ role: "user", content: "Find the latest official figures." }],
+  };
+  let response = await client.messages.create(params);
+  const content = [];
+  // A long search can pause; send the paused turn back as it is to continue (twice at most).
+  for (let i = 0; response.stop_reason === "pause_turn" && i < 2; i++) {
+    content.push(...response.content);
+    response = await client.messages.create({ ...params, messages: [params.messages[0], { role: "assistant", content: response.content }] });
+  }
+  content.push(...response.content);
+  const texts = response.content.filter((b) => b.type === "text").map((b) => b.text);
+  let out = null;
+  for (let i = texts.length - 1; i >= 0 && !out; i--) { try { out = JSON.parse(texts[i]); } catch (e) { /* narration, not the answer */ } }
+  return cleanRates(out, seenUrls(content));
+}
+
 export default {
   async fetch(request, env) {
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
     const url = new URL(request.url);
-    if (request.method !== "POST" || url.pathname !== "/plan") return reply(404, { error: "Not found" });
+    if (request.method !== "POST" || (url.pathname !== "/plan" && url.pathname !== "/rates")) return reply(404, { error: "Not found" });
 
     const codes = String(env.INVITE_CODES || "").split(",").map((c) => c.trim()).filter(Boolean);
     const code = (request.headers.get("X-Invite-Code") || "").trim();
     if (!codes.length || !codes.includes(code)) return reply(401, { error: "invite" });
+
+    if (url.pathname === "/rates") {
+      try {
+        return reply(200, { rates: await officialRates(env), fetched: new Date().toISOString().slice(0, 10) });
+      } catch (error) {
+        if (error instanceof Anthropic.RateLimitError) return reply(429, { error: "busy" });
+        return reply(502, { error: "rates" });
+      }
+    }
 
     let body;
     try { body = await request.json(); } catch (e) { return reply(400, { error: "Bad request" }); }

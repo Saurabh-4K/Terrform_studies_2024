@@ -4655,6 +4655,13 @@
       html += '<div class="callout warn"><b>' + tr('Made by AI. It can be wrong or out of date.') + '</b><span class="hint">' +
         tr('The health check, the numbers and your step are worked out by the app. The rest is written by AI from them: general guidance, not personal financial advice. Check before acting; for investing, talk to a SEBI-registered investment adviser.') + '</span></div>';
     }
+    const RATE_LABELS = { repo_rate: 'RBI repo rate', cpi_inflation: 'Retail inflation (CPI)', ppf: 'PPF', ssy: 'Sukanya Samriddhi', scss: 'Senior Citizens’ Savings Scheme', nsc: 'NSC', po_savings: 'Post office savings account' };
+    const rates = state.rates && (state.rates.figures || []).filter((x) => RATE_LABELS[x.key]);
+    if (rates && rates.length) {
+      const site = (u) => { try { return new URL(u).hostname.replace(/^www\./, ''); } catch (e) { return ''; } };
+      html += '<h3>' + tr('Official figures') + '</h3><div class="summary">' + rates.map((x) => line(tr(RATE_LABELS[x.key]) + '<span class="hint"> · ' + esc(x.period) + ' · <a href="' + esc(x.url) + '" target="_blank" rel="noopener">' + esc(site(x.url)) + '</a></span>', x.value + '%')).join('') + '</div>' +
+        '<p class="hint">' + tr('Found on government sites on {date}. Rates change: check the source before you decide.', { date: fmtDate(state.rates.fetched, true) }) + '</p>';
+    }
     html += '<h3>' + tr('The long run') + '</h3><div class="summary">' +
       (rv.debtFree ? line(tr('Debt-free with your plan'), rv.debtFree.plan ? monthYear(rv.debtFree.plan) : tr('Not at these payments')) +
         (rv.debtFree.moved ? line(tr('Since last payday'), '<span class="' + (rv.debtFree.moved < 0 ? 'good' : 'warn') + '">' +
@@ -4761,6 +4768,7 @@
       '<div class="callout"><b>' + tr('Sent once a week, when your plan is made') + '</b>' +
       '<span class="hint">' + tr('A summary the app has already worked out: today’s limit, zone, spending by category this week and usually, budgets, bills to come, costs that may come, past rounds, your loans, cards and goals by the names you gave them, and how many payments look unusual.') + '</span>' +
       '<b>' + tr('Never sent') + '</b><span class="hint">' + tr('SMS text, shop names, notes, account or card numbers.') + '</span>' +
+      '<b>' + tr('Once a month') + '</b><span class="hint">' + tr('The server looks up official rates (RBI, inflation, PPF and small savings) on government sites. That request carries nothing about you.') + '</span>' +
       '<b>' + tr('Where it goes') + '</b><span class="hint">' + tr('To your app’s server, which keeps nothing, and on to Anthropic to write the plan.') + '</span>' +
       '<div><button class="link" data-action="ai-show-facts">' + tr(ui.aiFacts ? 'Hide what’s sent' : 'See exactly what’s sent') + '</button></div>' +
       (ui.aiFacts ? '<pre class="ai-facts">' + esc(Core.planFacts(state, today(), state.weeklyPlan && state.weeklyPlan.goal)) + '</pre>' : '') + '</div>' +
@@ -4792,6 +4800,24 @@
   function planDue() {
     return aiCfg().on && !ui.planBusy && !ui.planTried && !state.isDemo &&
       (!state.weeklyPlan || state.weeklyPlan.week < Core.weekStart(today()));
+  }
+
+  /*
+   * Official rates, once a month with the monthly review: the server searches
+   * government sites only. Nothing about the person is sent. A failure just
+   * means the plan goes without them.
+   */
+  function fetchRates(cfg) {
+    const round = Core.cycleFor(today(), Number(state.settings.payday) || 1).start;
+    const fresh = state.rates && state.rates.fetched && Core.daysBetween(state.rates.fetched, today()) < 25;
+    if (fresh || (state.reviewDone && state.reviewDone >= round)) return Promise.resolve();
+    const ctl = typeof AbortController === 'function' ? new AbortController() : null;
+    const timer = setTimeout(() => { if (ctl) ctl.abort(); }, 90000);
+    return fetch(cfg.url + '/rates', { method: 'POST', headers: { 'X-Invite-Code': cfg.code }, signal: ctl ? ctl.signal : undefined })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((body) => { if (body && Array.isArray(body.rates) && body.rates.length) state.rates = { fetched: body.fetched || today(), figures: body.rates }; })
+      .catch(() => {})
+      .then(() => clearTimeout(timer));
   }
 
   function requestPlan() {
@@ -4826,12 +4852,12 @@
       } else ui.planError = error;
       rerenderKeepScroll();
     };
-    fetch(cfg.url + '/plan', {
+    fetchRates(cfg).then(() => fetch(cfg.url + '/plan', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-Invite-Code': cfg.code },
       body: JSON.stringify({ facts: Core.planFacts(state, t, lastGoal), language: AI_LANG[I18N.getLang()] || 'English' }),
       signal: ctl ? ctl.signal : undefined,
-    }).then((res) => res.json().catch(() => ({})).then((body) => ({ status: res.status, body }))).then(({ status, body }) => {
+    })).then((res) => res.json().catch(() => ({})).then((body) => ({ status: res.status, body }))).then(({ status, body }) => {
       if (status === 200 && body.plan && Array.isArray(body.plan.sections) && body.plan.week_goal) done(body.plan);
       else if (status === 200 && body.declined) done(null, tr('The AI couldn’t make a plan this time. Try again later.'));
       else if (status === 401) done(null, tr('The invite code isn’t right. Check it in Profile → AI weekly plan.'));
