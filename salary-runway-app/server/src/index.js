@@ -19,15 +19,17 @@ The app has already worked out every number in <facts>, including the loan optio
 Write the plan for this week:
 - headline: one sentence on where they stand and the single most important thing to do this week.
 - week_goal: one measurable goal the app can check next week. type is one of: spend_cap (keep flexible spending this week at or under amount), save (move at least amount to savings), extra_loan (pay at least amount extra on loans), no_card (no credit card spending; amount 0). Pick an amount they can actually reach from their numbers. text says it in plain words.
-- sections, in this order, each with 1 to 3 steps. Each step: action (what to do, concrete, with a rupee amount where it helps), why (one short sentence using their numbers), amount (the rupees involved, or null).
+- sections, in this order, each with 1 to 3 steps. Each step: action (what to do, concrete, with a rupee amount where it helps), why (one short sentence using their numbers), amount (the rupees involved, or null), basis ("numbers" when it rests on the facts; "general" when it is general guidance from your own knowledge that they should check).
   - direction: only when the facts say "Monthly review this time: yes". The months ahead, for the step on the money ladder the facts name (the app decides the step; never skip ahead, e.g. never investing while a costly loan is open). Title it with their next milestone. Steps: what to do each month to reach that milestone, and roughly when they'll get there at that pace; say what changed since last payday (debt-free date, net worth, the fund) in plain words.
+  - advisor: only when the facts say "Monthly review this time: yes". Here you act as a careful financial adviser for India and may use your own knowledge, not only the facts: the two or three things that matter most for their situation and their ladder step, beyond what the other sections say (for example: ask the bank to convert a costly card balance to a lower-rate EMI; paying only a card's minimum costs the most interest and hurts the credit score; term insurance before investing if anyone depends on their income; checking which tax regime suits them; what a loan's rate and processing fee should not exceed). Mark each step's basis. Never state a current interest rate, tax slab, tax limit or scheme rate as a fact: say to check the current figure on the official site. Suggest areas of investing (such as an index fund SIP for money not needed for 5 years or more) only when the ladder step is 6.
   - save: where this week's spending was above the usual week, little leaks and small payments; name the category and a realistic cut. Protect basics: never suggest cutting groceries below need, medicine, rent or school fees.
   - loans: only if they have loans. Which loan to put extra on and how much, using the loan options in the facts. If money is tight, say to keep paying every minimum on time first.
   - fraud: always include. If the facts list payments to double-check, tell them to look at those in the app and what to do if one isn't theirs: call the bank to block the card or UPI, and report it on the National Cyber Crime Helpline 1930 or cybercrime.gov.in, quickly. Add one or two short safety habits that fit (never share an OTP or UPI PIN; a UPI PIN is only for paying, never for receiving money; banks never ask for KYC updates by call, SMS link or screen-sharing apps; avoid instant loan apps).
   - invest: only if the facts say "Ready to learn about investing: yes". Explain at most three types that fit money they won't need for years (for example PPF, fixed or recurring deposits, an index fund SIP, gold through an ETF), what each suits (how long, how risky), never naming a specific fund, stock, company, bank or platform. End the section by saying to take advice from a SEBI-registered investment adviser before investing. If not ready, leave this section out.
 
 Rules:
-- Never suggest borrowing of any kind: no loans, loan apps, credit card spending, Buy Now Pay Later, advance salary or borrowing from friends.
+- Never suggest new borrowing: no loans to spend or invest, loan apps, credit card spending, Buy Now Pay Later, advance salary or borrowing from friends. The one exception, in the advisor section only: moving a costly balance to a cheaper one (a card balance to a lower-rate EMI, or a balance transfer), only if it costs less after all fees and they stop using that card. You may say what rate or fee is too high.
+- Never name a bank, lender, card, fund house, fund, insurer, policy, broker, app, company or person. The names the person gave their own loans, cards and goals in the facts may be used.
 - Be kind and direct, never shaming. Short sentences, plain words, no jargon.
 - Amounts in rupees with Indian digit grouping (₹1,23,456).
 - Write every text field in the language named in <language>. Keep words like EMI, UPI, SIP, PPF, OTP, PIN and ₹ as they are.`;
@@ -38,8 +40,9 @@ const STEP = {
     action: { type: "string" },
     why: { type: "string" },
     amount: { anyOf: [{ type: "integer" }, { type: "null" }] },
+    basis: { type: "string", enum: ["numbers", "general"] },
   },
-  required: ["action", "why", "amount"],
+  required: ["action", "why", "amount", "basis"],
   additionalProperties: false,
 };
 
@@ -62,7 +65,7 @@ export const PLAN_SCHEMA = {
       items: {
         type: "object",
         properties: {
-          kind: { type: "string", enum: ["direction", "save", "loans", "fraud", "invest"] },
+          kind: { type: "string", enum: ["direction", "advisor", "save", "loans", "fraud", "invest"] },
           title: { type: "string" },
           steps: { type: "array", items: STEP },
         },
@@ -103,14 +106,15 @@ export function buildRequest(body, model) {
   };
 }
 
-// The plan as the app draws it: at most 4 sections and 3 steps each, in order. Exported for tests.
+// The plan as the app draws it: known sections, once each, in order, at most 3 steps each. Exported for tests.
 export function cleanPlan(plan) {
-  const order = ["direction", "save", "loans", "fraud", "invest"];
+  const order = ["direction", "advisor", "save", "loans", "fraud", "invest"];
   const seen = new Set();
   const sections = (plan.sections || [])
     .filter((s) => order.includes(s.kind) && !seen.has(s.kind) && seen.add(s.kind))
     .sort((a, b) => order.indexOf(a.kind) - order.indexOf(b.kind))
-    .map((s) => ({ kind: s.kind, title: String(s.title), steps: (s.steps || []).slice(0, 3) }))
+    .map((s) => ({ kind: s.kind, title: String(s.title),
+      steps: (s.steps || []).slice(0, 3).map((st) => ({ ...st, basis: st.basis === "general" ? "general" : "numbers" })) }))
     .filter((s) => s.steps.length);
   return { headline: String(plan.headline || ""), week_goal: plan.week_goal, sections };
 }

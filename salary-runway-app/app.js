@@ -582,6 +582,7 @@
       'Each payday, where the long run is heading: your debt-free date and how it moved, net worth, the emergency fund in months, how much of your pay you saved, and your goals.',
       'The money ladder is the order money goes in, as banks and planners teach it: basics and every minimum, a starter fund, costly loans (12% a year or more), the full emergency fund, goals, then investing. The app works out your step from your numbers; advice is about that step only.',
       'With the weekly plan on, the first plan after payday adds a direction for the month ahead, written by AI from these numbers.',
+      'It also adds an adviser’s view: two or three things that matter most for your step, from general money knowledge. Each says whether it comes from your numbers or is general guidance to check. It never names a bank, fund, insurer or app, never suggests new borrowing, and suggests areas to invest only on the last step.',
     ]],
     maybe: ['Maybe expenses', [
       'Costs that may come: a wedding gift, a bike repair, a doctor’s visit. Add the amount, roughly when, and how likely it is.',
@@ -4556,7 +4557,7 @@
     large_new: 'A big payment to a place you haven’t paid before.',
     many_new: 'Three or more new places paid on one day.',
   };
-  const PLAN_ICONS = { direction: 'target', save: 'pot', loans: 'loan', fraud: 'shield', invest: 'sprout' };
+  const PLAN_ICONS = { direction: 'target', advisor: 'chat', save: 'pot', loans: 'loan', fraud: 'shield', invest: 'sprout' };
 
   // ---------- the monthly review and the money ladder ----------
 
@@ -4595,6 +4596,15 @@
     html += '<ol class="ladder">' + L.steps.map((s) => '<li class="' + (s.current ? 'current' : s.done ? 'done' : '') + '"><b>' + (s.done ? '✓ ' : '') + tr(LADDER[s.key][0]) + '</b>' +
       (s.current ? '<span class="hint">' + tr(LADDER[s.key][1]) + '</span><span>' + ladderMilestone(L.milestone) + '</span>' : '') + '</li>').join('') + '</ol>';
     if (dir) html += '<div class="plan-sec plan-direction"><h3>' + esc(dir.title) + '</h3>' + planSteps(dir) + '<p class="hint">' + tr('Made by AI from your numbers. It can be wrong: the app’s own numbers are the ones to trust.') + '</p></div>';
+    // The adviser's view: each point says whether it rests on your numbers or is general guidance to check.
+    const adv = wp && wp.plan && wp.made >= rv.round ? (wp.plan.sections || []).find((s) => s.kind === 'advisor') : null;
+    if (adv) {
+      html += '<div class="plan-sec plan-advisor"><h3><svg viewBox="0 0 24 24" fill-rule="evenodd" aria-hidden="true">' + HUB_ICONS.chat + '</svg>' + tr('Adviser’s view') + '</h3>' +
+        '<ol class="plan-steps">' + adv.steps.map((st) => '<li><b>' + esc(st.action) + '</b>' + (st.why ? '<span class="hint">' + esc(st.why) + '</span>' : '') +
+          '<span class="chip' + (st.basis === 'general' ? ' warn' : '') + '">' + tr(st.basis === 'general' ? 'General guidance: please check' : 'From your numbers') + '</span></li>').join('') + '</ol>' +
+        '<div class="callout warn"><b>' + tr('Made by AI. It can be wrong or out of date.') + '</b><span class="hint">' +
+          tr('General guidance, not personal financial advice: check before acting. For investing, talk to a SEBI-registered investment adviser.') + '</span></div></div>';
+    }
     html += '<div class="summary">' +
       (rv.debtFree ? line(tr('Debt-free with your plan'), rv.debtFree.plan ? monthYear(rv.debtFree.plan) : tr('Not at these payments')) +
         (rv.debtFree.moved ? line(tr('Since last payday'), '<span class="' + (rv.debtFree.moved < 0 ? 'good' : 'warn') + '">' +
@@ -4676,7 +4686,7 @@
         html += '<div class="callout plan-goal"><span class="eyebrow">' + tr('This week’s goal') + '</span><b>' + esc(g.text) + '</b>' + (progress ? '<span class="hint">' + progress + '</span>' : '') + '</div>';
       }
       const ready = Core.investReady(state, t).ready;
-      p.sections.filter((sec) => (sec.kind !== 'invest' || ready) && sec.kind !== 'direction').forEach((sec) => {
+      p.sections.filter((sec) => (sec.kind !== 'invest' || ready) && sec.kind !== 'direction' && sec.kind !== 'advisor').forEach((sec) => {
         html += '<div class="plan-sec plan-' + sec.kind + '"><h3><svg viewBox="0 0 24 24" fill-rule="evenodd" aria-hidden="true">' + HUB_ICONS[PLAN_ICONS[sec.kind]] + '</svg>' + esc(sec.title) + '</h3>' + planSteps(sec) +
           (sec.kind === 'fraud' ? fraudBox() : '') +
           (sec.kind === 'invest' ? '<div class="callout warn"><b>' + tr('General information, not advice') + '</b><span class="hint">' + tr('Before investing, talk to a SEBI-registered investment adviser. Every investment can lose value, and the decision is yours.') + '</span></div>' : '') +
@@ -4752,6 +4762,8 @@
       clearTimeout(timer);
       ui.planBusy = false;
       if (plan) {
+        // No bank, fund, insurer or app names in what's kept, whatever the AI wrote.
+        plan = Core.cleanAdvice(plan, state);
         // A finished week's goal is kept (8 weeks), so the trend can say how goals went.
         if (prev && prev.goal && prev.week < week) state.goalHistory = (state.goalHistory || []).filter((g) => g.week !== prev.goal.week).concat(prev.goal).slice(-8);
         if ((plan.sections || []).some((s) => s.kind === 'direction')) state.reviewDone = Core.cycleFor(t, Number(state.settings.payday) || 1).start;

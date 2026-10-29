@@ -3077,7 +3077,7 @@
     if (rv.savedRate.length) L.push('Saved each round (to funds, investing and loans, beyond EMIs): ' + rv.savedRate.map((m) => M(m.start) + ' ' + m.pct + '% of pay (' + R(m.saved) + ')').join('; ') + '.');
     if (rv.goals.length) L.push('Goals: ' + rv.goals.map((g) => g.name + ' ' + R(g.saved) + ' of ' + R(g.target) + (g.by ? ' by ' + M(g.by) : '') + (g.done ? ' (reached)' : g.late ? ' (date passed)' : '')).join('; ') + '.');
     const monthly = !state.reviewDone || state.reviewDone < rv.round;
-    L.push('Monthly review this time: ' + (monthly ? 'yes (write the direction section)' : 'no') + '.');
+    L.push('Monthly review this time: ' + (monthly ? 'yes (write the direction and advisor sections)' : 'no') + '.');
     const tr4 = weekTrend(state, todayIso, 4);
     if (tr4.weeks.some((w) => !w.quiet)) {
       L.push('', 'LAST 4 WEEKS (Monday to Sunday, oldest first)');
@@ -3736,6 +3736,33 @@
     return w[0] === '=' ? new RegExp('\\b' + w.slice(1) + '\\b').test(lower) : lower.indexOf(w) !== -1;
   }
 
+  /*
+   * Names AI advice must never carry: banks, card issuers, lenders, fund
+   * houses, insurers, brokers and payment or investing apps. "=" means a
+   * whole word. The names the person gave their own loans, cards, goals and
+   * payments are allowed ("HDFC credit card EMI" is theirs).
+   */
+  const BRANDS = ['=sbi', 'state bank', '=hdfc', '=icici', '=axis', '=kotak', '=pnb', 'punjab national', 'bank of baroda', '=canara', 'union bank', '=idfc', 'indusind',
+    'yes bank', 'federal bank', '=rbl', 'au small finance', 'bandhan', '=idbi', 'standard chartered', '=hsbc', '=citi', 'citibank', 'american express', '=amex', 'bank of india',
+    '=onecard', '=uni card', '=lic', 'hdfc life', 'icici prudential', 'sbi life', 'max life', 'tata aia', 'star health', 'niva bupa', 'care health', 'bajaj allianz',
+    'icici lombard', 'policybazaar', 'zerodha', '=groww', 'upstox', 'angel one', '=paytm', 'phonepe', 'google pay', '=gpay', '=cred', '=kuvera', 'et money', 'nippon', 'mirae',
+    'parag parikh', '=quant', '=uti', '=dsp', 'motilal', 'franklin', 'aditya birla', '=bajaj', 'tata capital', 'muthoot', 'manappuram'].concat(LENDERS);
+  function namesBrand(text, own) {
+    const lower = String(text || '').toLowerCase();
+    const mine = (own || []).map((x) => String(x || '').toLowerCase()).join(' | ');
+    return BRANDS.find((w) => keywordMatches(lower, w) && !keywordMatches(mine, w)) || null;
+  }
+  // An AI plan, checked before it's kept: a step naming a bank, fund, insurer or app goes; an empty section goes too.
+  function cleanAdvice(plan, state) {
+    if (!plan || !Array.isArray(plan.sections)) return plan;
+    const own = [].concat(state.debts || [], state.cards || [], state.goals || [], state.fixed || [], state.bills || []).map((x) => x && x.name);
+    const ok = (st) => !namesBrand([st.action, st.why].join(' '), own);
+    return Object.assign({}, plan, {
+      headline: namesBrand(plan.headline, own) ? '' : plan.headline,
+      sections: plan.sections.map((sec) => Object.assign({}, sec, { steps: (sec.steps || []).filter(ok) })).filter((sec) => sec.steps.length),
+    });
+  }
+
   function categorize(text, rules) {
     const key = normalizeMerchant(text);
     if (rules && key && rules[key]) return rules[key];
@@ -3996,7 +4023,7 @@
     recordCardPayment, keptFor, ownPart, coverPurchase, refundToPurchase, undoRefund, earmarkedIn, cleanState, accuracyStats, reimbView, syncReimb, addClaim, recordPayout, claimSet, reimbForget, reimbAmount, addCardEmi, isPassedOn, passThroughPair, passOn, iouLeft, openIous, addIou, payIou, undoIouTx, iouSummary, iouEvents, cardEmiFromBooking, looksLikeCardBill, spendToCardPayment, convertCardBalance, answerCardDue, cardLateFee, cardRate, CARD_RATE, undoCardConvert, cardFreeDays, byCategory, DEFAULT_SPLIT,
     isLoanCredit, borrowedThisCycle, borrowCheck, rolloverOptions, setTranslator,
     maybeOpen, maybeHeld, maybeDue, maybeIfHappens, addMaybe, maybeHappened, maybeDidnt, maybeReopen, maybeForget, maybeCandidates, maybeStats,
-    weekTrend, priorityLadder, monthlyReview, payoffOrder, tickDebts, debtJourney, lenderTasks, lastBorrowed,
+    weekTrend, priorityLadder, monthlyReview, namesBrand, cleanAdvice, payoffOrder, tickDebts, debtJourney, lenderTasks, lastBorrowed,
     encryptBackup, openBackup, backupInfo, toB64, fromB64, isTransfer, walletBalances, goalStatus, goalsMonthly, budgetEnvelopes, netWorth, reportRange, budgetHistory, aiFacts, planFacts, fraudSignals, investReady, goalResult, weekStart,
     daySpent, daySpending, dayTally, roundSnapshot, roundResult, weekRecap,
     monthReport, LEAKS, leakNames, leakOf, leakSummary, leakSuggestions, spendWhere, spendWhen, spendTrend, BASICS,

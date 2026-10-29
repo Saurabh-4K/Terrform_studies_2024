@@ -72,3 +72,21 @@ test('the monthly review: debt-free date moved, net worth over rounds, saved sha
   assert.match(Core.planFacts(s, T, null), /Monthly review this time: no/);
   assert.match(Core.planFacts(s, T, null), /Now on step 2: a starter safety fund/);
 });
+
+test('adviser\'s view: a step naming a bank, fund house or app is dropped; your own loan\'s name is fine', () => {
+  const s = house({ debts: [{ id: 'cc', name: 'HDFC credit card EMI', balance: 50000, rate: 22, minPayment: 6000, dueDay: 3 }] });
+  const plan = { headline: 'Build the fund', week_goal: {}, sections: [
+    { kind: 'advisor', title: 'Adviser', steps: [
+      { action: 'Ask SBI for a top-up loan to clear the card', why: 'x', basis: 'general' },
+      { action: 'Ask your bank to turn the HDFC credit card EMI balance into a lower-rate EMI', why: '22% is costly', basis: 'numbers' },
+      { action: 'Start a SIP on Groww', why: 'y', basis: 'general' },
+      { action: 'If anyone depends on your income, term insurance comes before investing', why: 'z', basis: 'general' }] },
+    { kind: 'save', title: 'Save', steps: [{ action: 'Use Paytm cashback', why: 'w', basis: 'numbers' }] }] };
+  const out = Core.cleanAdvice(plan, s);
+  assert.deepEqual(out.sections.map((x) => [x.kind, x.steps.length]), [['advisor', 2]]);
+  assert.match(out.sections[0].steps[0].action, /HDFC credit card EMI/);
+  // Ordinary words aren't names
+  assert.equal(Core.namesBrand('Put a slice of your pay aside, by Bob’s advice', []), null);
+  assert.equal(Core.namesBrand('Ask ICICI for a lower rate', []), '=icici');
+  assert.match(Core.planFacts(s, T, null), /write the direction and advisor sections/);
+});

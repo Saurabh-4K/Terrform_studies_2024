@@ -28,7 +28,7 @@ test("every object in the schema is closed, as structured outputs need", () => {
 });
 
 test("the plan is cleaned to known sections, in order, at most 3 steps each", () => {
-  const step = { action: "a", why: "b", amount: null };
+  const step = { action: "a", why: "b", amount: null, basis: "numbers" };
   const p = cleanPlan({
     headline: "h", week_goal: { type: "save", amount: 500, text: "t" },
     sections: [
@@ -44,6 +44,12 @@ test("the plan is cleaned to known sections, in order, at most 3 steps each", ()
   const q = cleanPlan({ headline: "h", week_goal: { type: "save", amount: 1, text: "t" },
     sections: [{ kind: "fraud", title: "F", steps: [step] }, { kind: "direction", title: "D", steps: [step] }] });
   assert.deepEqual(q.sections.map((s) => s.kind), ["direction", "fraud"]);
+  // The adviser's view follows the direction; a missing or odd basis reads as "numbers"
+  const r = cleanPlan({ headline: "h", week_goal: { type: "save", amount: 1, text: "t" },
+    sections: [{ kind: "advisor", title: "A", steps: [{ action: "a", why: "b", amount: null, basis: "general" }, { action: "c", why: "d", amount: null }] },
+      { kind: "direction", title: "D", steps: [step] }] });
+  assert.deepEqual(r.sections.map((s) => s.kind), ["direction", "advisor"]);
+  assert.deepEqual(r.sections[1].steps.map((s) => s.basis), ["general", "numbers"]);
   assert.equal(p.sections[0].steps.length, 3);
 });
 
