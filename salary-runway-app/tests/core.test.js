@@ -161,7 +161,8 @@ test('choices for money received come with facts and a suggestion', () => {
   });
   s.transactions.push({ id: 'in1', kind: 'in', date: '2026-10-05', amount: 5000, category: 'Money received', note: 'Rahul' });
   const o = Core.incomeOptions(s, 'in1', '2026-10-05');
-  assert.deepEqual(o.options.map((x) => x.use), ['spend', 'emergency', 'debt', 'keep', 'grow']);
+  // The fund holds money, so it can also be where this came from (not new money).
+  assert.deepEqual(o.options.map((x) => x.use), ['spend', 'emergency', 'debt', 'keep', 'grow', 'fromfund']);
   assert.equal(o.recommended, 'debt');
   assert.ok(o.interestSaved > 0);
   // With little in the emergency fund, that comes first.

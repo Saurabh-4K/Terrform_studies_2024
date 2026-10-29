@@ -27,6 +27,8 @@
   const LOAN_CATEGORY = 'Loan or Pay Later';
   const INCOME_USE_LABELS = {
     spend: 'Kept for this month',
+    fromfund: 'From my emergency fund',
+    fromgrow: 'From my savings',
     emergency: 'Added to emergency fund',
     grow: 'Set aside to invest',
     debt: 'Used to pay off a loan',
@@ -936,7 +938,7 @@
       '</section>' +
       cardHomeNotes(cyc) +
       savedCard() +
-      alertsNudge() + iouDueCard() + maybeDueCard() + fixedMatchCard() + passCard() + incomeCard() +
+      alertsNudge() + iouDueCard() + maybeDueCard() + fixedMatchCard() + refundMatchCard() + passCard() + incomeCard() +
       weekCard() +
       bal +
       (needsCheck().length
@@ -974,7 +976,7 @@
             ? '<div class="list">' + upcoming.map((e) =>
               '<div class="list-item"><div class="date-badge"><b>' + Core.parseISO(e.date).getDate() + '</b>' + monthName(Core.parseISO(e.date).getMonth()) + '</div>' +
               '<div class="grow"><div class="title">' + esc(e.name) + '</div><div class="meta">' + tr(e.kind === 'debt' ? 'Minimum payment' : e.kind === 'bill' ? 'Estimate · amount varies' : e.kind === 'iou' ? 'Promised back' : 'Fixed payment') + '</div>' +
-              (e.kind === 'fixed' ? fixedPayForm(e) : '') + '</div>' +
+              (e.kind === 'fixed' || (e.kind === 'debt' && Core.emiLoans(state).some((d) => d.id === e.debtId)) ? fixedPayForm(Object.assign({}, e, { fixedId: e.fixedId || e.debtId })) : '') + '</div>' +
               '<div class="amt">' + inr(e.amount) + '</div></div>').join('') + '</div>'
             : '<p class="hint">' + tr('No more fixed payments this cycle.') + '</p>') + '</section>' },
       { key: 'payday', group: 'This month', icon: 'payday', label: 'Next payday', tone: 'mint', badge: { text: fmtDate(cyc.next) }, html: () => paydayPreviewCard() },
@@ -2339,6 +2341,12 @@
     }
     if (use === 'emergency') sv.emergencyBalance = (Number(sv.emergencyBalance) || 0) + tx.amount;
     if (use === 'grow') sv.investSaved = (Number(sv.investSaved) || 0) + tx.amount;
+    // Taken out of your own savings: the fund goes down by what it held, at most.
+    if (use === 'fromfund' || use === 'fromgrow') {
+      const key = use === 'fromfund' ? 'emergencyBalance' : 'investSaved';
+      tx.fromSaved = Math.min(tx.amount, Number(sv[key]) || 0);
+      sv[key] = (Number(sv[key]) || 0) - tx.fromSaved;
+    }
     if (use === 'debt') {
       const debt = state.debts.find((d) => d.id === debtId);
       if (!debt) return;
@@ -2370,6 +2378,11 @@
     }
     if (tx.useFor === 'emergency') sv.emergencyBalance = Math.max(0, (Number(sv.emergencyBalance) || 0) - tx.amount);
     if (tx.useFor === 'grow') sv.investSaved = Math.max(0, (Number(sv.investSaved) || 0) - tx.amount);
+    if (tx.useFor === 'fromfund' || tx.useFor === 'fromgrow') {
+      const key = tx.useFor === 'fromfund' ? 'emergencyBalance' : 'investSaved';
+      sv[key] = (Number(sv[key]) || 0) + (Number(tx.fromSaved) || 0);
+      delete tx.fromSaved;
+    }
     if (tx.useFor === 'debt') {
       const debt = state.debts.find((d) => d.id === tx.debtId);
       if (debt) debt.balance = (Number(debt.balance) || 0) + (Number(tx.debtPaid) || 0);
@@ -2805,7 +2818,7 @@
       sortCard() +
       importCard() +
       needsCheckCard() +
-      alertsNudge() + iouDueCard() + fixedMatchCard() + passCard() + incomeCard() +
+      alertsNudge() + iouDueCard() + fixedMatchCard() + refundMatchCard() + passCard() + incomeCard() +
       addCard, [
         { key: 'viz-where', group: 'Your spending', icon: 'where', label: 'Where it went', tone: 'mint', viz: 'where', badge: null, html: () => vizCard() },
         { key: 'viz-when', group: 'Your spending', icon: 'when', label: 'When', tone: 'mint', viz: 'when', badge: null, html: () => vizCard() },
@@ -2990,6 +3003,7 @@
     if (Core.isIncome(tx) || Core.isMove(tx)) undoIncomeUse(tx);
     if (tx.claimId || tx.payoutId) Core.reimbForget(state, tx);
     Core.maybeForget(state, tx);
+    Core.unlinkRefund(state, tx); Core.forgetRefunds(state, tx);
     if (tx.smsKey) state.smsIgnored = (state.smsIgnored || []).concat(tx.smsKey).slice(-500);
     const shop = skipKey(tx.note);
     if (skipShop && shop && (state.smsSkip || []).indexOf(shop) === -1) {
@@ -3077,6 +3091,11 @@
     const tx = { id: uid(), date: p.date, amount: p.amount, category: cat, note: o.note || p.merchant, source: 'sms', smsKey: o.key };
     if (paidFrom !== 'account') tx.paidFrom = paidFrom;
     else if (fromWallet) tx.wallet = fromWallet.id;
+    // Cash on a credit card: borrowed, and in hand (in the Cash wallet when there is one), not spent yet.
+    if (p.cashAdvance && paidFrom !== 'account' && paidFrom.indexOf('card:') !== 0) {
+      tx.cashAdvance = true; tx.category = 'Cash';
+      if (cashWallet()) tx.wallet = cashWallet().id;
+    }
     if (p.type !== 'credit' && tx.category === 'Savings') {
       // A locked-in set-aside of this amount this cycle? This SMS is that transfer.
       const cycStart = Core.cycleFor(p.date, Number(state.settings.payday) || 1).start;
@@ -3455,11 +3474,14 @@
 
   // Applies a "paid from" or "into" choice to a payment.
   function setFrom(x, v) {
+    // Cash on a credit card: its wallet is where the cash went, so it stays while the card does.
+    const into = x.cashAdvance ? x.wallet : null;
     delete x.paidFrom;
     delete x.wallet;
+    if (!v || v === 'account' || v.indexOf('w:') === 0) delete x.cashAdvance;
     if (!v || v === 'account') return;
     if (v.indexOf('w:') === 0) x.wallet = v.slice(2);
-    else x.paidFrom = v;
+    else { x.paidFrom = v; if (into) x.wallet = into; }
   }
 
   function walletsCard() {
@@ -3644,24 +3666,61 @@
   function fixedMatchCard() {
     const m = Core.fixedMatches(state, today())[0];
     if (!m) return '';
-    return '<section class="card income-card"><div class="card-head"><h2>' + tr('Is {amount} on {date} your “{name}” payment?', { amount: inr(m.tx.amount), date: fmtDate(m.tx.date), name: esc(m.fixed.name) }) + '</h2></div>' +
+    return '<section class="card income-card"><div class="card-head"><h2>' + tr(m.loan ? 'Is {amount} on {date} your “{name}” EMI?' : 'Is {amount} on {date} your “{name}” payment?', { amount: inr(m.tx.amount), date: fmtDate(m.tx.date), name: esc(m.fixed.name) }) + '</h2></div>' +
       '<p class="hint">' + tr('It’s due {date}. If this is it, it counts once: now, not again on the due date.', { date: fmtDate(m.due) }) + '</p>' +
       '<div class="row"><button class="primary" data-action="fixed-link" data-tx="' + esc(m.tx.id) + '" data-id="' + esc(m.fixed.id) + '">' + tr('Yes, it is') + '</button>' +
       '<button data-action="fixed-not" data-tx="' + esc(m.tx.id) + '">' + tr('No') + '</button></div></section>';
   }
 
+  // Money in that looks like a refund or reversal of a payment this round: offset it?
+  function refundMatchCard() {
+    const m = Core.refundMatches(state, today())[0];
+    if (!m) return '';
+    return '<section class="card income-card"><div class="card-head"><h2>' + tr('Is {amount} from {shop} a refund of your {paid} payment on {date}?',
+      { amount: inr(m.refund.amount), shop: esc(m.refund.note || tr('the bank')), paid: inr(m.buy.amount), date: fmtDate(m.buy.date) }) + '</h2></div>' +
+      '<p class="hint">' + tr('If it is, it isn’t income: that payment counts {left} as spending instead.', { left: inr(m.buy.amount - (Number(m.buy.refunded) || 0) - m.refund.amount) }) + '</p>' +
+      '<div class="row"><button class="primary" data-action="refund-link" data-id="' + esc(m.refund.id) + '" data-buy="' + esc(m.buy.id) + '">' + tr('Yes, it is') + '</button>' +
+      '<button data-action="refund-not" data-id="' + esc(m.refund.id) + '">' + tr('No') + '</button></div></section>';
+  }
+
+  // In the edit view: a refund that offsets a payment, a payment with refunds, cash on a credit card.
+  function refundTxBox(x) {
+    if (x.refundOf) {
+      const buy = state.transactions.find((y) => y.id === x.refundOf);
+      return '<div class="callout"><b>' + tr('Refund of {shop}, {date}', { shop: esc(buy ? buy.note || label(buy.category) : tr('removed')), date: buy ? fmtDate(buy.date) : '' }) + '</b><span class="hint">' +
+        tr('Not income: that payment’s spending is lower by {amount}.', { amount: inr(x.amount) }) + '</span>' +
+        '<div><button class="ghost small" data-action="refund-unlink" data-id="' + esc(x.id) + '">' + tr('Not a refund of it') + '</button></div></div>';
+    }
+    if (x.refunded) return '<div class="callout"><b>' + tr('{amount} refunded', { amount: inr(x.refunded) }) + '</b><span class="hint">' + tr('It counts {left} as spending.', { left: inr(Core.ownPart(x)) }) + '</span></div>';
+    if (x.cashAdvance) {
+      return '<div class="callout warn"><b>' + tr('Cash on a credit card is a loan') + '</b><span class="hint">' +
+        tr('Banks usually charge interest from the day you take it, plus a fee, and no interest-free days. Pay it back first. It counts as spending when you spend the cash.') + '</span></div>';
+    }
+    return '';
+  }
+
   // In a payment's edit view: mark it as a fixed payment, or see which one it paid.
   function fixedTxBox(x) {
+    if (x.emiFor) {
+      const d = (state.debts || []).find((y) => y.id === x.emiFor);
+      return '<div class="callout"><b>' + tr('EMI: {name}', { name: esc(d ? d.name : tr('removed')) }) + '</b><span class="hint">' +
+        tr('For the one due {date}. It isn’t counted again that day.', { date: fmtDate(x.forDue) }) + ' ' +
+        tr('{interest} interest, {principal} paid off the loan.', { interest: inr(x.emiInterest || 0), principal: inr(x.emiPrincipal || 0) }) + '</span>' +
+        '<div><button class="ghost small" data-action="fixed-unpay" data-tx="' + esc(x.id) + '">' + tr(x.fixedNew ? 'Remove this payment' : 'Not an EMI') + '</button></div></div>';
+    }
     if (x.fixedId) {
       const f = (state.fixed || []).find((y) => y.id === x.fixedId);
       return '<div class="callout"><b>' + tr('Fixed payment: {name}', { name: esc(f ? f.name : tr('removed')) }) + '</b><span class="hint">' +
         tr('For the one due {date}. It isn’t counted again that day.', { date: fmtDate(x.forDue) }) + '</span>' +
         '<div><button class="ghost small" data-action="fixed-unpay" data-tx="' + esc(x.id) + '">' + tr(x.fixedNew ? 'Remove this payment' : 'Not a fixed payment') + '</button></div></div>';
     }
-    if (!Core.isFlexible(x) || (x.paidFrom && x.paidFrom !== 'account') || x.claimId || x.maybeId || x.covered || x.iouId || x.splitOf || !(state.fixed || []).length) return '';
-    return '<div class="callout"><b>' + tr('Was this a fixed payment?') + '</b>' +
-      '<div class="row"><select id="fx-which" aria-label="' + tr('Fixed payment') + '">' + state.fixed.map((f) => '<option value="' + esc(f.id) + '"' + (Math.abs((Number(f.amount) || 0) - x.amount) <= (Number(f.amount) || 0) * 0.02 ? ' selected' : '') + '>' +
-        esc(f.name || tr('Unnamed')) + ' · ' + inr(Number(f.amount) || 0) + '</option>').join('') + '</select>' +
+    const loans = Core.emiLoans(state);
+    if (!Core.isFlexible(x) || (x.paidFrom && x.paidFrom !== 'account') || x.claimId || x.maybeId || x.covered || x.iouId || x.splitOf || x.refunded || !((state.fixed || []).length + loans.length)) return '';
+    const near = (amt) => Math.abs(amt - x.amount) <= amt * 0.02;
+    return '<div class="callout"><b>' + tr('Was this a fixed payment or an EMI?') + '</b>' +
+      '<div class="row"><select id="fx-which" aria-label="' + tr('Fixed payment') + '">' + state.fixed.map((f) => '<option value="' + esc(f.id) + '"' + (near(Number(f.amount) || 0) ? ' selected' : '') + '>' +
+        esc(f.name || tr('Unnamed')) + ' · ' + inr(Number(f.amount) || 0) + '</option>').join('') +
+        loans.map((d) => '<option value="' + esc(d.id) + '"' + (near(Number(d.minPayment)) ? ' selected' : '') + '>' + esc(tr('{name} EMI', { name: d.name })) + ' · ' + inr(Number(d.minPayment)) + '</option>').join('') + '</select>' +
       '<button class="ghost small" data-action="fixed-link" data-tx="' + esc(x.id) + '">' + tr('Yes, mark it') + '</button></div></div>';
   }
 
@@ -3882,7 +3941,7 @@
         '<button class="ghost small" data-action="keep-use" data-id="' + esc(k.tx.id) + '" data-buy="' + esc(x.id) + '">' + tr('Paid from {name} ({left} left)', { name: esc(k.name), left: inr(k.left) }) + '</button>').join('') + '</div>' : '') +
       (x.covered ? '<p class="hint">' + tr('{amount} of it was paid from money kept for it, so it doesn’t use your budgets.', { amount: inr(x.covered) }) + '</p>' : '') +
       refundsBox(x) +
-      reimbBox(x) + maybeTxBox(x) + fixedTxBox(x) +
+      reimbBox(x) + maybeTxBox(x) + fixedTxBox(x) + refundTxBox(x) +
       notPaymentBox(x, flex || isIn || saved) +
       '</div></div>';
   }
@@ -3980,6 +4039,16 @@
     x.needsReview = Core.isMove(x) && !x.useFor;
     // A reimbursable payment's claim, and a reimbursement's matching, follow a new amount.
     if (x.claimId) Core.reimbAmount(state, x);
+    // A refund or a refunded payment with a new amount: linked again only if it still fits.
+    if ((x.refundOf || x.refunded) && x.amount !== amountBefore) {
+      const amountNow = x.amount;
+      const pairs = x.refundOf ? [[x, x.refundOf]] : state.transactions.filter((y) => y.refundOf === x.id).map((y) => [y, x.id]);
+      // Unlinked at the amounts they were linked with, then linked again at the new ones.
+      x.amount = amountBefore;
+      pairs.forEach(([r]) => Core.unlinkRefund(state, r));
+      x.amount = amountNow;
+      pairs.forEach(([r, buyId]) => Core.linkRefund(state, r.id, buyId));
+    }
     if (x.payoutId && x.amount !== amountBefore) {
       const p = (state.reimb.payouts || []).find((y) => y.id === x.payoutId);
       const ids = p ? p.allocations.map((a) => a.claimId) : [];
@@ -4068,7 +4137,7 @@
     const saved = Core.isMove(x);
     const onCard = x.paidFrom && x.paidFrom !== 'account' ? (state.cards || []).find((c) => c.id === x.paidFrom) : null;
     const cat = Core.isTransfer(x) ? esc(walletName(x.from)) + ' → ' + esc(walletName(x.to))
-      : x.fixedId ? esc(tr('Fixed payment'))
+      : x.emiFor ? esc(tr('Loan EMI')) : x.fixedId ? esc(tr('Fixed payment'))
       : edit && !saved && !Core.isBillPayment(x) && !Core.isCardTransfer(x)
       ? '<select data-tx-cat="' + esc(x.id) + '" aria-label="' + tr('Category') + '">' + (isIn ? incomeCategoryOptions(x.category) : categoryOptions(x.category)) + peopleOptionsFor(x) + '</select>'
       : saved ? esc(x.useFor ? tr('Saved → {place}', { place: savedWhere(x) }) : tr('Saved: choose where it goes'))
@@ -4084,7 +4153,10 @@
       (x.maybeId ? ' · <span class="chip">' + tr('Expected cost') + '</span>' : '') +
       (x.payoutId ? ' · <span class="chip">' + tr('Reimbursement') + '</span>' : '') +
       (x.matched ? ' · <span class="chip">' + tr('Bank SMS ✓') + '</span>' : '') +
-      ((x.refunds || []).length ? ' · <span class="chip">' + tr('{amount} refunded', { amount: inr(x.refunds.reduce((a, r) => a + r.amount, 0)) }) + '</span>' : '');
+      ((x.refunds || []).length ? ' · <span class="chip">' + tr('{amount} refunded', { amount: inr(x.refunds.reduce((a, r) => a + r.amount, 0)) }) + '</span>' : '') +
+      (x.refunded ? ' · <span class="chip">' + tr('{amount} refunded', { amount: inr(x.refunded) }) + '</span>' : '') +
+      (x.refundOf ? ' · <span class="chip">' + tr('Refund') + '</span>' : '') +
+      (x.cashAdvance ? ' · <span class="chip warn">' + tr('Cash on credit card') + '</span>' : '');
     const extra = edit && isIn
       ? ' <button class="link" data-action="income-change" data-id="' + esc(x.id) + '">' + tr(x.useFor ? INCOME_USE_LABELS[x.useFor] : 'Choose what it does') + '</button>'
       : edit && saved && x.useFor ? ' <button class="link" data-action="saved-change" data-id="' + esc(x.id) + '">' + tr('Change') + '</button>' : '';
@@ -6100,6 +6172,21 @@
         save(); rerenderKeepScroll(); offerUndo(tr('Refund taken off. Read your SMS again to add it as money in.'), before);
         return;
       }
+      case 'refund-link': {
+        const before = JSON.stringify(state);
+        if (!Core.linkRefund(state, btn.dataset.id, btn.dataset.buy)) return;
+        save(); rerenderKeepScroll(); offerUndo(tr('Counted as a refund: not income, and that payment costs less.'), before);
+        return;
+      }
+      case 'refund-not': { const x = state.transactions.find((y) => y.id === btn.dataset.id); if (x) { x.notRefund = true; save(); } break; }
+      case 'refund-unlink': {
+        const x = state.transactions.find((y) => y.id === btn.dataset.id);
+        if (!x) return;
+        const before = JSON.stringify(state);
+        Core.unlinkRefund(state, x); x.notRefund = true; ui.editTx = null;
+        save(); rerenderKeepScroll(); offerUndo(tr('Money in again, not a refund'), before);
+        return;
+      }
       case 'fixed-pay-open': ui.fixedPay = btn.dataset.id; break;
       case 'fixed-pay-cancel': ui.fixedPay = null; break;
       case 'fixed-pay-save': {
@@ -6478,7 +6565,7 @@
         if (tx && tx.kind === 'cardconvert') Core.undoCardConvert(state, tx);
         if (tx && (tx.iouId || tx.iouPay)) Core.undoIouTx(state, tx);
         if (tx && (tx.claimId || tx.payoutId)) Core.reimbForget(state, tx);
-        if (tx) Core.maybeForget(state, tx);
+        if (tx) { Core.maybeForget(state, tx); Core.unlinkRefund(state, tx); Core.forgetRefunds(state, tx); }
         // A purchase paid from kept money: that money is kept again.
         if (tx && tx.coveredFrom) {
           const k = state.transactions.find((y) => y.id === tx.coveredFrom);
@@ -6782,7 +6869,7 @@
         if (tx) {
           setIncomeUse(tx, btn.dataset.use, btn.dataset.debt);
           save();
-          if (btn.dataset.use === 'spend') toast(INCOME_USE_LABELS.spend);
+          if (['spend', 'fromfund', 'fromgrow'].indexOf(btn.dataset.use) !== -1) toast(tr(INCOME_USE_LABELS[btn.dataset.use]));
           else celebrate(rewardMessage(btn.dataset.use, tx.amount, btn.dataset.debt, false));
         }
         break;

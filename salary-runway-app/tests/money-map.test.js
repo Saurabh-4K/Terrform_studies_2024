@@ -36,6 +36,12 @@ const MAP = {
   'likely cost didn’t come': { held: -5000 },
   // Paid before payday for the 28th: it leaves today, and the 28th's assumed payment is dropped.
   'fixed payment recorded (rent, 2 days early)': { bank: -22000, worth: -22000 },
+  // Bank rules: cash on a card is borrowed and in hand; a refund offsets its purchase; your own savings aren't income;
+  // an EMI paid by SMS leaves now and isn't expected again on the 7th.
+  'cash on credit card (to Cash wallet)': { cardOwed: 5000, cash: 5000 },
+  'refund to account, offsets the purchase': { bank: 500, spentCycle: -500, reports: -500, worth: 500 },
+  'money from own emergency fund': { bank: 1000, income: 1000, fund: -1000 },
+  'loan EMI by SMS, linked': { bank: -15000, worth: -15000 },
   'save, undecided': { bank: -100 },
   'bill paid (electricity)': { bank: -1200, worth: -1200 },
   'card bill paid (its EMI part)': { cardOwed: -6010 },
@@ -75,6 +81,6 @@ for (const [name, k] of Object.entries(kinds)) {
 
 test('money map: moving your own money never changes net worth', () => {
   const own = ['ATM cash to wallet', 'save → emergency', 'save → grow', 'save → goal', 'save → loan prepay', 'save, undecided', 'card bill paid (its EMI part)',
-    'old card bill paid early', 'old card bill paid in full', 'borrowed from friend', 'lent to friend', 'friend pays back', 'you pay friend back', 'passed on (in+out)', 'card spend → EMI (6 months)', 'bank loan credit'];
+    'old card bill paid early', 'old card bill paid in full', 'borrowed from friend', 'lent to friend', 'friend pays back', 'you pay friend back', 'passed on (in+out)', 'card spend → EMI (6 months)', 'bank loan credit', 'cash on credit card (to Cash wallet)', 'money from own emergency fund'];
   own.forEach((name) => assert.equal(MAP[name].worth, undefined, name));
 });

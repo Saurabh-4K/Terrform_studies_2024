@@ -184,7 +184,11 @@
    * leaves on the day it really did, at the amount really paid.
    */
   function fixedPaidFor(state, f, due) {
-    return state.transactions.some((t) => t.fixedId === f.id && t.forDue === due);
+    return state.transactions.some((t) => (t.fixedId === f.id || t.emiFor === f.id) && t.forDue === due);
+  }
+  // Loans whose EMI leaves the account (not through a card bill).
+  function emiLoans(state) {
+    return (state.debts || []).filter((d) => d.balance > 0 && Number(d.minPayment) > 0 && !d.viaCard && !d.fromCard);
   }
   // The due date a payment on iso covers: the nearest one not yet recorded as paid (a later one on a tie).
   function fixedDueFor(state, f, iso) {
@@ -192,13 +196,14 @@
     const here = cycleFor(iso, payday);
     const dues = [previousCycle(here, payday), here, cycleFor(here.next, payday)]
       .map((c) => occurrenceInCycle(Number(f.dueDay) || 1, c))
-      .filter((due) => due && !(f.lastDue && due > f.lastDue) && !fixedPaidFor(state, f, due));
+      .filter((due) => due && !(f.lastDue && due > f.lastDue) && !fixedPaidFor(state, f, due) && !(f.starts && due < f.starts));
     dues.sort((a, b) => Math.abs(daysBetween(iso, a)) - Math.abs(daysBetween(iso, b)) || (a < b ? 1 : -1));
     return dues[0] || null;
   }
   // txId: an entry already recorded (an SMS, say) becomes this payment; otherwise a new one is added.
   function payFixed(state, fixedId, opts) {
-    const f = (state.fixed || []).find((x) => x.id === fixedId);
+    const loan = emiLoans(state).find((x) => x.id === fixedId);
+    const f = loan || (state.fixed || []).find((x) => x.id === fixedId);
     if (!f) return null;
     const o = opts || {};
     let tx = o.txId ? state.transactions.find((x) => x.id === o.txId) : null;
@@ -211,15 +216,20 @@
       tx = { id: 'f' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), date: o.date, amount, category: 'Bills', note: f.name, source: 'manual', fixedNew: true };
       state.transactions.push(tx);
     }
-    tx.fixedId = f.id;
+    if (loan) {
+      // Bank rule: each EMI first pays the month's interest on what's owed; the rest pays the loan down.
+      tx.emiFor = loan.id;
+      tx.emiInterest = Math.min(tx.amount, Math.round(((Number(loan.balance) || 0) * (Number(loan.rate) || 0)) / 1200));
+      tx.emiPrincipal = tx.amount - tx.emiInterest;
+    } else tx.fixedId = f.id;
     tx.forDue = due;
     return tx;
   }
   // Not a fixed payment after all: an added one goes, a recorded one is ordinary spending again.
   function unpayFixed(state, tx) {
-    if (!tx || !tx.fixedId) return;
+    if (!tx || !isFixedPayment(tx)) return;
     if (tx.fixedNew) { state.transactions = state.transactions.filter((x) => x !== tx); return; }
-    delete tx.fixedId; delete tx.forDue;
+    delete tx.fixedId; delete tx.emiFor; delete tx.emiInterest; delete tx.emiPrincipal; delete tx.forDue;
   }
   /*
    * Payments that look like a fixed payment not yet recorded: the same amount
@@ -231,11 +241,11 @@
     state.transactions.forEach((t) => {
       if (!isFlexible(t) || t.notFixed || (t.paidFrom && t.paidFrom !== 'account') || t.claimId || t.maybeId || t.covered || t.iouId || t.splitOf) return;
       if (t.date > todayIso || t.date < addDays(todayIso, -20)) return;
-      (state.fixed || []).forEach((f) => {
-        const amt = Number(f.amount) || 0;
+      (state.fixed || []).concat(emiLoans(state)).forEach((f) => {
+        const amt = Number(f.minPayment != null ? f.minPayment : f.amount) || 0;
         if (!(amt > 0) || Math.abs(t.amount - amt) > amt * 0.02) return;
         const due = fixedDueFor(state, f, t.date);
-        if (due && daysBetween(t.date, due) <= 10 && daysBetween(due, t.date) <= 15) out.push({ tx: t, fixed: f, due });
+        if (due && daysBetween(t.date, due) <= 10 && daysBetween(due, t.date) <= 15) out.push({ tx: t, fixed: f, due, loan: f.minPayment != null });
       });
     });
     return out;
@@ -438,7 +448,7 @@
       const card = d.viaCard && (state.cards || []).find((c) => c.id === d.viaCard);
       const date = occurrenceInCycle(Number(card ? card.dueDay : d.dueDay) || 1, cycle);
       // A card EMI starts with the card's next bill.
-      if (date && (!d.starts || date >= d.starts)) events.push({ date, name: d.name, amount: Number(d.minPayment) || 0, kind: 'debt' });
+      if (date && (!d.starts || date >= d.starts) && !fixedPaidFor(state, d, date)) events.push({ date, name: d.name, amount: Number(d.minPayment) || 0, kind: 'debt', debtId: d.id });
     });
     // Money promised back to a friend before payday, unless what's promised to you covers it.
     if (todayIso) iouEvents(state, cycle, todayIso).forEach((e) => events.push(e));
@@ -454,7 +464,8 @@
   function isMove(t) { return t.kind === 'move'; }
   function isBillPayment(t) { return !!t.billId; }
   // A fixed payment recorded as paid (rent, a class fee): it leaves on its own day, and that month's assumed payment is dropped.
-  function isFixedPayment(t) { return !!t.fixedId; }
+  // A loan EMI recorded as paid (emiFor) is the same kind: that month's assumed EMI is dropped.
+  function isFixedPayment(t) { return !!t.fixedId || !!t.emiFor; }
   // Paying a card bill, or moving a card balance to a loan, only moves money
   // between your account and the card: the spending was counted when it happened.
   function isCardTransfer(t) { return t.kind === 'cardpay' || t.kind === 'cardconvert'; }
@@ -462,7 +473,9 @@
   function isTransfer(t) { return t.kind === 'transfer'; }
   // Money passed on (₹26,000 from a friend straight to a brother): neither income nor spending.
   function isPassedOn(t) { return !!t.passedOn || !!t.iouId || !!t.iouPay; }
-  function isFlexible(t) { return !isIncome(t) && !isMove(t) && !isBillPayment(t) && !isFixedPayment(t) && !isCardTransfer(t) && !isTransfer(t) && !isPassedOn(t); }
+  // Cash taken on a credit card: borrowed on the card and now in hand, not spent yet.
+  function isCashAdvance(t) { return !!t.cashAdvance; }
+  function isFlexible(t) { return !isIncome(t) && !isMove(t) && !isBillPayment(t) && !isFixedPayment(t) && !isCashAdvance(t) && !isCardTransfer(t) && !isTransfer(t) && !isPassedOn(t); }
 
   function spendInRange(transactions, cycle) {
     return transactions.filter((t) => isFlexible(t) && inCycle(t.date, cycle));
@@ -653,9 +666,85 @@
 
   // What a spending entry costs your own budgets: less what a gift kept for it paid.
   // Spending that's yours in reports: less what's claimed back from work (a gift-kept purchase is still shown).
-  function personalAmt(t) { return (Number(t.amount) || 0) - (Number(t.reimbExcluded) || 0); }
+  function personalAmt(t) { return (Number(t.amount) || 0) - (Number(t.reimbExcluded) || 0) - (Number(t.refunded) || 0); }
   // A payment for a maybe expense (t.maybeId) was paid from money held for it: not daily spending.
-  function ownPart(t) { return t.maybeId ? 0 : Math.max(0, (Number(t.amount) || 0) - (Number(t.covered) || 0) - (Number(t.reimbExcluded) || 0)); }
+  function ownPart(t) { return t.maybeId ? 0 : Math.max(0, (Number(t.amount) || 0) - (Number(t.covered) || 0) - (Number(t.reimbExcluded) || 0) - (Number(t.refunded) || 0)); }
+
+  /*
+   * A refund or a reversal into the account, for a purchase from the account
+   * this round, offsets that purchase (bank rule: it isn't income). The money
+   * comes back on its own day, so the balance stays right; the purchase's
+   * spending (budgets, reports) drops by it. A refund for an earlier round's
+   * purchase stays money in for this round, never earned income.
+   */
+  function refundable(state, buy) {
+    return isFlexible(buy) && !(buy.paidFrom && buy.paidFrom !== 'account') && !buy.maybeId && !buy.claimId &&
+      buy.amount - (Number(buy.covered) || 0) - (Number(buy.refunded) || 0) > 0;
+  }
+  function linkRefund(state, inId, buyId) {
+    const r = state.transactions.find((t) => t.id === inId);
+    const buy = state.transactions.find((t) => t.id === buyId);
+    if (!r || !buy || !isIncome(r) || r.refundOf || r.payoutId || r.iouId || r.iouPay || r.passedOn || r.borrowed || (r.paidFrom && r.paidFrom !== 'account')) return false;
+    if (!refundable(state, buy) || r.date < buy.date) return false;
+    const payday = Number(state.settings.payday) || 1;
+    if (cycleFor(r.date, payday).start !== cycleFor(buy.date, payday).start) return false;
+    const room = buy.amount - (Number(buy.covered) || 0) - (Number(buy.refunded) || 0);
+    if (r.amount > room) return false;
+    buy.refunded = (Number(buy.refunded) || 0) + r.amount;
+    r.refundOf = buy.id;
+    r.useFor = 'spend';
+    r.needsReview = false;
+    return true;
+  }
+  function unlinkRefund(state, r) {
+    if (!r || !r.refundOf) return;
+    const buy = state.transactions.find((t) => t.id === r.refundOf);
+    if (buy) { buy.refunded = Math.max(0, (Number(buy.refunded) || 0) - r.amount); if (!buy.refunded) delete buy.refunded; }
+    delete r.refundOf;
+  }
+  // A purchase deleted: its refunds are money in again.
+  function forgetRefunds(state, buy) {
+    if (buy && buy.refunded) state.transactions.forEach((t) => { if (t.refundOf === buy.id) delete t.refundOf; });
+  }
+  /*
+   * Money in that looks like a refund or reversal of a purchase this round:
+   * named a refund or reversal, the same shop (or the same amount within 7
+   * days), no more than is left of the purchase. Asked, never assumed.
+   */
+  function refundMatches(state, todayIso) {
+    const payday = Number(state.settings.payday) || 1;
+    const out = [];
+    state.transactions.forEach((r) => {
+      if (!isIncome(r) || r.refundOf || r.notRefund || r.payoutId || r.iouId || r.iouPay || r.passedOn || r.borrowed || (r.paidFrom && r.paidFrom !== 'account')) return;
+      if (r.category !== 'Refund' || r.date > todayIso || r.date < addDays(todayIso, -30)) return;
+      const cyc = cycleFor(r.date, payday);
+      const shop = normalizeMerchant(r.note || '');
+      const buy = state.transactions.filter((b) => refundable(state, b) && inCycle(b.date, cyc) && b.date <= r.date &&
+        b.amount - (Number(b.covered) || 0) - (Number(b.refunded) || 0) >= r.amount &&
+        ((shop && normalizeMerchant(b.note || '') === shop) || (b.amount === r.amount && daysBetween(b.date, r.date) <= 7)))
+        .sort((a, b) => (a.date < b.date ? 1 : -1))[0];
+      if (buy) out.push({ refund: r, buy });
+    });
+    return out;
+  }
+
+  // ---------- money in: earned or not ----------
+
+  /*
+   * Earned income: pay and what you earn (salary, overtime, side income,
+   * interest). Only these count: loans and borrowing, money back from
+   * friends, reimbursements, refunds, reversals and cashback, money from your
+   * own accounts or savings, gifts, and money of unknown kind are money in,
+   * never earned (bank rule: cash in isn't income by itself).
+   */
+  const EARNED = ['Side income', 'Overtime', 'Salary', 'Bonus', 'Interest'];
+  function isEarned(t) {
+    return isIncome(t) && EARNED.indexOf(t.category) !== -1 && !t.borrowed && !t.refundOf && !t.payoutId && !t.iouId && !t.iouPay && !t.passedOn &&
+      t.useFor !== 'fromfund' && t.useFor !== 'fromgrow' && t.note !== 'Own account';
+  }
+  function earnedIn(state, from, to) {
+    return sum(state.transactions.filter((t) => isEarned(t) && t.date >= from && t.date <= to), (t) => t.amount);
+  }
 
   // ---------- maybe expenses ----------
 
@@ -920,7 +1009,10 @@
    */
   function incomeKept(t) {
     if (t.payoutId) return Number(t.reimbDaily) || 0;
-    if (!t.useFor || t.useFor === 'spend') return t.amount;
+    // A refund that offsets a purchase: the purchase's spending drops instead.
+    if (t.refundOf) return 0;
+    // Taken out of your emergency fund or investments: yours already, now to spend.
+    if (!t.useFor || t.useFor === 'spend' || t.useFor === 'fromfund' || t.useFor === 'fromgrow') return t.amount;
     // Kept for something to buy (a Diwali gift for a purchase): never spending money; it pays for that purchase.
     if (t.useFor === 'keep') return 0;
     if (t.useFor === 'debt') return t.amount - (Number(t.debtPaid) || 0);
@@ -977,7 +1069,7 @@
     const incomes = incomeInRange(state.transactions, cycle).filter((t) => t.date <= todayIso);
     // Money kept for something stays in the account: all of it counts in the balance.
     // A reimbursement is all cash in; only its margin (daily routing) adds to the budget, through incomeKept.
-    incomes.forEach((t) => { spendByDate[t.date] = (spendByDate[t.date] || 0) - (t.useFor === 'keep' || t.payoutId ? t.amount : incomeKept(t)); });
+    incomes.forEach((t) => { spendByDate[t.date] = (spendByDate[t.date] || 0) - (t.useFor === 'keep' || t.payoutId || t.refundOf ? t.amount : incomeKept(t)); });
     /*
      * Money with friends and family (borrowed, lent, paid back) and money
      * passed on: not income or spending, but it moves the balance, so it
@@ -1209,7 +1301,7 @@
   }
 
   function cardSpends(state, card) {
-    return state.transactions.filter((t) => isFlexible(t) && t.paidFrom === card.id);
+    return state.transactions.filter((t) => (isFlexible(t) || isCashAdvance(t)) && t.paidFrom === card.id);
   }
 
   // Refunds or cashback to the card.
@@ -2355,6 +2447,14 @@
         tr('Talk to a SEBI-registered investment adviser before investing it.'),
     });
 
+    // Money taken back out of your own savings: yours already, so not new money (bank rule: a transfer, not income).
+    const fundNow = Number(state.savings.emergencyBalance) || 0;
+    const growNow = Number(state.savings.investSaved) || 0;
+    if (fundNow > 0) options.push({ use: 'fromfund', title: tr('It came from my emergency fund'),
+      detail: tr('Not new money: the fund goes down by {amount}, and it’s here to spend.', { amount: rupeesIn(Math.min(amount, fundNow)) }) });
+    if (growNow > 0) options.push({ use: 'fromgrow', title: tr('It came from my savings or investments'),
+      detail: tr('Not new money: what you’ve set aside goes down by {amount}, and it’s here to spend.', { amount: rupeesIn(Math.min(amount, growNow)) }) });
+
     const s = suggestUse(state, todayIso, without.zeroPace ? tr('Without this money, at your current pace you run out on {date}, before payday.', { date: shortDate(without.zeroPace) }) : null);
     // Keeping it while an expensive loan is open has a cost worth seeing.
     if (top && top.rate >= 15) options[0].badge = tr('Extends this month’s budget, but delays your debt-free date');
@@ -3012,6 +3112,11 @@
     const daysLeft = r.remainingDays + 1;
     L.push('Today: ' + D(todayIso) + '. Next payday: ' + D(r.cycle.next) + ' (' + daysLeft + ' days including today).');
     if (p.salary) L.push('Salary: ' + R(p.salary) + ' a month.');
+    // Earned and the rest kept apart: a loan or money back isn't income.
+    const ins = incomeInRange(state.transactions, r.cycle).filter((t) => t.date <= todayIso);
+    const earned = sum(ins.filter(isEarned), (t) => t.amount);
+    const otherIn = sum(ins.filter((t) => !isEarned(t)), (t) => t.amount);
+    if (earned || otherIn) L.push('Money in this round besides the salary: earned ' + R(earned) + '; other money in ' + R(otherIn) + ' (loans, friends, refunds, reimbursements, your own money: not income).');
     L.push('Money now, all accounts and wallets together: ' + R(r.balanceToday || 0) + '.');
     L.push("Today's limit: " + R(r.dailyAllowance) + '; spent today: ' + R(r.spentToday) + (r.savedToday ? '; saved today: ' + R(r.savedToday) : '') + '.');
     L.push('Zone: ' + { green: 'green (on track to payday)', amber: 'careful (at this pace money runs out before payday)', red: 'red (bills and basics until payday are not covered)' }[z.zone] +
@@ -3080,6 +3185,7 @@
         if (isIncome(t)) bal += t.useFor === 'keep' ? t.amount : incomeKept(t);
         else if (isFlexible(t) && !(t.paidFrom && t.paidFrom !== 'account')) bal -= t.amount;
         else if (isMove(t) || isBillPayment(t) || isFixedPayment(t) || t.kind === 'cardpay') bal -= t.amount;
+        else if (isCashAdvance(t)) bal += t.amount;
       });
       return { id: w.id, name: w.name, kind: w.kind, last4: w.last4 || '', balance: Math.round(bal) };
     });
@@ -3738,6 +3844,8 @@
       date: dateOf(t),
       category: self ? 'Savings' : atm ? 'Cash' : categorize(merchant || t, rules),
       paidFrom, last4, acct, atm: atm && !onCard,
+      // Cash from an ATM on a credit card: borrowed on the card (interest from day one), not spending.
+      cashAdvance: atm && onCard,
       raw: t,
     };
   }
@@ -3767,7 +3875,8 @@
     occurrenceInCycle, monthlyPlan, cycleEvents, projectRunway, autoSavings, allocate,
     insights, simulateDebts, compareDebtPlans, debtFreeDates, emergencyPlan, parseSms,
     splitSmsBatch, smsKey, categorize, normalizeMerchant, sinkingMonthly, inCycle,
-    spendInRange, incomeInRange, incomeKept, isIncome, isMove, isBillPayment, isFixedPayment, fixedPaidFor, fixedDueFor, payFixed, unpayFixed, fixedMatches, isFlexible, incomeOptions,
+    spendInRange, incomeInRange, incomeKept, isIncome, isMove, isBillPayment, isFixedPayment, isCashAdvance, emiLoans,
+    linkRefund, unlinkRefund, forgetRefunds, refundMatches, isEarned, earnedIn, fixedPaidFor, fixedDueFor, payFixed, unpayFixed, fixedMatches, isFlexible, incomeOptions,
     salaryFor, salaryHistory, looksLikeSalary, paydayReset, suggestUse, freedomDays, interestLeak, nextPaydayPreview,
     billShare, billPot, billsMonthly, billPaidIn, billDue, billEnded, fixedEnded, loanEnd, billsFor, fixedFor, fixedTotal, paymentsLeft, lastDueFrom, nextFixedDue, payBill, undoBillPayment, zoneStatus, ESSENTIAL_CATEGORIES,
     isCardTransfer, statementOn, dueAfter, cardOwedAt, cardReserve, cardStatus, emiQuote, revolveQuote, cardBillPlan,
