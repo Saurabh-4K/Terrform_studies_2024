@@ -3715,7 +3715,7 @@
         '<div><button class="ghost small" data-action="fixed-unpay" data-tx="' + esc(x.id) + '">' + tr(x.fixedNew ? 'Remove this payment' : 'Not a fixed payment') + '</button></div></div>';
     }
     const loans = Core.emiLoans(state);
-    if (!Core.isFlexible(x) || (x.paidFrom && x.paidFrom !== 'account') || x.claimId || x.maybeId || x.covered || x.iouId || x.splitOf || x.refunded || !((state.fixed || []).length + loans.length)) return '';
+    if (!Core.isFlexible(x) || (x.paidFrom && x.paidFrom !== 'account') || x.claimId || x.maybeId || x.covered || x.iouId || x.refunded || !((state.fixed || []).length + loans.length)) return '';
     const near = (amt) => Math.abs(amt - x.amount) <= amt * 0.02;
     return '<div class="callout"><b>' + tr('Was this a fixed payment or an EMI?') + '</b>' +
       '<div class="row"><select id="fx-which" aria-label="' + tr('Fixed payment') + '">' + state.fixed.map((f) => '<option value="' + esc(f.id) + '"' + (near(Number(f.amount) || 0) ? ' selected' : '') + '>' +

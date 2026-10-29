@@ -207,7 +207,7 @@
     if (!f) return null;
     const o = opts || {};
     let tx = o.txId ? state.transactions.find((x) => x.id === o.txId) : null;
-    if (o.txId && (!tx || !isFlexible(tx) || (tx.paidFrom && tx.paidFrom !== 'account') || tx.claimId || tx.maybeId || tx.covered || tx.iouId || tx.splitOf)) return null;
+    if (o.txId && (!tx || !isFlexible(tx) || (tx.paidFrom && tx.paidFrom !== 'account') || tx.claimId || tx.maybeId || tx.covered || tx.iouId)) return null;
     const due = fixedDueFor(state, f, tx ? tx.date : o.date);
     if (!due) return null;
     if (!tx) {
@@ -239,7 +239,7 @@
   function fixedMatches(state, todayIso) {
     const out = [];
     state.transactions.forEach((t) => {
-      if (!isFlexible(t) || t.notFixed || (t.paidFrom && t.paidFrom !== 'account') || t.claimId || t.maybeId || t.covered || t.iouId || t.splitOf) return;
+      if (!isFlexible(t) || t.notFixed || (t.paidFrom && t.paidFrom !== 'account') || t.claimId || t.maybeId || t.covered || t.iouId) return;
       if (t.date > todayIso || t.date < addDays(todayIso, -20)) return;
       (state.fixed || []).concat(emiLoans(state)).forEach((f) => {
         const amt = Number(f.minPayment != null ? f.minPayment : f.amount) || 0;

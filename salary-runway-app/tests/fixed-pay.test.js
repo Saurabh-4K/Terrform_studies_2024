@@ -73,3 +73,19 @@ test('what isn\'t offered as a fixed payment: a card payment, another amount, a 
   s.transactions.push({ id: 'near', date: '2026-10-28', amount: 9150, category: 'Misc', note: 'Shop' });
   assert.deepEqual(Core.fixedMatches(s, '2026-10-28').map((m) => m.tx.id), ['near']);
 });
+
+test('one transfer, two purposes: ₹10,000 split into a ₹9,000 class fee and ₹1,000 daily money', () => {
+  const plain = base();
+  const s = base();
+  // As the app splits it: two payments, linked by splitOf
+  s.transactions.push({ id: 'p1', date: '2026-10-28', amount: 9000, category: 'Family', note: 'Wife', source: 'sms', splitOf: 'p1' });
+  s.transactions.push({ id: 'p2', date: '2026-10-28', amount: 1000, category: 'Family', note: 'Wife', source: 'sms', splitOf: 'p1' });
+  // The ₹9,000 part is asked about, and marked as the class fee
+  assert.deepEqual(Core.fixedMatches(s, '2026-10-28').map((m) => m.tx.id), ['p1']);
+  Core.payFixed(s, 'cls', { txId: 'p1' });
+  const r = Core.projectRunway(s, '2026-10-28');
+  // ₹10,000 left the account; ₹1,000 is daily spending; the fee isn't expected again on the 1st
+  assert.equal(r.balanceToday, 40000);
+  assert.equal(r.spentToDate, 1000);
+  assert.equal(Core.projectRunway(s, '2026-11-02').balanceToday, Core.projectRunway(plain, '2026-11-02').balanceToday - 1000);
+});
