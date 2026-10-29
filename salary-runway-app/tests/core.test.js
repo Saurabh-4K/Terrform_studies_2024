@@ -47,8 +47,11 @@ test('runway: overspending moves the zero date before payday', () => {
     s.transactions.push({ id: 't' + d, date: '2026-10-' + String(d).padStart(2, '0'), amount: 1500, category: 'Food', note: '' });
   }
   const r = Core.projectRunway(s, '2026-10-10');
-  // 30,000 - 15,000 - 15,000 spent = 0 today; spending 1,500/day after that goes negative tomorrow.
-  assert.equal(r.balanceToday, 0);
+  // 30,000 − 15,000 spent = 15,000 in the account; rent of 15,000 due on the 5th isn't recorded, so it's still to pay.
+  // Once it's paid that's 0; spending 1,500/day after that goes negative tomorrow.
+  assert.equal(r.balanceToday, 15000);
+  assert.equal(r.dueTotal, 15000);
+  assert.equal(r.billsAhead, 15000);
   assert.equal(r.zeroPace, '2026-10-11');
   assert.equal(Math.round(r.paceRate), 1500);
 });
@@ -123,14 +126,15 @@ test('no balance since payday: last round\'s leftover carries in; an older check
   s.transactions.push({ id: 't', date: '2026-09-25', amount: 1200, category: 'Food', note: 'Shop' });
   const r = Core.projectRunway(s, '2026-10-05');
   assert.equal(r.anchor, null);
-  // 5,000 − 1,200 left on 30 Sep, + 50,000 salary − 15,000 rent on the 5th
+  // 5,000 − 1,200 left on 30 Sep, + 50,000 salary; rent of 15,000 due today is still to pay
   assert.equal(r.carried, 3800);
-  assert.equal(r.balanceToday, 38800);
+  assert.equal(r.balanceToday, 53800);
+  assert.equal(r.dueTotal, 15000);
   // Today's limit still follows the plan: the leftover isn't new money to spend
   assert.equal(Math.round(r.limit.byBudget), Math.round(Core.projectRunway(Object.assign({}, s, { balanceCheck: null }), '2026-10-05').limit.byBudget));
   // A check two rounds back: the salary alone
   s.balanceCheck = { date: '2026-08-20', amount: 5000 };
-  assert.equal(Core.projectRunway(s, '2026-10-05').balanceToday, 35000);
+  assert.equal(Core.projectRunway(s, '2026-10-05').balanceToday, 50000);
 });
 
 test('money received raises the balance and today\'s amount', () => {
@@ -148,10 +152,11 @@ test('money received raises the balance and today\'s amount', () => {
 test('money moved to a fund leaves the spending money', () => {
   const s = baseState();
   s.transactions.push({ id: 'in1', kind: 'in', date: '2026-10-03', amount: 5000, category: 'Refund', note: '', useFor: 'emergency' });
-  assert.equal(Core.projectRunway(s, '2026-10-05').balanceToday, 35000);
+  // 50,000 salary; the ₹5,000 to the fund is out of spending money. Rent due today is still to pay, not yet out.
+  assert.equal(Core.projectRunway(s, '2026-10-05').balanceToday, 50000);
   s.transactions[0].useFor = 'debt';
   s.transactions[0].debtPaid = 3000;
-  assert.equal(Core.projectRunway(s, '2026-10-05').balanceToday, 37000);
+  assert.equal(Core.projectRunway(s, '2026-10-05').balanceToday, 52000);
 });
 
 test('choices for money received come with facts and a suggestion', () => {
@@ -212,7 +217,9 @@ test('paying a bill learns its amount, period and next due date, and can be undo
   // Paid this cycle: no estimate event; the payment itself leaves the account.
   const r = Core.projectRunway(s, '2026-10-12');
   assert.ok(!r.events.some((x) => x.billId === 'mob'));
-  assert.equal(r.balanceToday, before + 299 - 899);
+  // The overdue ₹299 estimate was still in the account; the ₹899 really paid leaves it
+  assert.equal(r.balanceToday, before - 899);
+  assert.ok(!r.dueNow.some((x) => x.billId));
   assert.equal(r.spentToDate, 0, 'bill payments are not flexible spending');
   Core.undoBillPayment(s, tx);
   assert.deepEqual([b.estimate, b.everyMonths, b.nextDue], [299, 1, '2026-10-10']);
@@ -722,7 +729,7 @@ test('SMS: transfers to savings apps are recognised, look-alike names are not', 
   const s = baseState();
   s.transactions.push({ id: 'm', kind: 'move', date: '2026-10-05', amount: 200, category: 'Savings', note: 'Jar', useFor: null });
   const r = Core.projectRunway(s, '2026-10-05');
-  assert.equal(r.balanceToday, 35000 - 200);
+  assert.equal(r.balanceToday, 50000 - 200);
   assert.equal(r.spentToDate, 0);
 });
 
@@ -1306,7 +1313,9 @@ test('budget envelopes: covering an overspend and keeping a leftover', () => {
 test('net worth: what you own minus what you owe', () => {
   const s = Demo.demoState('2026-10-23');
   const n = Core.netWorth(s, '2026-10-23');
-  assert.equal(n.value, n.money + n.funds - n.loans - n.cards);
+  assert.equal(n.value, n.money + n.funds - n.loans - n.cards - n.dueUnpaid);
+  // The demo's rent and EMIs due so far are recorded as paid
+  assert.equal(n.dueUnpaid, 0);
   assert.ok(n.loans > 0);
   // A loan from family with no EMI lowers it by exactly its balance
   s.debts.push({ id: 'fam', name: 'Family', balance: 5000, rate: 0, minPayment: 0 });
@@ -1359,8 +1368,8 @@ test('AI facts: numbers and categories only, never shop names, notes or account 
   assert.match(f, /Today's limit: ₹/);
   assert.match(f, /Next payday: /);
   assert.doesNotMatch(f, /SECRETSHOP|Myntra|9876543210|k-secret|4321/);
-  // Every note in the data stays out
-  s.transactions.filter((x) => x.note && x.note.length > 4).forEach((x) => assert.ok(!f.includes(x.note), x.note));
+  // Every note in the data stays out (a fixed payment recorded as paid is noted with that payment's own name, which is shared)
+  s.transactions.filter((x) => x.note && x.note.length > 4 && !Core.isFixedPayment(x)).forEach((x) => assert.ok(!f.includes(x.note), x.note));
 });
 
 test('the app connects to the internet only for the AI weekly plan, and only when it is turned on', () => {
@@ -1743,9 +1752,10 @@ test('money between friends and family: no EMI, promised dates, chunks of any si
   s.transactions.push({ id: 'back1', kind: 'in', date: '2026-10-27', amount: 10000, category: 'Money returned', note: 'Amit', useFor: 'spend' });
   Core.payIou(s, lent.id, 10000, '2026-10-27', 'back1');
   assert.equal(Core.iouLeft(lent), 16000);
-  // The ₹10,000 back is kept for Rahul, due today (Amit's other ₹16,000 covers the rest)
+  // The ₹10,000 back is in the account, kept for Rahul, due today (Amit's other ₹16,000 covers the rest)
   r = Core.projectRunway(s, '2026-10-27');
-  assert.equal(r.balanceToday, free.balanceToday);
+  assert.equal(r.balanceToday, free.balanceToday + 10000);
+  assert.deepEqual(r.dueNow.map((e) => [e.kind, e.amount]), [['iou', 10000]]);
   assert.equal(r.spentToDate, 0);
   // Amit's money back doesn't change net worth: it moves from "owed to you" to the account, and Rahul's due today counts once
   const w0 = Core.netWorth(s, '2026-10-27').value;

@@ -103,7 +103,9 @@ test('a loan EMI paid by SMS: counted once; interest and principal by the bank\'
   const plain = base();
   // Personal loan: ₹5,00,000 at 11%, EMI ₹15,000 due on the 7th
   X(s, { id: 'emi', date: '2026-11-06', amount: 15000, category: 'Misc', note: 'Loan Emi' });
-  const bal = (st) => Core.projectRunway(st, '2026-11-08').balanceToday;
+  // What's left once payments due are paid: an EMI not yet recorded is still in the account, and still to pay
+  const bal = (st) => { const r = Core.projectRunway(st, '2026-11-08'); return r.balanceToday - r.dueTotal; };
+  assert.equal(Core.projectRunway(plain, '2026-11-08').dueNow.filter((e) => e.debtId === 'pl').length, 1);
   assert.equal(bal(s), bal(plain) - 15000);
   const m = Core.fixedMatches(s, '2026-11-08').find((x) => x.tx.id === 'emi');
   assert.deepEqual([m.fixed.id, m.due, m.loan], ['pl', '2026-11-07', true]);
@@ -111,6 +113,7 @@ test('a loan EMI paid by SMS: counted once; interest and principal by the bank\'
   // 5,00,000 × 11% ÷ 12 = ₹4,583 interest; ₹10,417 pays the loan down
   assert.deepEqual([tx.emiInterest, tx.emiPrincipal, tx.forDue], [4583, 10417, '2026-11-07']);
   assert.equal(bal(s), bal(plain));
+  assert.equal(Core.projectRunway(s, '2026-11-08').dueNow.filter((e) => e.debtId === 'pl').length, 0);
   assert.equal(Core.projectRunway(s, '2026-11-08').spentToDate, Core.projectRunway(plain, '2026-11-08').spentToDate);
   // A card EMI is paid through the card bill, never offered here
   assert.equal(Core.payFixed(s, 'cemi', { amount: 6010, date: T }), null);

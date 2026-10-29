@@ -13,6 +13,8 @@ const base = () => ({
   balanceCheck: { date: '2026-10-28', amount: 50000 },
 });
 const bal = (s, d) => Core.projectRunway(s, d).balanceToday;
+// What's left once payments due and not yet recorded are paid: an unrecorded payment stays in the balance until then.
+const left = (s, d) => { const r = Core.projectRunway(s, d); return r.balanceToday - r.dueTotal; };
 const sms = (s, amount, date) => s.transactions.push({ id: 'sms', date: date || '2026-10-28', amount, category: 'Misc', note: 'UPI payment', source: 'sms' });
 
 test('paid early by SMS: counted once, on the day it was paid', () => {
@@ -20,7 +22,7 @@ test('paid early by SMS: counted once, on the day it was paid', () => {
   const s = base();
   sms(s, 9000);
   // As ordinary spending it counts twice: now, and again on the 1st
-  assert.equal(bal(s, '2026-11-02'), bal(plain, '2026-11-02') - 9000);
+  assert.equal(left(s, '2026-11-02'), left(plain, '2026-11-02') - 9000);
   assert.deepEqual(Core.fixedMatches(s, '2026-10-28').map((m) => [m.tx.id, m.fixed.id, m.due]), [['sms', 'cls', '2026-11-01']]);
   const tx = Core.payFixed(s, 'cls', { txId: 'sms' });
   assert.equal(tx.forDue, '2026-11-01');
@@ -29,7 +31,8 @@ test('paid early by SMS: counted once, on the day it was paid', () => {
   assert.equal(r.spentToDate, 0);
   assert.equal(r.billsAhead, Core.projectRunway(plain, '2026-10-28').billsAhead - 9000);
   // After the 1st, the same as if it had left on the day
-  assert.equal(bal(s, '2026-11-02'), bal(plain, '2026-11-02'));
+  assert.equal(bal(s, '2026-11-02'), left(plain, '2026-11-02'));
+  assert.equal(Core.projectRunway(s, '2026-11-02').dueTotal, 0);
   assert.equal(Core.fixedMatches(s, '2026-10-28').length, 0);
   // Next month's is still expected
   assert.ok(Core.projectRunway(s, '2026-11-28').events.some((e) => e.kind === 'fixed' && e.date === '2026-12-01'));
@@ -39,14 +42,16 @@ test('a different amount, and a late payment, still count once', () => {
   const plain = base();
   const s = base();
   Core.payFixed(s, 'cls', { amount: 9500, date: '2026-10-28' });
-  assert.equal(bal(s, '2026-11-02'), bal(plain, '2026-11-02') - 500);
-  // Late: nothing recorded by the 1st, so it's assumed paid; recorded on the 5th, it moves there
+  assert.equal(bal(s, '2026-11-02'), left(plain, '2026-11-02') - 500);
+  // Late: nothing recorded by the 1st, so it's still in the account and still to pay; recorded on the 5th, it leaves there
   const late = base();
-  assert.equal(bal(late, '2026-11-01'), 41000);
+  assert.equal(bal(late, '2026-11-01'), 50000);
+  assert.deepEqual(Core.projectRunway(late, '2026-11-03').dueNow.map((e) => [e.name, e.date, e.amount]), [['Data science class', '2026-11-01', 9000]]);
+  assert.equal(left(late, '2026-11-01'), 41000);
   Core.payFixed(late, 'cls', { amount: 9000, date: '2026-11-05' });
   assert.equal(late.transactions[0].forDue, '2026-11-01');
   assert.equal(bal(late, '2026-11-01'), 50000);
-  assert.equal(bal(late, '2026-11-05'), bal(plain, '2026-11-05'));
+  assert.equal(bal(late, '2026-11-05'), left(plain, '2026-11-05'));
 });
 
 test('undo: an added payment goes; an SMS payment becomes spending again; the same SMS never pays twice', () => {
@@ -87,5 +92,5 @@ test('one transfer, two purposes: ₹10,000 split into a ₹9,000 class fee and 
   // ₹10,000 left the account; ₹1,000 is daily spending; the fee isn't expected again on the 1st
   assert.equal(r.balanceToday, 40000);
   assert.equal(r.spentToDate, 1000);
-  assert.equal(Core.projectRunway(s, '2026-11-02').balanceToday, Core.projectRunway(plain, '2026-11-02').balanceToday - 1000);
+  assert.equal(Core.projectRunway(s, '2026-11-02').balanceToday, left(plain, '2026-11-02') - 1000);
 });

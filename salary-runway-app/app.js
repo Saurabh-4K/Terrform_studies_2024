@@ -923,7 +923,8 @@
     const env = Core.budgetEnvelopes(state, t);
     const flexSpent = Object.values(Core.byCategory(Core.spendInRange(state.transactions, cyc).filter((x) => x.date >= fromDate && x.date <= t))).reduce((a, b) => a + b, 0);
 
-    const upcoming = r.events.filter((e) => e.date > t);
+    // Due and not yet paid first (still in the account), then what's still to come.
+    const upcoming = r.dueNow.concat(r.events.filter((e) => e.date > t));
     const askBalance = !state.isDemo && !r.anchor && state.balancePromptSkipped !== cyc.start;
     const ins = Core.insights(state, t);
     const adj = r.plan.adjustment;
@@ -944,7 +945,7 @@
       '</section>' +
       cardHomeNotes(cyc) +
       savedCard() +
-      alertsNudge() + iouDueCard() + maybeDueCard() + fixedMatchCard() + refundMatchCard() + passCard() + incomeCard() +
+      alertsNudge() + iouDueCard() + dueAskCard() + maybeDueCard() + fixedMatchCard() + refundMatchCard() + passCard() + incomeCard() +
       weekCard() +
       bal +
       (needsCheck().length
@@ -981,7 +982,8 @@
           (upcoming.length
             ? '<div class="list">' + upcoming.map((e) =>
               '<div class="list-item"><div class="date-badge"><b>' + Core.parseISO(e.date).getDate() + '</b>' + monthName(Core.parseISO(e.date).getMonth()) + '</div>' +
-              '<div class="grow"><div class="title">' + esc(e.name) + '</div><div class="meta">' + tr(e.kind === 'debt' ? 'Minimum payment' : e.kind === 'bill' ? 'Estimate · amount varies' : e.kind === 'iou' ? 'Promised back' : 'Fixed payment') + '</div>' +
+              '<div class="grow"><div class="title">' + esc(e.name) + '</div><div class="meta">' + (e.date <= t ? '<span class="bad-text">' + (e.date < t ? tr('Due {date} · not paid yet', { date: fmtDate(e.date) }) : tr('Due now · not paid yet')) + '</span>'
+                : tr(e.kind === 'debt' ? 'Minimum payment' : e.kind === 'bill' ? 'Estimate · amount varies' : e.kind === 'iou' ? 'Promised back' : 'Fixed payment')) + '</div>' +
               (e.kind === 'fixed' || (e.kind === 'debt' && Core.emiLoans(state).some((d) => d.id === e.debtId)) ? fixedPayForm(Object.assign({}, e, { fixedId: e.fixedId || e.debtId })) : '') + '</div>' +
               '<div class="amt">' + inr(e.amount) + '</div></div>').join('') + '</div>'
             : '<p class="hint">' + tr('No more fixed payments this cycle.') + '</p>') + '</section>' },
@@ -1002,6 +1004,7 @@
         html: () => reconcileCard() + (ui.balanceOpen ? balanceForm(false) : '') + accuracyCard() + '<section class="tiles">' +
           tile('Balance now', inr(r.balanceToday),
             (r.anchor ? tr('From your balance on {date}', { date: fmtDate(r.anchor.date) }) : tr('Worked out from your plan')) +
+            (r.dueTotal ? ' · ' + tr('{amount} of it is due and not paid yet', { amount: inr(r.dueTotal) }) : '') +
             ' · <button class="link" data-action="balance-open">' + tr('Update') + '</button>') +
           tile('Flexible spending', inr(flexSpent), tr('of {amount} budget', { amount: inr(Math.round((r.plan.flexTotal * share) / 10) * 10) }) +
             (r.extraIn ? ' ' + tr('+ {amount} received', { amount: inr(r.extraIn) }) : '') + (r.anchor ? ' ' + tr('since {date}', { date: fmtDate(r.anchor.date) }) : '')) +
@@ -1487,6 +1490,7 @@
       if (fe.essentialsDaily > 0) lines.push(tr(fe.source === 'history'
         ? '<b>Essentials:</b> groceries, medicine, day-to-day travel (fuel, autos, metro) and recharges cost you about {amount} a day, from your last 8 weeks. The limit has to cover them.'
         : '<b>Essentials:</b> groceries, medicine, day-to-day travel (fuel, autos, metro) and recharges: about {amount} a day, from your budgets until there are 3 weeks of history. The limit has to cover them.', { amount: inr(fe.essentialsDaily) }));
+      if (r.dueTotal) lines.splice(3, 0, tr('The bills include {amount} due and not yet paid ({names}). It’s still in the account until you pay it.', { amount: inr(r.dueTotal), names: esc(r.dueNow.map((e) => e.name).join(', ')) }));
       if (r.held) lines.splice(3, 0, tr('{amount} is held for likely costs before payday (Maybe expenses), so it’s already out of the account amount.', { amount: inr(r.held) }));
     } else if (ui.explain === 'freedom') {
       const f = Core.freedomDays(state, t);
@@ -1882,6 +1886,7 @@
       (n.loans ? line('Loans', '−' + inr(n.loans)) : '') + (n.cards ? line('Card dues from before', '−' + inr(n.cards)) : '') +
       (n.owedPeople ? line('Owed to people', '−' + inr(n.owedPeople)) : '') +
       (n.newLoans ? line('Loan money not in Debts yet', '−' + inr(n.newLoans)) : '') +
+      (n.dueUnpaid ? line('Payments due, not yet paid', '−' + inr(n.dueUnpaid)) : '') +
       (n.reimbOwed ? line('Owed back on work expenses', inr(n.reimbOwed)) : '') +
       (n.vault ? line('Side vault', inr(n.vault)) : '') +
       line('Net worth', signed(n.value), n.value < 0 ? 'bad' : '') + '</div>' +
@@ -3687,8 +3692,30 @@
     const t = today();
     if (ui.fixedPay !== e.fixedId) return '<button class="link" data-action="fixed-pay-open" data-id="' + esc(e.fixedId) + '">' + tr('Mark paid') + '</button>';
     return '<div class="form-grid"><label class="field" for="fp-amount"><span>' + tr('Paid (₹)') + '</span><input id="fp-amount" type="number" inputmode="numeric" min="1" max="1000000000" step="any" value="' + e.amount + '"></label>' +
-      '<label class="field" for="fp-date"><span>' + tr('Date') + '</span><input id="fp-date" type="date" max="' + t + '" value="' + t + '"></label></div>' +
+      '<label class="field" for="fp-date"><span>' + tr('Date') + '</span><input id="fp-date" type="date" max="' + t + '" value="' + (e.payDate || t) + '"></label></div>' +
       '<div class="row"><button class="primary" data-action="fixed-pay-save" data-id="' + esc(e.fixedId) + '">' + tr('Save') + '</button><button class="ghost" data-action="fixed-pay-cancel">' + tr('Cancel') + '</button></div>';
+  }
+
+  /*
+   * A fixed payment or EMI past its due date with nothing recorded: it's
+   * still in the account and counted as still to pay. Paid? Yes records it on
+   * the due date; another day or amount opens the form; Not yet asks again tomorrow.
+   */
+  function dueAskCard() {
+    const t = today();
+    const asked = state.dueAsked || {};
+    const due = Core.projectRunway(state, t).dueNow
+      .filter((e) => (e.kind === 'fixed' || e.kind === 'debt') && e.date < t && asked[(e.fixedId || e.debtId) + ':' + e.date] !== t);
+    if (!due.length) return '';
+    const e = due[0];
+    const id = e.fixedId || e.debtId;
+    return '<section class="card income-card due-ask"><div class="card-head"><h2>' + tr('{name} {amount} was due {date}. Paid?', { name: esc(e.name), amount: inr(e.amount), date: fmtDate(e.date) }) + '</h2></div>' +
+      '<p class="hint">' + tr('Nothing is recorded yet, so it’s still in your balance and counted as still to pay.') +
+      (due.length > 1 ? ' ' + tr('{n} more due and not recorded yet.', { n: due.length - 1 }) : '') + '</p>' +
+      (ui.fixedPay === id ? fixedPayForm(Object.assign({}, e, { fixedId: id, payDate: e.date })) :
+        '<div class="row"><button class="primary" data-action="due-paid" data-id="' + esc(id) + '" data-date="' + e.date + '" data-amount="' + e.amount + '">' + tr('Yes, on {date}', { date: fmtDate(e.date) }) + '</button>' +
+        '<button data-action="fixed-pay-open" data-id="' + esc(id) + '">' + tr('Another day or amount') + '</button>' +
+        '<button class="ghost" data-action="due-later" data-key="' + esc(id + ':' + e.date) + '">' + tr('Not yet') + '</button></div>') + '</section>';
   }
 
   // A payment with a fixed payment's amount near its due date: is it that one?
@@ -6382,6 +6409,20 @@
         ui.fixedPay = null;
         save(); rerenderKeepScroll(); offerUndo(tr('Recorded as paid. It won’t be counted again on its due date.'), before);
         return;
+      }
+      case 'due-paid': {
+        const before = JSON.stringify(state);
+        if (!Core.payFixed(state, btn.dataset.id, { amount: Number(btn.dataset.amount), date: btn.dataset.date })) { toast(tr('Already recorded as paid')); return; }
+        save(); rerenderKeepScroll(); offerUndo(tr('Recorded as paid. It won’t be counted again on its due date.'), before);
+        return;
+      }
+      case 'due-later': {
+        const asked = {};
+        Object.keys(state.dueAsked || {}).forEach((k) => { if (state.dueAsked[k] >= Core.addDays(t, -40)) asked[k] = state.dueAsked[k]; });
+        asked[btn.dataset.key] = t;
+        state.dueAsked = asked;
+        save(); toast(tr('It stays under Coming up until it’s paid.'));
+        break;
       }
       case 'fixed-link': {
         const fid = btn.dataset.id || (document.getElementById('fx-which') || {}).value;

@@ -117,6 +117,11 @@
     for (let k = 0; k < 4; k++) { c = Core.previousCycle(c, state.settings.payday); cycles.unshift(c); }
     cycles.forEach((cy) => { state.transactions.push.apply(state.transactions, transactionsFor(cy, todayIso, rand, 1)); });
     state.transactions.push.apply(state.transactions, transactionsFor(current, todayIso, rand, 1.12));
+    // Rent and EMIs already due this round were paid on their due day.
+    state.fixed.concat(Core.emiLoans(state)).forEach((f) => {
+      const due = Core.occurrenceInCycle(Number(f.dueDay) || 1, current);
+      if (due && due <= todayIso) Core.payFixed(state, f.id, { amount: Number(f.minPayment != null ? f.minPayment : f.amount), date: due });
+    });
     state.transactions.sort((a, b) => (a.date < b.date ? 1 : -1));
     return state;
   }

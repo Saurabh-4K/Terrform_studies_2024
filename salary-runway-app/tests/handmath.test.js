@@ -52,6 +52,12 @@ test('hand math: spending, saving and money in each change the balance once', ()
   r = Core.projectRunway(s, '2026-11-03');
   assert.equal(r.balanceToday, 32000);
   assert.equal(r.extraIn, 5000);
+  // Rent was due on the 5th. Not recorded yet: still in the account, still to pay.
+  r = Core.projectRunway(s, '2026-11-06');
+  assert.equal(r.balanceToday, 32000);
+  assert.deepEqual([r.dueTotal, r.billsAhead], [10000, 10000]);
+  // Recorded as paid on the 5th: it leaves the account then, and nothing is left to pay
+  Core.payFixed(s, 'f1', { amount: 10000, date: '2026-11-05' });
   r = Core.projectRunway(s, '2026-11-06');
   assert.equal(r.balanceToday, 22000);
   assert.equal(r.billsAhead, 0);
@@ -61,6 +67,7 @@ test('hand math: card spending counts once, when it happens, not again when the 
   const s = cycle();
   s.cards = [{ id: 'c1', name: 'HDFC', last4: '1', limit: 50000, rate: 42, statementDay: 20, dueDay: 8, created: '2026-10-01' }];
   s.transactions.push({ id: 'k1', date: '2026-11-07', amount: 1500, category: 'Shopping', paidFrom: 'c1' });
+  Core.payFixed(s, 'f1', { amount: 10000, date: '2026-11-05' });
   assert.equal(Core.projectRunway(s, '2026-11-07').balanceToday, 30000 - 10000 - 1500);
   Core.recordCardPayment(s, 'c1', 1500, '2026-11-10', 'account');
   assert.equal(Core.projectRunway(s, '2026-11-10').balanceToday, 30000 - 10000 - 1500);
@@ -87,6 +94,7 @@ test('hand math: lower pay, and emergency spending out of the balance but not th
   const t = cycle();
   for (let d = 1; d <= 4; d++) t.transactions.push({ id: 'f' + d, date: '2026-11-0' + d, amount: 600, category: 'Food' });
   t.transactions.push({ id: 'e', date: '2026-11-03', amount: 5000, category: 'Emergency' });
+  Core.payFixed(t, 'f1', { amount: 10000, date: '2026-11-05' });
   r = Core.projectRunway(t, '2026-11-05');
   assert.equal(r.balanceToday, 30000 - 2400 - 5000 - 10000);
   near(r.paceRate, 600, 'pace');

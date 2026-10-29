@@ -1137,8 +1137,20 @@
      * belongs to that day instead, so today isn't cut twice.
      */
     const savedToday = sum(others.filter((t) => isMove(t) && (t.forDate || t.date) === todayIso), (t) => t.amount);
+    /*
+     * A payment due today or before (rent due the 28th, nothing recorded) is
+     * still in the account: the balance shows only what really left it. It
+     * stays to pay, with the bills ahead, until it's recorded as paid, and
+     * the days ahead count it as leaving today. One due before a balance
+     * entered later is taken to be in that balance, as before. A loan paid
+     * through a card bill leaves with the card's bill, as before.
+     */
+    const emiIds = emiLoans(state).map((d) => d.id);
+    const dueNow = events.filter((e) => e.kind !== 'billpot' && !(e.kind === 'debt' && emiIds.indexOf(e.debtId) === -1) &&
+      e.date <= todayIso && (!anchor || e.date >= anchor.date));
+    const dueTotal = sum(dueNow, (e) => e.amount);
     const eventsByDate = {};
-    events.forEach((e) => { eventsByDate[e.date] = (eventsByDate[e.date] || 0) + e.amount; });
+    events.filter((e) => dueNow.indexOf(e) === -1).forEach((e) => { eventsByDate[e.date] = (eventsByDate[e.date] || 0) + e.amount; });
 
     const pastTxns = txns.filter((t) => t.date <= todayIso);
     // A purchase paid from money kept for it (a gift) leaves the account, but not today's amount or the budgets.
@@ -1174,7 +1186,7 @@
      */
     const prevCycle = previousCycle(cycle, Number(state.settings.payday) || 1);
     const carried = !anchor && check && check.date < cycle.start && check.date >= prevCycle.start
-      ? projectRunway(state, addDays(cycle.start, -1)).balanceToday || 0 : 0;
+      ? (() => { const p = projectRunway(state, addDays(cycle.start, -1)); return (p.balanceToday || 0) - p.dueTotal; })() : 0;
     const points = [];
     let bal = plan.salary - plan.savingsTotal + carried;
     let pace = 0;
@@ -1185,13 +1197,13 @@
       if (i <= idxToday) {
         if (anchor && i === aIdx) bal = (Number(anchor.amount) || 0) - cardReserve(state, anchor.date) - earmarkedIn(state, anchor.date);
         bal -= out + (spendByDate[date] || 0);
-        pace = planned = bal;
+        pace = planned = bal - (i === idxToday ? dueTotal : 0);
         if (i === idxToday) pace -= todayRest;
         points.push({
           date,
           actual: anchor && i < aIdx ? null : bal,
-          pace: i === idxToday ? bal : null,
-          plan: i === idxToday ? bal : null,
+          pace: i === idxToday ? bal - dueTotal : null,
+          plan: i === idxToday ? bal - dueTotal : null,
         });
       } else {
         pace -= out + paceRate;
@@ -1202,7 +1214,7 @@
 
     // Safe to spend today: the smaller of what the budget allows and what the
     // account can cover after the bills still to come.
-    const billsAhead = sum(events.filter((e) => e.date > todayIso), (e) => e.amount);
+    const billsAhead = sum(events.filter((e) => e.date > todayIso), (e) => e.amount) + dueTotal;
     // Today's amount is fixed for the day: what spending and saving today don't change.
     // Money kept for something to buy is in the account but not to spend.
     // Kept apart: money kept for a purchase, and the side vault (margins routed there).
@@ -1228,7 +1240,7 @@
 
     const firstBelowZero = (key) => {
       for (const p of points) {
-        const v = p.actual !== null ? p.actual : p[key];
+        const v = p.actual !== null ? p.actual - (p.date === todayIso ? dueTotal : 0) : p[key];
         if (v !== null && v < 0) return p.date;
       }
       return null;
@@ -1238,11 +1250,11 @@
     return {
       cycle, plan, events, points, idxToday, remainingDays, anchor, anchorIdx: anchor ? aIdx : null, limit, carried,
       spentToDate, spentToday, savedToday, flexLeft, extraIn, moved, billsAhead, paceRate, planRate, dailyAllowance, leftToday, overToday, tomorrowAllowance,
-      balanceToday: points[idxToday].actual, kept, held,
+      balanceToday: points[idxToday].actual, kept, held, dueNow, dueTotal,
       zeroPace: firstBelowZero('pace'),
       zeroPlan: firstBelowZero('plan'),
-      endPace: last.actual !== null ? last.actual : last.pace,
-      endPlan: last.actual !== null ? last.actual : last.plan,
+      endPace: last.actual !== null ? last.actual - dueTotal : last.pace,
+      endPlan: last.actual !== null ? last.actual - dueTotal : last.plan,
     };
   }
 
@@ -1295,7 +1307,7 @@
     const billsAfter = (iso) => sum(r.events.filter((e) => e.date > iso), (e) => e.amount);
     const money = r.balanceToday - (r.kept || 0);
     const needs = r.billsAhead + essentialPerDay * r.remainingDays;
-    const needsLine = r.points.map((p, i) => (i < r.idxToday ? null : billsAfter(p.date) + essentialPerDay * (N - 1 - i)));
+    const needsLine = r.points.map((p, i) => (i < r.idxToday ? null : billsAfter(p.date) + (i === r.idxToday ? r.dueTotal || 0 : 0) + essentialPerDay * (N - 1 - i)));
     const safeDaily = r.remainingDays > 0 ? Math.max(0, money - r.billsAhead) / r.remainingDays : 0;
 
     let zone = 'green';
@@ -2901,11 +2913,12 @@
    */
   function netWorth(state, todayIso) {
     const r = projectRunway(state, todayIso);
-    // Money owed to a friend that's due today is still in the account until paid: it counts once, as owed.
-    const iouDue = sum(iouEvents(state, r.cycle, todayIso).filter((e) => e.date <= todayIso), (e) => e.amount);
+    // A fixed payment or bill due and not yet paid is still in the account, and owed. Loans, card dues
+    // and money owed to people already count below, so their due payments aren't counted twice.
+    const dueUnpaid = sum(r.dueNow.filter((e) => e.kind === 'fixed' || e.kind === 'bill'), (e) => e.amount);
     // The side vault is in the account; it's shown with the funds instead. Money owed back on claims is yours too.
     const rv = state.reimb ? reimbView(state) : { vault: 0, pendingFloat: 0 };
-    const money = Math.max(0, (Number(r.balanceToday) || 0) + iouDue - rv.vault);
+    const money = Math.max(0, (Number(r.balanceToday) || 0) - rv.vault);
     const sv = state.savings || {};
     // Money moved out of the account into a goal (Jar for a bike) is still yours; set-asides for goals stay in the account.
     // Money received and given to a goal stays in the account but outside the balance shown, like the emergency fund.
@@ -2927,9 +2940,9 @@
     const newLoans = sum(state.transactions.filter((t) => isIncome(t) && t.borrowed && !t.debtId && t.date <= todayIso), (t) => t.amount);
     const vault = rv.vault;
     const reimbOwed = rv.pendingFloat;
-    return { money, funds, loans, cards, owedPeople: people.oweTotal, lentPeople: people.lentTotal, newLoans, vault, reimbOwed,
-      owe: loans + cards + people.oweTotal + newLoans, own: money + funds + people.lentTotal + vault + reimbOwed,
-      value: Math.round(money + funds + people.lentTotal + vault + reimbOwed - loans - cards - people.oweTotal - newLoans) };
+    return { money, funds, loans, cards, owedPeople: people.oweTotal, lentPeople: people.lentTotal, newLoans, vault, reimbOwed, dueUnpaid,
+      owe: loans + cards + people.oweTotal + newLoans + dueUnpaid, own: money + funds + people.lentTotal + vault + reimbOwed,
+      value: Math.round(money + funds + people.lentTotal + vault + reimbOwed - loans - cards - people.oweTotal - newLoans - dueUnpaid) };
   }
 
   // ---------- weekly plan: fraud checks, readiness, goals ----------
@@ -3253,6 +3266,7 @@
     L.push('Basics (groceries and health) cost about ' + R(z.essentialPerDay) + ' a day.');
     if (r.remainingDays > 0) L.push('Rule of thumb: every ' + R(1000) + ' spent extra today lowers each remaining day\'s limit by about ' + R(1000 / r.remainingDays) + '.');
     const ahead = r.events.filter((e) => e.date > todayIso);
+    if (r.dueNow.length) L.push('Due and not yet paid (still in the account, counted as still to pay): ' + r.dueNow.map((e) => e.name + ' ' + R(e.amount)).join('; ') + '.');
     L.push(ahead.length ? 'Still to pay before payday: ' + ahead.map((e) => e.name + ' ' + R(e.amount) + ' on ' + D(e.date)).join('; ') + '.' : 'No more bills or EMIs before payday.');
     L.push('Plan each month: fixed payments ' + R(p.fixedTotal) + ', loan minimums ' + R(p.debtMin) + ', bills that vary ' + R(p.variableBills) + ', set aside ' + R(p.savingsTotal) + ', flexible budgets ' + R(p.flexTotal) + '.');
     const env = budgetEnvelopes(state, todayIso);
