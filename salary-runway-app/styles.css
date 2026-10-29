@@ -1108,6 +1108,8 @@ button.tx-title { display: flex; align-items: center; gap: 6px; background: none
 .plan-steps { margin: 0; padding-left: 22px; display: grid; gap: 8px; }
 .plan-steps li b { display: block; }
 .review h3 { margin: 14px 0 4px; font-size: 1rem; }
+.limit-covers { margin: 4px 0 0; font-size: .85rem; }
+.limit-covers.warn { color: inherit; font-weight: 600; opacity: 1; }
 .health { display: grid; gap: 6px; }
 .health-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 12px; background: var(--surface-2, rgba(0,0,0,.03)); }
 .health-row .grow { display: grid; gap: 2px; min-width: 0; }

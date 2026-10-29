@@ -1252,6 +1252,33 @@
   const ESSENTIAL_CATEGORIES = ['Groceries', 'Health'];
 
   /*
+   * What everyday essentials cost a day: groceries, medicine, day-to-day
+   * travel (fuel, autos, metro, cabs: travel payments under ₹1,000, so a
+   * ₹6,813 bus trip isn't one) and everyday bills paid as spending
+   * (recharges). From the person's own last 8 weeks when at least 3 weeks
+   * are recorded; otherwise from their Groceries, Health and Travel budgets.
+   * { daily, source: 'history' | 'budgets', days }.
+   */
+  const DAILY_TRAVEL_MAX = 1000;
+  function isEssential(t) {
+    return ESSENTIAL_CATEGORIES.indexOf(t.category) !== -1 || t.category === 'Bills' || (t.category === 'Travel' && t.amount < DAILY_TRAVEL_MAX);
+  }
+  function essentialsDaily(state, todayIso) {
+    const from = addDays(todayIso, -56);
+    const recent = state.transactions.filter((t) => isFlexible(t) && !t.gap && t.date >= from && t.date < todayIso);
+    const first = recent.reduce((m, t) => (t.date < m ? t.date : m), todayIso);
+    const span = daysBetween(first, todayIso);
+    const logged = new Set(recent.map((t) => t.date)).size;
+    if (span >= 21 && logged >= 10) {
+      return { daily: sum(recent.filter(isEssential), ownPart) / span, source: 'history', days: span };
+    }
+    const plan = monthlyPlan(Object.assign({}, state, { adjustment: null }), todayIso);
+    const budgets = sum(plan.budgets.filter((b) => ESSENTIAL_CATEGORIES.indexOf(b.name) !== -1 || b.name === 'Travel'), (b) => b.amount);
+    // A budget is for the pay cycle: shared over its own days.
+    return { daily: budgets / cycleFor(todayIso, Number(state.settings.payday) || 1).days, source: 'budgets', days: 0 };
+  }
+
+  /*
    * Green: at this pace, money lasts until payday.
    * Amber: bills and basics are covered, but this pace runs out before payday.
    * Red: the money left doesn't cover bills still to come plus basics
@@ -1263,8 +1290,8 @@
     const r = runway || projectRunway(state, todayIso);
     const N = r.cycle.days;
     // Basics a day: the plan's groceries and health, or, when the plan has no room for them, what you really spend on them.
-    const planned = sum(r.plan.budgets.filter((b) => ESSENTIAL_CATEGORIES.indexOf(b.name) !== -1), (b) => b.amount) / N;
-    const essentialPerDay = planned > 0 ? planned : recentDaily(state, todayIso, (t) => ESSENTIAL_CATEGORIES.indexOf(t.category) !== -1, 60);
+    // Groceries, medicine, day-to-day travel and everyday bills: from history, or the budgets (essentialsDaily).
+    const essentialPerDay = essentialsDaily(state, todayIso).daily;
     const billsAfter = (iso) => sum(r.events.filter((e) => e.date > iso), (e) => e.amount);
     const money = r.balanceToday - (r.kept || 0);
     const needs = r.billsAhead + essentialPerDay * r.remainingDays;
@@ -3098,6 +3125,19 @@
     if (rv.savedRate.length) L.push('Saved each round (to funds, investing and loans, beyond EMIs): ' + rv.savedRate.map((m) => M(m.start) + ' ' + m.pct + '% of pay (' + R(m.saved) + ')').join('; ') + '.');
     if (rv.goals.length) L.push('Goals: ' + rv.goals.map((g) => g.name + ' ' + R(g.saved) + ' of ' + R(g.target) + (g.by ? ' by ' + M(g.by) : '') + (g.done ? ' (reached)' : g.late ? ' (date passed)' : '')).join('; ') + '.');
     // The health check and the what-ifs: what the diagnosis is built on, never recalculated by the AI.
+    // The realism check: is today's limit, and any saving, possible once essentials are covered?
+    const fe = feasibility(state, todayIso);
+    L.push('', 'REALISM CHECK (worked out by the app; every limit or saving must respect it)');
+    L.push('Money until payday after EMIs, bills and promises still due: ' + R(fe.available) + '. Everyday essentials (groceries, medicine, day-to-day travel like fuel and autos, recharges) cost about ' +
+      R(fe.essentialsDaily) + ' a day ' + (fe.source === 'history' ? '(from their last 8 weeks)' : '(from their budgets; not enough history yet)') + ' = ' + R(fe.essentials) + ' for the ' + fe.days + ' days after today.');
+    L.push({
+      short: 'Status: SHORT by ' + R(fe.shortBy) + ' before payday, even on essentials only. Say this plainly; never suggest saving, investing or extra loan payments this round; the actions are closing the gap (' +
+        fe.options.map((o) => ({ fund: 'up to ' + R(o.amount) + ' from the emergency fund', pause: 'pausing ' + R(o.amount) + ' of set-asides', basics: 'basics only, about ' + R(o.amount) + ' a day' }[o.kind])).filter(Boolean).join('; ') + ').',
+      tight: 'Status: TIGHT. Essentials are covered with ' + R(fe.spare) + ' to spare until payday. No new saving target this round beyond what is shown in WHAT IF.',
+      ok: 'Status: OK. Essentials are covered with ' + R(fe.spare) + ' to spare until payday.',
+    }[fe.status]);
+    L.push("Today's limit is " + R(fe.limit) + ' a day and has to cover these essentials too; always say so when quoting it' +
+      (fe.limitCovers ? '.' : fe.budgetsTooLow ? '. It is below a day of essentials because the budgets are set too low: say to raise the Groceries, Health or Travel budget.' : '. It is below a day of essentials: say so.'));
     const hc = healthCheck(state, todayIso);
     const ST = { good: 'good', watch: 'needs watching', bad: 'needs action', unknown: 'not enough recorded to judge' };
     L.push('', 'HEALTH CHECK (worked out by the app; agree with these, never contradict them)');
@@ -3115,14 +3155,22 @@
     const wi = whatIf(state, todayIso);
     L.push('', 'WHAT IF (worked out by the app; quote these, never make up other projections)');
     const WHERE = { basics: 'into the emergency fund', buffer: 'into the emergency fund', fund: 'into the emergency fund', debt: 'extra on the costliest loans' };
-    if (WHERE[wi.step]) L.push('The plan: ' + R(wi.per) + ' a month (5% of pay) ' + WHERE[wi.step] + '. What reached the fund last round: ' + R(wi.pace) + '.');
+    const rm = wi.room;
+    L.push('What the pay can spare each month: pay ' + R(rm.salary) + ' − fixed payments, EMIs and bills ' + R(rm.committed) + ' − usual spending ' + R(rm.usual) +
+      (rm.source === 'history' ? ' (their last 8 weeks)' : ' (their budgets)') + ' = ' + R(rm.roomNow) + '; trimming a fifth of the ' + R(rm.other) + ' that is not essentials adds ' + R(rm.trim) + '.');
+    // Short this round: nothing goes aside until the gap is closed; the plan starts next payday.
+    const when = fe.status === 'short' ? 'from next payday, once this round\'s gap is closed: ' : '';
+    if (WHERE[wi.step]) L.push(wi.per > 0 ? 'The plan, ' + when + R(wi.per) + ' a month ' + WHERE[wi.step] + ' (all the pay can spare; never ask for more). What reached the fund last round: ' + R(wi.pace) + '.'
+      : 'The plan: nothing from pay each month; the pay cannot spare it. Do not ask for a monthly saving. What reached the fund last round: ' + R(wi.pace) + '.');
+    if (rm.extra) L.push('Extra pay this round: ' + R(rm.extra) + (fe.status === 'short' ? ' (already in the money until payday, and needed for the gap).'
+      : (wi.fund && wi.fund.extraDays !== null ? '; put in the emergency fund it would cover ' + wi.fund.extraDays + ' days of basics' : '') + '. If it is not spent yet, this is the money for the step.'));
+    (rm.freed || []).forEach((x) => L.push(x.name + ' ' + R(x.emi) + ' a month ends after ' + M(x.last) + ': from ' + M(x.from) + ' that money is free for the step.'));
     if (wi.fund) L.push('Fund target ' + wi.fund.target + ' days of basics, ' + R(wi.fund.need) + ' to go. With the plan: reached in ' + wi.fund.months.plan + ' month' + (wi.fund.months.plan > 1 ? 's' : '') +
       ', and in 3 months the fund covers ' + wi.fund.daysIn3.plan + ' days. If nothing changes: ' + (wi.fund.months.now ? 'reached in ' + wi.fund.months.now + ' months' : 'not reached at this pace') +
       ', and in 3 months it covers ' + wi.fund.daysIn3.now + ' days.');
     if (wi.debt) L.push(wi.debt.extra ? 'With ' + R(wi.debt.extra) + ' extra a month on loans: debt-free ' + (wi.debt.free.plan ? M(wi.debt.free.plan) : 'never') + ', interest still to pay ' + R(wi.debt.interest.plan) +
       '. If nothing changes: ' + (wi.debt.free.now ? M(wi.debt.free.now) : 'never') + ', interest ' + R(wi.debt.interest.now) + '.'
       : 'Loans at this step: debt-free ' + (wi.debt.free.now ? M(wi.debt.free.now) : 'never') + ' as planned, interest still to pay ' + R(wi.debt.interest.now) + ' (extra goes to the fund first).');
-    if (wi.ending && wi.ending.length) L.push('EMIs ending within a year, whose money is then free: ' + wi.ending.map((e) => e.name + ' ' + R(e.emi) + ' a month, last in ' + M(e.last)).join('; ') + '.');
     // Official figures, searched once a month on government sites only (nothing about the person is sent for them).
     const RATE_NAMES = { repo_rate: 'RBI repo rate', cpi_inflation: 'Retail inflation (CPI, year on year)', ppf: 'PPF', ssy: 'Sukanya Samriddhi', scss: "Senior Citizens' Savings Scheme", nsc: 'NSC', po_savings: 'Post office savings account' };
     const rates = state.rates && (state.rates.figures || []).filter((x) => RATE_NAMES[x.key]);
@@ -3418,29 +3466,95 @@
   }
 
   /*
+   * The realism check, before any limit or plan: the money there is until
+   * payday after EMIs, bills and promises still due, against what everyday
+   * essentials will cost until then.
+   *   short       less than the essentials need: shortBy, and the zone's options
+   *   tight       essentials covered, little to spare (under a quarter extra)
+   *   ok          essentials covered with room to spare
+   * Also whether today's limit covers a day of essentials (when it doesn't
+   * because the budgets are set below them, the budgets are the problem).
+   */
+  function feasibility(state, todayIso) {
+    const r = projectRunway(state, todayIso);
+    const z = zoneStatus(state, todayIso, r);
+    const ess = essentialsDaily(state, todayIso);
+    // The zone's own basis, so the app says one number: money now (less what's kept aside), less what's
+    // still to pay, against essentials for the days after today.
+    const days = r.remainingDays;
+    const available = Math.round(z.money - r.billsAhead);
+    const essentials = Math.round(ess.daily * days);
+    const spare = available - essentials;
+    const status = spare < 0 ? 'short' : spare < essentials * 0.25 ? 'tight' : 'ok';
+    return {
+      status, available, essentials, spare, shortBy: Math.max(0, -spare), days, essentialsDaily: Math.round(ess.daily), source: ess.source,
+      limit: Math.round(r.dailyAllowance), limitCovers: r.dailyAllowance >= ess.daily, budgetsTooLow: r.limit.byBudget < ess.daily && r.limit.byMoney >= ess.daily,
+      options: status === 'short' ? z.options : [],
+    };
+  }
+
+  /*
+   * What a month's pay can really spare, at the person's own spending: pay
+   * less fixed payments, EMIs, bills and yearly-cost shares, less what they
+   * usually spend (their last 8 weeks when at least 4 are recorded,
+   * otherwise their budgets). Plus a realistic trim: a fifth of the
+   * spending that isn't essentials. Never more than that, never below ₹0.
+   * And the money that isn't from pay: extra pay this round, and EMIs that
+   * end within a year.
+   */
+  function monthlyRoom(state, todayIso) {
+    const plan = monthlyPlan(Object.assign({}, state, { adjustment: null }), todayIso);
+    const salary = Number(plan.salary) || 0;
+    const committed = Math.round(plan.fixedTotal + plan.debtMin + plan.variableBills + (plan.sinking || 0));
+    const from = addDays(todayIso, -56);
+    const recent = state.transactions.filter((t) => isFlexible(t) && !t.gap && t.category !== 'Emergency' && t.date >= from && t.date < todayIso);
+    const first = recent.reduce((m, t) => (t.date < m ? t.date : m), todayIso);
+    const span = daysBetween(first, todayIso);
+    const fromHistory = span >= 28 && new Set(recent.map((t) => t.date)).size >= 14;
+    const usual = Math.round(fromHistory ? (sum(recent, ownPart) / span) * 30 : plan.flexTotal);
+    const essentials = Math.round(Math.min(usual, essentialsDaily(state, todayIso).daily * 30));
+    const other = Math.max(0, usual - essentials);
+    const roomNow = salary - committed - usual;
+    const trim = Math.round(other * 0.2);
+    const affordable = Math.max(0, Math.floor((roomNow + trim) / 100) * 100);
+    // Earned beyond the usual pay this round (overtime, a bonus, side income): one-off money for the step.
+    const cyc = cycleFor(todayIso, Number(state.settings.payday) || 1);
+    const extra = Math.round(sum(state.transactions.filter((t) => isEarned(t) && inCycle(t.date, cyc) && t.date <= todayIso), (t) => t.amount));
+    const debts = (state.debts || []).filter((d) => d.balance > 0);
+    const freed = debts.map((d) => ({ d, e: loanEnd(state, d, todayIso) })).filter((x) => x.e && !x.e.never && x.e.last <= addMonths(todayIso, 12))
+      .map((x) => ({ name: x.d.name, emi: Number(x.d.minPayment) || 0, last: x.e.last, from: addMonths(x.e.last, 1) })).sort((a, b) => (a.last < b.last ? -1 : 1));
+    return { salary, committed, usual, essentials, other, roomNow, trim, affordable, source: fromHistory ? 'history' : 'budgets', extra, freed };
+  }
+
+  /*
    * If nothing changes, and with the plan: the numbers the diagnosis may
    * quote, worked out here so the AI never makes up a projection. The plan
-   * puts a set amount a month (5% of pay, at least ₹1,000, in ₹500s) on the
-   * ladder's step: into the fund for steps 1, 2 and 4, on the costliest loans
-   * for step 3. Also EMIs ending within a year, whose money is then free.
+   * puts what the pay can really spare (monthlyRoom; ₹0 when nothing can)
+   * on the ladder's step: into the fund for steps 1, 2 and 4, on the
+   * costliest loans for step 3. With nothing to spare, it shows what this
+   * round's extra pay would do instead. Also EMIs ending within a year.
    */
   function whatIf(state, todayIso) {
     const L = priorityLadder(state, todayIso);
     const plan = monthlyPlan(Object.assign({}, state, { adjustment: null }), todayIso);
     const salary = Number(plan.salary) || 0;
-    const per = Math.max(1000, Math.round((salary * 0.05) / 500) * 500);
+    const room = monthlyRoom(state, todayIso);
+    const per = room.affordable;
     const f = freedomDays(state, todayIso);
     const payday = Number(state.settings.payday) || 1;
     const last = previousCycle(cycleFor(todayIso, payday), payday);
     // What reached the fund last round: the pace if nothing changes.
     const pace = Math.round(sum(state.transactions.filter((t) => inCycle(t.date, last) && ((isMove(t) && t.useFor === 'emergency') || (isIncome(t) && t.useFor === 'emergency'))), (t) => t.amount));
-    const out = { step: L.key, per, pace };
+    const out = { step: L.key, per, pace, room };
     if (f && ['basics', 'buffer', 'fund'].indexOf(L.key) !== -1) {
       const target = L.key === 'fund' ? (Number(state.savings.emergencyTargetMonths) || 3) * 30 : L.key === 'buffer' ? L.milestone.target : 7;
       const need = Math.max(0, Math.ceil(target * f.daily - f.fund));
+      const inMonths = (m) => (m > 0 && need / m <= 60 ? Math.ceil(need / m) : null);
       out.fund = { target, need, daysIn3: { now: Math.floor((f.fund + 3 * pace) / f.daily), plan: Math.floor((f.fund + 3 * (pace + per)) / f.daily) },
         // Over five years away isn't a plan: "not at this pace".
-        months: { now: pace > 0 && need / pace <= 60 ? Math.ceil(need / pace) : null, plan: Math.ceil(need / (pace + per)) } };
+        months: { now: inMonths(pace), plan: need <= 0 ? 0 : inMonths(pace + per) },
+        // This round's extra pay, put in the fund: days of basics it would cover.
+        extraDays: room.extra > 0 ? Math.floor((f.fund + room.extra) / f.daily) : null };
     }
     const debts = (state.debts || []).filter((d) => d.balance > 0);
     if (debts.length) {
@@ -4170,7 +4284,7 @@
     recordCardPayment, keptFor, ownPart, coverPurchase, refundToPurchase, undoRefund, earmarkedIn, cleanState, accuracyStats, reimbView, syncReimb, addClaim, recordPayout, claimSet, reimbForget, reimbAmount, addCardEmi, isPassedOn, passThroughPair, passOn, iouLeft, openIous, addIou, payIou, undoIouTx, iouSummary, iouEvents, cardEmiFromBooking, looksLikeCardBill, spendToCardPayment, convertCardBalance, answerCardDue, cardLateFee, cardRate, CARD_RATE, undoCardConvert, cardFreeDays, byCategory, DEFAULT_SPLIT,
     unpassOn, isLoanCredit, borrowedThisCycle, borrowCheck, rolloverOptions, setTranslator,
     maybeOpen, maybeHeld, maybeDue, maybeIfHappens, addMaybe, maybeHappened, maybeDidnt, maybeReopen, maybeForget, maybeCandidates, maybeStats,
-    weekTrend, priorityLadder, monthlyReview, healthCheck, whatIf, namesBrand, cleanAdvice, payoffOrder, tickDebts, debtJourney, lenderTasks, lastBorrowed,
+    weekTrend, priorityLadder, monthlyReview, healthCheck, whatIf, essentialsDaily, isEssential, feasibility, monthlyRoom, namesBrand, cleanAdvice, payoffOrder, tickDebts, debtJourney, lenderTasks, lastBorrowed,
     encryptBackup, openBackup, backupInfo, toB64, fromB64, isTransfer, walletBalances, goalStatus, goalsMonthly, budgetEnvelopes, netWorth, reportRange, budgetHistory, aiFacts, planFacts, fraudSignals, investReady, goalResult, weekStart,
     daySpent, daySpending, dayTally, roundSnapshot, roundResult, weekRecap,
     monthReport, LEAKS, leakNames, leakOf, leakSummary, leakSuggestions, spendWhere, spendWhen, spendTrend, BASICS,

@@ -896,7 +896,7 @@
     let headline, sub;
     if (z.zone === 'red') {
       headline = tr('Red zone: <span class="date bad">{amount} short</span> for bills and basics', { amount: inr(z.shortBy) });
-      sub = tr('The money left doesn’t cover the bills still to pay and groceries and health until {date}. Here’s how to stay above ₹0:', { date: fmtDate(cyc.next) });
+      sub = tr('The money left doesn’t cover the bills still to pay and groceries, medicine and day-to-day travel until {date}. Here’s how to stay above ₹0:', { date: fmtDate(cyc.next) });
     } else if (z.zone === 'amber') {
       // The same number the card shows: today's limit, or tomorrow's once today is over it.
       const keep = r.overToday > 0 && r.savedToday < r.overToday ? r.tomorrowAllowance : r.dailyAllowance;
@@ -1373,8 +1373,19 @@
         : r.savedToday > 0 ? tr('{spent} spent · {saved} saved', { spent: inr(r.spentToday), saved: inr(r.savedToday) })
           : tr('{amount} spent', { amount: inr(r.spentToday) })) + '</span>' +
       '<span>' + (over ? tr('Tomorrow: {amount}', { amount: inr(r.tomorrowAllowance) }) : tr('{amount} left', { amount: inr(r.leftToday) })) + '</span></div>' +
+      limitCoversNote() +
       '<h1>' + headline + '</h1><p class="runway-sub">' + sub + '</p>' +
       '<button class="explain-link" data-action="explain" data-explain="limit">' + tr('How is this calculated?') + '</button></div>';
+  }
+
+  // Under today's limit: it has to cover essentials too, and says so when it can't.
+  function limitCoversNote() {
+    const fe = Core.feasibility(state, today());
+    if (!(fe.essentialsDaily > 0)) return '';
+    return '<p class="limit-covers hint' + (fe.limitCovers ? '' : ' warn') + '">' + (fe.limitCovers
+      ? tr('Covers groceries, medicine and day-to-day travel too: about {amount} a day of it.', { amount: inr(fe.essentialsDaily) })
+      : fe.budgetsTooLow ? tr('Below a day of essentials ({amount}): your Groceries, Health or Travel budget is set too low.', { amount: inr(fe.essentialsDaily) })
+        : tr('Below a day of essentials ({amount}): spend on basics only until payday.', { amount: inr(fe.essentialsDaily) })) + '</p>';
   }
 
   const SHIELD = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l7 3v5c0 5-3 8-7 10-4-2-7-5-7-10V6z" fill="currentColor"/></svg>';
@@ -1472,6 +1483,10 @@
         tr('<b>What the account can cover:</b> ({money} in the account this morning − {bills} of bills still to come) ÷ {days} days = <b>{amount}</b>.', { money: inr(l.money), bills: inr(l.bills), days: l.days, amount: inr(l.byMoney) }),
         tr('Today’s limit: <b>{amount}</b>. Spending or saving today uses it up; going over lowers the days that follow.', { amount: inr(r.dailyAllowance) }),
       ];
+      const fe = Core.feasibility(state, t);
+      if (fe.essentialsDaily > 0) lines.push(tr(fe.source === 'history'
+        ? '<b>Essentials:</b> groceries, medicine, day-to-day travel (fuel, autos, metro) and recharges cost you about {amount} a day, from your last 8 weeks. The limit has to cover them.'
+        : '<b>Essentials:</b> groceries, medicine, day-to-day travel (fuel, autos, metro) and recharges: about {amount} a day, from your budgets until there are 3 weeks of history. The limit has to cover them.', { amount: inr(fe.essentialsDaily) }));
       if (r.held) lines.splice(3, 0, tr('{amount} is held for likely costs before payday (Maybe expenses), so it’s already out of the account amount.', { amount: inr(r.held) }));
     } else if (ui.explain === 'freedom') {
       const f = Core.freedomDays(state, t);
@@ -1816,7 +1831,7 @@
         return '<li>' + tr('<b>Pause this month’s Grow and extra debt payments</b> ({amount}), if you haven’t moved that money yet.', { amount: inr(o.amount) }) + ' ' +
           '<button class="link" data-action="zone-pause">' + tr('Pause until payday') + '</button></li>';
       }
-      return '<li>' + tr('<b>Spend only on basics</b>, about {amount} a day for groceries and health, until {date}.', { amount: inr(o.amount), date: fmtDate(r.cycle.next) }) + '</li>';
+      return '<li>' + tr('<b>Spend only on basics</b>, about {amount} a day for groceries, medicine and day-to-day travel, until {date}.', { amount: inr(o.amount), date: fmtDate(r.cycle.next) }) + '</li>';
     });
     items.push('<li>' + tr('<b>Avoid the credit card for daily spending.</b> It turns this month’s gap into next month’s debt.') + '</li>');
     return '<ol class="red-options">' + items.join('') + '</ol>';
@@ -4606,7 +4621,8 @@
   }
 
   // If nothing changes, and with the plan: the app's own numbers, side by side.
-  function whatIfTable(wi) {
+  function whatIfTable(wi, fe) {
+    if (!(wi.per > 0)) return (wi.room.freed || []).map((e) => '<p class="hint good">' + tr('{name} ends in {month}: {amount} a month is free after that.', { name: esc(e.name), month: monthName(Core.parseISO(e.last).getMonth()) + ' ' + Core.parseISO(e.last).getFullYear(), amount: inr(e.emi) }) + '</p>').join('');
     const rows = [];
     const months = (n) => tr(n === 1 ? 'in {n} month' : 'in {n} months', { n });
     const monthYear = (iso) => monthName(Core.parseISO(iso).getMonth()) + ' ' + Core.parseISO(iso).getFullYear();
@@ -4621,10 +4637,9 @@
     if (!rows.length) return '';
     const to = wi.fund ? tr('into the emergency fund') : tr('extra on loans');
     return '<h3>' + tr('If nothing changes, and with the plan') + '</h3><div class="table-wrap"><table><thead><tr><th></th><th>' + tr('If nothing changes') + '</th><th>' +
-      tr('With {amount} a month', { amount: inr(wi.per) }) + '</th></tr></thead><tbody>' +
+      tr(fe && fe.status === 'short' ? 'With {amount} a month from next payday' : 'With {amount} a month', { amount: inr(wi.per) }) + '</th></tr></thead><tbody>' +
       rows.map((r) => '<tr><td>' + r[0] + '</td><td class="amt">' + r[1] + '</td><td class="amt good">' + r[2] + '</td></tr>').join('') + '</tbody></table></div>' +
-      '<p class="hint">' + tr('The plan: {amount} a month {to}, about 5% of your pay.', { amount: inr(wi.per), to: to }) + '</p>' +
-      (wi.ending || []).map((e) => '<p class="hint good">' + tr('{name} ends in {month}: {amount} a month is free after that.', { name: esc(e.name), month: monthYear(e.last), amount: inr(e.emi) }) + '</p>').join('');
+      (wi.room.freed || []).map((e) => '<p class="hint good">' + tr('{name} ends in {month}: {amount} a month is free after that.', { name: esc(e.name), month: monthYear(e.last), amount: inr(e.emi) }) + '</p>').join('');
   }
 
   // Runway → Monthly review: the diagnosis report. The app's numbers (health check, what-ifs, ladder) always;
@@ -4644,7 +4659,23 @@
     if (dg && dg.verdict) html += '<p class="plan-headline">' + esc(dg.verdict) + '</p>';
     html += '<h3>' + tr('Health check') + '</h3>' + healthRows(Core.healthCheck(state, t));
     if (dg && dg.causes.length) html += '<h3>' + tr('What’s behind it') + '</h3>' + dg.causes.map((c) => '<div class="cause"><b>' + esc(c.title) + '</b><p>' + esc(c.text) + '</p></div>').join('');
-    html += whatIfTable(Core.whatIf(state, t));
+    const fe = Core.feasibility(state, t);
+    html += '<h3>' + tr('Until payday') + '</h3><div class="callout' + (fe.status === 'short' ? ' bad' : fe.status === 'tight' ? ' warn' : '') + '"><b>' + (fe.status === 'short'
+      ? tr('Short by {amount}, even on essentials only', { amount: inr(fe.shortBy) })
+      : fe.status === 'tight' ? tr('Essentials covered, with {amount} to spare', { amount: inr(fe.spare) }) : tr('Essentials covered, with {amount} to spare', { amount: inr(fe.spare) })) + '</b>' +
+      '<span class="hint">' + tr('{available} after EMIs, bills and promises still due; essentials need about {essentials} ({daily} a day for {days} days).',
+        { available: inr(fe.available), essentials: inr(fe.essentials), daily: inr(fe.essentialsDaily), days: fe.days }) +
+      (fe.status === 'short' ? ' ' + tr('Nothing goes aside this round: closing the gap comes first.') : '') + '</span></div>';
+    const wi = Core.whatIf(state, t);
+    const rm = wi.room;
+    html += '<h3>' + tr('What your pay can spare') + '</h3><div class="summary">' +
+      line(tr('Pay'), inr(rm.salary)) + line(tr('Fixed payments, EMIs and bills'), '−' + inr(rm.committed)) +
+      line(tr(rm.source === 'history' ? 'Usual spending (last 8 weeks)' : 'Usual spending (your budgets)'), '−' + inr(rm.usual)) +
+      line('<b>' + tr('Left each month') + '</b>', '<b>' + inr(rm.roomNow) + '</b>') +
+      (rm.trim ? line(tr('Trimming a fifth of non-essential spending'), '+' + inr(rm.trim)) : '') + '</div>' +
+      '<p class="hint">' + (rm.affordable > 0 ? tr('So the plan asks for {amount} a month, never more.', { amount: inr(rm.affordable) }) : tr('So the plan doesn’t ask for a monthly saving: your pay can’t spare one yet.')) +
+      (rm.extra ? ' ' + tr('Extra pay this round: {amount}.', { amount: inr(rm.extra) }) : '') + '</p>';
+    html += whatIfTable(wi, fe);
     if (dg && dg.actions.length) {
       html += '<h3>' + tr('The plan') + '</h3><ol class="plan-steps">' + dg.actions.map((a) => '<li><b>' + esc(a.action) + '</b>' +
         '<span class="hint">' + [a.how_much ? inr(a.how_much) : '', esc(a.by_when)].filter(Boolean).join(' · ') + '</span>' + (a.changes ? '<span>' + esc(a.changes) + '</span>' : '') + '</li>').join('') + '</ol>';

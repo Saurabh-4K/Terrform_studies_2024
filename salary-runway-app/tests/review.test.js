@@ -108,21 +108,43 @@ test('health check: each area\'s number and status, the bank and planner lines',
   assert.equal(Core.healthCheck(s, T).areas.find((a) => a.area === 'debt').status, 'bad');
 });
 
-test('what if: the plan is 5% of pay on the step; the numbers come from the app', () => {
+test('what if: the plan puts what the pay can really spare on the step; the numbers come from the app', () => {
   const s = house({ debts: [{ id: 'cc', name: 'Card', balance: 50000, rate: 36, minPayment: 2500, dueDay: 20 }] });
   s.savings.emergencyBalance = 1000;
+  const room = Core.monthlyRoom(s, T);
+  // Pay ₹60,000 − rent and EMI ₹17,500 − usual spending ₹20,000 (the budget, no history) = ₹22,500;
+  // none of it is essentials (no Groceries, Health or Travel budget), so a fifth can be trimmed: ₹4,000
+  assert.deepEqual([room.committed, room.usual, room.essentials, room.roomNow, room.trim, room.affordable, room.source], [17500, 20000, 0, 22500, 4000, 26500, 'budgets']);
   const wi = Core.whatIf(s, T);
-  // 5% of ₹60,000 = ₹3,000; ₹3,084 to 7 days of basics: 2 months; nothing put aside last round: never
-  assert.deepEqual([wi.step, wi.per, wi.pace, wi.fund.need, wi.fund.months.plan, wi.fund.months.now], ['buffer', 3000, 0, 3084, 2, null]);
-  // In 3 months: (1,000 + 9,000) ÷ 583.33 = 17 days, against 1
-  assert.deepEqual(wi.fund.daysIn3, { now: 1, plan: 17 });
-  // On the debt step, ₹3,000 extra a month brings debt-free sooner and cuts interest
+  // ₹3,084 to 7 days of basics: within a month at ₹26,500; nothing put aside last round: never
+  assert.deepEqual([wi.step, wi.per, wi.fund.need, wi.fund.months.plan, wi.fund.months.now], ['buffer', 26500, 3084, 1, null]);
+  // On the debt step, the spare money on the costliest loan brings debt-free sooner and cuts interest
   s.savings.emergencyBalance = 20000;
   const d = Core.whatIf(s, T);
   assert.equal(d.step, 'debt');
   assert.ok(d.debt.free.plan < d.debt.free.now && d.debt.interest.plan < d.debt.interest.now);
   assert.match(Core.planFacts(s, T, null), /HEALTH CHECK/);
-  assert.match(Core.planFacts(s, T, null), /With ₹3,000 extra a month on loans: debt-free/);
+});
+
+test('nothing to spare: the plan is honest about it, and points to extra pay and EMIs that end', () => {
+  // Pay ₹40,000; rent ₹15,000; EMIs ₹18,000; budgets ₹7,000 (groceries ₹4,000, health ₹500, travel ₹1,000, misc ₹1,500)
+  const s = house({ settings: { salary: 40000, payday: 1 },
+    debts: [{ id: 'pl', name: 'Personal loan', balance: 300000, rate: 14, minPayment: 12000, dueDay: 7 },
+      { id: 'ce', name: 'Card EMI', balance: 17000, rate: 18, minPayment: 6000, dueDay: 3, emisLeft: 3, emiThrough: '2026-11-03' }],
+    budgets: [{ id: 'g', name: 'Groceries', amount: 4000 }, { id: 'h', name: 'Health', amount: 500 }, { id: 't', name: 'Travel', amount: 1000 }, { id: 'm', name: 'Misc', amount: 1500 }] });
+  s.transactions.push({ id: 'ot', kind: 'in', date: '2026-11-02', amount: 4000, category: 'Overtime', note: 'Extra pay', useFor: 'spend' });
+  const room = Core.monthlyRoom(s, T);
+  // ₹40,000 − ₹33,000 − ₹7,000 = ₹0 now; trimming a fifth of the ₹1,500 that isn't essentials: ₹300
+  assert.deepEqual([room.roomNow, room.other, room.trim, room.affordable, room.extra], [0, 1500, 300, 300, 4000]);
+  assert.deepEqual(room.freed.map((x) => [x.name, x.emi, x.last]), [['Card EMI', 6000, '2027-02-03']]);
+  // Today: ₹40,000 on payday less ₹33,000 still to pay leaves ₹7,000 + ₹4,000 extra = ₹11,000 for 28 days of essentials
+  const f = Core.feasibility(s, T);
+  assert.equal(f.essentialsDaily, Math.round(5500 / 30));
+  assert.equal(f.status, f.spare < 0 ? 'short' : f.spare < f.essentials * 0.25 ? 'tight' : 'ok');
+  const facts = Core.planFacts(s, T, null);
+  assert.match(facts, /REALISM CHECK/);
+  assert.match(facts, /Extra pay this round: ₹4,000/);
+  assert.match(facts, /Card EMI ₹6,000 a month ends after Feb 2027/);
 });
 
 test('the diagnosis passes the name check too', () => {
