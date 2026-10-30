@@ -60,6 +60,20 @@ Everything the app can do today, screen by screen, with the rules it follows. Fo
 - **Paid from / Into:** the add form and the edit sheet offer each wallet as well as credit cards. Rows show the wallet, and moves show *Main bank account → Cash*.
 - **Split a payment:** in the edit sheet, *Split this payment into categories*. For example, ₹530 at Blinkit becomes ₹380 groceries and ₹150 household. It saves only when the parts add up. Each part becomes its own payment, marked *Split*, so budgets, charts and leaks count each part in its own category. Undo puts it back as one payment.
 
+## Categories and subcategories (Plan → Categories)
+
+Two levels for what a payment is: **category → subcategory** (Bills → Electricity, Food & dining → Food delivery), for detail in reports. **Budgets stay on the category**; bills, card bills and EMIs change month to month and are already in the plan, so they get no budget.
+
+- **Default subcategories:** Groceries (vegetables & fruit, milk & dairy, kirana, supermarket & apps), Food & dining (eating out, food delivery, tea & snacks), Travel (fuel, auto & cab, metro & bus, train & flight, parking & toll), Shopping, Entertainment, Health (doctor, medicines, tests, health insurance), Personal care, Family (given to family, kids, parents, domestic help), Gifts (gift given, wedding & functions, donations), Bills (electricity, water, gas, mobile recharge, internet & DTH, rent, society maintenance, bank charges), Education.
+- **Your own:** add any under a category (Gym, Maid, Tuition), hide the ones you don't use, show them again.
+- **One list everywhere** a payment's kind is chosen (the payment list, its edit view, adding a payment, SMS import, and the bank-SMS pop-up): each category with its subcategories, then the choices that **do something**, applied at once with Undo:
+  - Money out: **a bill** (a bill payment; the bill learns the amount and its next date), **a credit card bill** (a card payment, counted once, not new spending), **a loan's EMI** (interest and principal by the bank's rule), **a fixed payment** (recorded as paid), **saved, not spent** (emergency fund, SIP/RD/FD/gold, a goal), **People** (lent to someone, paying someone back).
+  - Money in: **earned** (bonus, overtime, side income, interest), **friends and family** (gift, from family, money received or returned), **a refund or reversal** (offsets the purchase it's for, when one matches; never income), cashback, **a loan**, **your own money** (from your emergency fund, or your savings/FD: not income), **a work reimbursement** (matched to your open claims), **People** (borrowed, being paid back).
+  - Anything that doesn't fit the entry (an EMI from a card, say) is refused with *That doesn't fit this entry*, and nothing changes.
+- **From the shop:** a bank SMS gets its subcategory from the shop (Swiggy → Food delivery, MSEDCL → Electricity, Uber → Auto & cab) or from what you chose for that shop before; a choice is remembered with its subcategory.
+- **Old payments:** the Spend tab offers *Add detail to 12 payments?*: each with its suggested subcategory, **Yes**, **No** (remembered), **Yes to all**, or **Stop asking**. Nothing changes without a yes.
+- **Reports:** *Where it went* → tap a category: its spending by subcategory (*Eating out ₹800 · Food delivery ₹260 · Other ₹100*), and each payment shows its subcategory.
+
 ## Trips and events (Spend → Trips & events)
 
 A trip, a wedding, a flat's bills: the people once, then each payment with who paid and each share. Only **you and each person** are tracked: what you owe them and what they owe you. What Amit owes Rahul is theirs to sort out.

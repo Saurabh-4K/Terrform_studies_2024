@@ -265,7 +265,9 @@ async function notifications(browser, B) {
     const lists = await page.evaluate(() => window.HisabTestSms.synced);
     const ok = !!lists && lists.categories.indexOf('@lent') !== -1 && lists.categories.indexOf('Family') !== -1 && lists.categories.indexOf('Savings') !== -1 &&
       lists.incomeCategories.indexOf('@borrowed') !== -1 && lists.incomeCategories.indexOf('@iou:iou1') !== -1 &&
-      lists.incomeCategoryLabels[lists.incomeCategories.indexOf('@iou:iou1')] === 'Rahul paying back (₹5,000 left)' &&
+      lists.incomeCategoryLabels[lists.incomeCategories.indexOf('@iou:iou1')] === 'People › Rahul paying back (₹5,000 left)' &&
+      // Subcategories and the choices that do something are in the pop-up too
+      lists.categories.indexOf('Bills|Electricity') !== -1 && lists.categories.indexOf('@loan:pl') !== -1 && lists.incomeCategories.indexOf('@refund') !== -1 &&
       lists.categories.length === lists.categoryLabels.length && lists.incomeCategories.length === lists.incomeCategoryLabels.length;
     if (!ok) bad++;
     console.log((ok ? 'OK   ' : 'FAIL ') + 'pop-up lists include People' + (ok ? '' : '\n   ' + JSON.stringify(lists)));

@@ -584,6 +584,11 @@
       'With the weekly plan on, the first plan after payday adds a direction for the month ahead, written by AI from these numbers.',
       'It also adds an adviser’s view: two or three things that matter most for your step, from general money knowledge. Each says whether it comes from your numbers or is general guidance to check. It never names a bank, fund, insurer or app, never suggests new borrowing, and suggests areas to invest only on the last step.',
     ]],
+    cats: ['Categories', [
+      'Each category can have subcategories, for detail: Bills → Electricity, Gas, Water; Food & dining → Eating out, Food delivery. Budgets stay on the category: bills, card bills and EMIs change month to month and are already in your plan.',
+      'When you choose what a payment is, the list also has choices that do something: a bill (it learns the amount), a credit card bill (counted once, not as new spending), a loan’s EMI (interest and principal), a fixed payment, savings, People (lent, borrowed, paid back), a refund, money from your own savings, a work reimbursement. They work the same in the bank-SMS pop-up.',
+      'Add your own subcategories here (Gym, Maid, Tuition), or hide the ones you don’t use. A shop’s subcategory is remembered for next time.',
+    ]],
     events: ['Trips & events', [
       'A trip, a wedding, a flat’s bills: add the people once, then each payment with where it was paid, who paid, and each person’s share: equal, by amounts, or by shares. Shares always add up to the rupee; the payer takes the extra rupee.',
       'You paid: the whole payment left your account, but only your share is your spending; the rest is owed to you. Someone else paid: your share is your spending now, and you owe them. Only you and each person are tracked, never what others owe each other.',
@@ -2135,7 +2140,7 @@
       '<div class="list">' + list.map((x) => Core.isMove(x) ? savedCheckItem(x) :
         '<div class="check-item"><div class="check-top"><div class="grow"><div class="title">' + esc(tr(x.note || 'Bank payment')) + '</div>' +
         '<div class="meta">' + fmtDate(x.date) + '</div></div><div class="amt">' + inr(x.amount) + '</div></div>' +
-        '<div class="row"><select data-tx-cat="' + esc(x.id) + '" aria-label="' + tr('Category') + '">' + categoryOptions(x.category) + peopleOptionsFor(x) + '</select>' +
+        '<div class="row"><select data-tx-cat="' + esc(x.id) + '" aria-label="' + tr('Category') + '">' + pickerHtml(Core.isIncome(x), x) + '</select>' +
         ((state.cards || []).length || x.paidFrom
           ? '<select data-tx-from="' + esc(x.id) + '" aria-label="' + tr('Paid from') + '">' + paidFromOptions(x.paidFrom) +
             (x.paidFrom && x.paidFrom.indexOf('card:') === 0 ? '<option value="' + esc(x.paidFrom) + '" selected>' + tr('Card ending {last4} (not added)', { last4: esc(x.paidFrom.slice(5)) }) + '</option>' : '') + '</select>'
@@ -2622,6 +2627,15 @@
   // Where: categories against budget, and basics against everything else.
   const WHERE_PERIODS = [['this', 'This round'], ['last', 'Last round'], ['3', '3 rounds'], ['6', '6 rounds']];
 
+  // A category's spending by subcategory, as chips above its payments (only when some have one).
+  function whereSubs(payments) {
+    const by = {};
+    payments.forEach((x) => { const k = x.sub || ''; by[k] = (by[k] || 0) + Core.personalAmt(x); });
+    const keys = Object.keys(by).filter((k) => by[k]);
+    if (!keys.some((k) => k)) return '';
+    return '<div class="chips where-subs">' + keys.sort((a, b) => by[b] - by[a]).map((k) => '<span class="chip">' + esc(k ? tr(k) : tr('Other')) + ' ' + inr(by[k]) + '</span>').join(' ') + '</div>';
+  }
+
   function vizWhere() {
     const period = ui.wherePeriod || 'this';
     const w = Core.spendWhere(state, today(), period);
@@ -2650,7 +2664,7 @@
         (c.budget ? '<i class="viz-budget" style="left:' + ((c.budget / scale) * 100).toFixed(1) + '%"></i>' : '') + '</span>' +
         (ch ? '<span class="viz-change">' + ch + '</span>' : '') + '</button>' +
         (open
-          ? '<div class="where-list">' + c.payments.slice(0, 12).map((x) => '<div class="where-pay"><span>' + esc(x.note || label(c.name)) + ' · ' + fmtDate(x.date) + '</span><span class="amt">' + inr(x.amount) + '</span></div>').join('') +
+          ? '<div class="where-list">' + whereSubs(c.payments) + c.payments.slice(0, 12).map((x) => '<div class="where-pay"><span>' + esc(x.note || label(c.name)) + (x.sub ? ' · ' + esc(tr(x.sub)) : '') + ' · ' + fmtDate(x.date) + '</span><span class="amt">' + inr(x.amount) + '</span></div>').join('') +
             (c.payments.length > 12 ? '<p class="hint">' + tr('Showing the latest 12 of {n}. All of them are in Payments.', { n: c.payments.length }) + '</p>' : '') + '</div>'
           : '');
     });
@@ -2838,7 +2852,7 @@
       '<form id="add-tx" class="form-grid" autocomplete="off">' +
       '<label class="field">' + tr('Amount (₹)') + '<input id="tx-amount" type="number" inputmode="decimal" min="1" max="1000000000" step="any" required placeholder="' + (moneyIn ? '2000' : '250') + '"></label>' +
       (moneyIn ? '' : '<p id="tx-big-warn" class="borrow-warn wide" hidden></p>') +
-      '<label class="field">' + tr('Category') + '<select id="tx-category">' + (moneyIn ? incomeCategoryOptions('Money received') : categoryOptions('Food & dining')) + '</select></label>' +
+      '<label class="field">' + tr('Category') + '<select id="tx-category">' + pickerHtml(moneyIn, null, moneyIn ? 'Money received' : 'Food & dining') + '</select></label>' +
       '<label class="field">' + tr('Date') + '<input id="tx-date" type="date" value="' + t + '" max="' + t + '" required></label>' +
       '<label class="field">' + tr(moneyIn ? 'From' : 'Where / what') + '<input id="tx-note" type="text" placeholder="' + (moneyIn ? 'Rahul' : 'Swiggy') + '"></label>' +
       (!moneyIn && ((state.cards || []).length || (state.wallets || []).length)
@@ -2857,7 +2871,7 @@
       sortCard() +
       importCard() +
       needsCheckCard() +
-      alertsNudge() + iouDueCard() + fixedMatchCard() + refundMatchCard() + passCard() + incomeCard() +
+      alertsNudge() + iouDueCard() + fixedMatchCard() + refundMatchCard() + passCard() + incomeCard() + subSuggestCard() +
       addCard, [
         { key: 'viz-where', group: 'Your spending', icon: 'where', label: 'Where it went', tone: 'mint', viz: 'where', badge: null, html: () => vizCard() },
         { key: 'viz-when', group: 'Your spending', icon: 'when', label: 'When', tone: 'mint', viz: 'when', badge: null, html: () => vizCard() },
@@ -2937,7 +2951,7 @@
         return '<tr' + (r.duplicate || (isIn && Core.looksLikeSalary(state, p)) ? ' class="muted"' : '') + '>' + check +
           '<td><div class="cell-title">' + esc(tr(p.merchant)) + '</div><div class="cell-sub">' + fmtDate(p.date) + (note ? ' · ' + note : '') +
           ' · <button class="link" data-action="sms-skip-like" data-i="' + i + '">' + tr('Skip SMS like this') + '</button></div></td>' +
-          '<td><select data-sms-cat="' + i + '" aria-label="' + tr('Category') + '">' + (isIn ? incomeCategoryOptions(personPick(p.category) ? null : p.category) : categoryOptions(personPick(p.category) ? null : p.category)) + personOptions(isIn, p.category) + '</select></td>' +
+          '<td><select data-sms-cat="' + i + '" aria-label="' + tr('Category') + '">' + pickerHtml(isIn, null, p.sub && !personPick(p.category) && !isSmart(p.category) ? p.category + '|' + p.sub : p.category) + '</select></td>' +
           '<td class="amt' + (isIn ? ' good' : '') + '">' + (isIn ? '+' : '') + inr(p.amount) + '</td></tr>';
       }).join('') +
       '</tbody></table></div>' +
@@ -3086,7 +3100,13 @@
       return true;
     }
     const person = personPick(o.category);
-    const cat = person ? (p.type === 'credit' ? (person.iou ? 'Money returned' : 'Money received') : 'Misc') : o.category || p.category;
+    // A choice that does something (a bill, an EMI, savings, a refund, your own money) is done once the entry is in.
+    const smart = !person && isSmart(o.category) ? o.category : null;
+    const plain = person || smart ? null : Core.splitCat(o.category || p.category);
+    const cat = person ? (p.type === 'credit' ? (person.iou ? 'Money returned' : 'Money received') : 'Misc')
+      : smart ? (p.type === 'credit' ? 'Money received' : 'Misc') : plain.category;
+    // The subcategory: the one chosen, or the shop's own when the category is the one read from the SMS.
+    const sub = plain ? plain.sub || (plain.category === Core.splitCat(p.category).category ? p.sub : null) : null;
     // An EMI booked on a card: kept to offer on the card, never as a payment.
     if (p.type === 'cardemi') {
       if ((state.emiOffers || []).some((x) => x.key === o.key)) return false;
@@ -3132,6 +3152,7 @@
       return true;
     }
     const tx = { id: uid(), date: p.date, amount: p.amount, category: cat, note: o.note || p.merchant, source: 'sms', smsKey: o.key };
+    if (sub && p.type !== 'credit') tx.sub = sub;
     if (paidFrom !== 'account') tx.paidFrom = paidFrom;
     else if (fromWallet) tx.wallet = fromWallet.id;
     // Cash on a credit card: borrowed, and in hand (in the Cash wallet when there is one), not spent yet.
@@ -3176,11 +3197,12 @@
       tx.needsReview = true;
     } else if (!o.noLearn && !person) {
       const shop = Core.normalizeMerchant(tx.note);
-      if (shop && tx.note !== 'Bank payment') state.merchantRules[shop] = tx.category;
+      if (shop && tx.note !== 'Bank payment' && !smart) state.merchantRules[shop] = tx.category + (tx.sub ? '|' + tx.sub : '');
     }
     if (o.source) tx.source = o.source;
     state.transactions.push(tx);
     if (person) linkPerson(tx, person);
+    if (smart) { const msg = applySmart(tx, smart); if (msg) smsNews.push(msg); else tx.needsReview = true; }
     return true;
   }
 
@@ -3194,8 +3216,131 @@
       .concat([[isIn ? '@borrowed' : '@lent', tr(isIn ? 'Borrowed from someone' : 'Lent to someone')]]);
   }
 
+  // ---------- categories with subcategories, and choices that do something ----------
+
+  /*
+   * One list for choosing what a payment is. Money out: each category with its
+   * subcategories ('Bills|Electricity'), then the choices that are more than a
+   * name: a bill, a card bill, a loan's EMI, a fixed payment, savings, and
+   * People. Money in: grouped (earned, friends and family, refunds, loans,
+   * your own money, work, People). The same list goes to the bank-SMS pop-up.
+   * Returns groups: { label, items: [[value, label]] } (label null: no group).
+   */
+  const EARNED_PICK = ['Bonus', 'Overtime', 'Side income', 'Interest'];
+  function pickerGroups(isIn, x) {
+    const linked = x && (x.iouId || x.iouPay || x.passedOn || x.covered || x.eventId || x.claimId || x.maybeId || x.refundOf || x.payoutId ||
+      (Core.isIncome(x) && x.useFor && x.useFor !== 'spend'));
+    const groups = [];
+    if (!isIn) {
+      categories().forEach((c) => {
+        const subs = Core.subcategories(state, c);
+        if (!subs.length) { groups.push({ label: null, items: [[c, label(c)]] }); return; }
+        groups.push({ label: label(c), items: [[c, tr('{name}: anything', { name: label(c) })]].concat(subs.map((s) => [c + '|' + s, tr(s)])) });
+      });
+      if (!linked) {
+        const smart = []
+          .concat((state.bills || []).filter((b) => (Number(b.estimate) || 0) > 0).map((b) => ['@bill:' + b.id, tr('{name} bill (it learns the amount)', { name: b.name })]))
+          .concat((state.cards || []).map((c) => ['@card:' + c.id, tr('Credit card bill: {name}', { name: c.name })]))
+          .concat(Core.emiLoans(state).map((d) => ['@loan:' + d.id, tr('EMI: {name}', { name: d.name })]))
+          .concat((state.fixed || []).map((f) => ['@fixed:' + f.id, tr('Fixed payment: {name}', { name: f.name })]));
+        if (smart.length) groups.push({ label: tr('Bills, cards and EMIs'), items: smart });
+        groups.push({ label: tr('Saved, not spent'), items: [['@save:emergency', tr('Emergency fund')], ['@save:grow', tr('SIP, RD, FD or gold')]]
+          .concat((state.goals || []).filter((g) => !Core.goalStatus(state, g, today()).done).map((g) => ['@save:goal:' + g.id, tr('Goal: {name}', { name: g.name })])) });
+      }
+    } else {
+      groups.push({ label: tr('Earned'), items: EARNED_PICK.map((c) => [c, tr(c)]) });
+      groups.push({ label: tr('Friends and family'), items: ['Gift', 'From family', 'Money received', 'Money returned'].map((c) => [c, tr(c)]) });
+      groups.push({ label: tr('Refunds and cashback'), items: (linked ? [] : [['@refund', tr('Refund or reversal of a payment')]]).concat([['Refund', tr('Refund')], ['Cashback', tr('Cashback')]]) });
+      groups.push({ label: tr('Loans'), items: [[LOAN_CATEGORY, tr(LOAN_CATEGORY)]] });
+      if (!linked) {
+        groups.push({ label: tr('Your own money'), items: [['@fromfund', tr('From your emergency fund')], ['@fromgrow', tr('From your savings, FD or investments')]] });
+        if (Core.reimbView(state).claims.some((c) => !c.closed)) groups.push({ label: tr('Work'), items: [['@reimb', tr('Reimbursement from work')]] });
+      }
+    }
+    if (!linked) groups.push({ label: tr('People'), items: personChoices(isIn) });
+    return groups;
+  }
+  function pickerHtml(isIn, x, value) {
+    const v = value != null ? value : x ? (x.sub ? x.category + '|' + x.sub : x.category) : isIn ? 'Money received' : 'Food & dining';
+    const all = [].concat(...pickerGroups(isIn, x).map((g) => g.items.map((i) => i[0])));
+    const opt = ([val, lab]) => '<option value="' + esc(val) + '"' + (val === v ? ' selected' : '') + '>' + esc(lab) + '</option>';
+    return (all.indexOf(v) === -1 && v ? opt([v, label(Core.splitCat(v).category) + (Core.splitCat(v).sub ? ' › ' + Core.splitCat(v).sub : '')]) : '') +
+      pickerGroups(isIn, x).map((g) => (g.label ? '<optgroup label="' + esc(g.label) + '">' + g.items.map(opt).join('') + '</optgroup>' : g.items.map(opt).join(''))).join('');
+  }
+  // The same, as one flat list for the bank-SMS pop-up: [value, "Group › item"].
+  function pickerFlat(isIn) {
+    return [].concat(...pickerGroups(isIn, null).map((g) => g.items.map(([v, l]) => [v, g.label && l.indexOf(g.label) === -1 ? g.label + ' › ' + l : l])));
+  }
+
+  // Sets a plain choice ('Bills|Electricity' or 'Bills') on an entry, and learns it for the shop.
+  function setCategoryChoice(tx, value, learn) {
+    const c = Core.splitCat(value);
+    tx.category = c.category;
+    if (c.sub) tx.sub = c.sub; else delete tx.sub;
+    delete tx.subNo;
+    if (learn && Core.isFlexible(tx)) {
+      const key = Core.normalizeMerchant(tx.note);
+      if (key && tx.note !== 'Bank payment') state.merchantRules[key] = value;
+    }
+  }
+
+  /*
+   * A choice that does something: done at once, as its own button would do it.
+   * Returns what it did, for the Undo message, or null when it couldn't (the
+   * entry is left as it was).
+   */
+  function isSmart(value) { return /^@(bill|card|loan|fixed|save|refund|fromfund|fromgrow|reimb)\b/.test(String(value || '')); }
+  function applySmart(tx, value) {
+    const [kind, id, more] = String(value).slice(1).split(':');
+    if (kind === 'bill') {
+      const b = (state.bills || []).find((y) => y.id === id);
+      if (!b || !Core.isFlexible(tx)) return null;
+      state.transactions = state.transactions.filter((y) => y !== tx);
+      const paid = Core.payBill(state, b.id, tx.amount, b.everyMonths, tx.date);
+      Object.assign(paid, { note: tx.note || b.name, source: tx.source, smsKey: tx.smsKey });
+      if (tx.wallet) paid.wallet = tx.wallet;
+      return tr('Paid {name} bill: next one expected around {amount}.', { name: b.name, amount: inr(b.estimate) });
+    }
+    if (kind === 'card') {
+      const res = Core.spendToCardPayment(state, tx.id, id);
+      return res ? tr(res.merged ? 'Counted once now: the {name} bill paid on {date}.' : 'Now a {name} bill payment on {date}, counted once.',
+        { name: (state.cards.find((c) => c.id === res.tx.cardId) || {}).name || '', date: fmtDate(res.tx.date) }) : null;
+    }
+    if (kind === 'loan' || kind === 'fixed') {
+      const p = Core.payFixed(state, id, { txId: tx.id });
+      if (!p) return null;
+      return p.emiFor ? tr('EMI recorded: {interest} interest, {principal} off the loan.', { interest: inr(p.emiInterest), principal: inr(p.emiPrincipal) })
+        : tr('Recorded as paid. It won’t be counted again on its due date.');
+    }
+    if (kind === 'save') {
+      if (!Core.isFlexible(tx)) return null;
+      tx.kind = 'move'; tx.category = 'Savings'; delete tx.sub;
+      setIncomeUse(tx, id, null, id === 'goal' ? more : null);
+      tx.needsReview = false;
+      return tr('Saved, not spent: it doesn’t count against your budgets.');
+    }
+    if (!Core.isIncome(tx)) return null;
+    if (kind === 'refund') {
+      tx.category = 'Refund';
+      const m = Core.refundMatches(state, today()).find((y) => y.refund === tx);
+      if (m && Core.linkRefund(state, tx.id, m.buy.id)) return tr('Refund of your {amount} payment on {date}: that purchase is smaller now, not income.', { amount: inr(m.buy.amount), date: fmtDate(m.buy.date) });
+      return tr('Saved as a refund.');
+    }
+    if (kind === 'fromfund' || kind === 'fromgrow') {
+      tx.category = 'Money received';
+      setIncomeUse(tx, kind);
+      return tr('From your own savings: not income.');
+    }
+    if (kind === 'reimb') {
+      const open = Core.reimbView(state).claims.filter((c) => !c.closed).map((c) => c.id);
+      tx.category = 'Money received';
+      return Core.recordPayout(state, tx.id, open) ? tr('Matched to your work claims.') : null;
+    }
+    return null;
+  }
+
   function personPick(category) {
-    if (!category || String(category).charAt(0) !== '@') return null;
+    if (!category || !/^@(iou:|lent$|borrowed$)/.test(String(category))) return null;
     return { iou: category.indexOf('@iou:') === 0 ? category.slice(5) : null };
   }
 
@@ -3451,6 +3596,7 @@
       (state.savings.auto
         ? sv.notes.map((n) => '<p class="hint">' + esc(n) + '</p>').join('')
         : '<div class="row"><span class="hint">' + tr('You set these amounts.') + '</span><button class="ghost" data-action="savings-auto">' + tr('Work them out for me') + '</button></div>') + '</section>' },
+        { key: 'categories', group: 'Your plan', icon: 'list', label: 'Categories', tone: 'amber', badge: null, html: () => categoriesPage() },
         { key: 'budgets', group: 'Your plan', icon: 'sliders', label: 'Flexible budgets', tone: 'amber', badge: { text: shortInr(sharedOut) }, html: () =>
       '<section class="card"><div class="card-head">' + titled('Flexible budgets', 'flex') + '<span class="hint">' + tr('{amount} to spend this month', { amount: inr(Math.max(0, alloc.pool)) }) + '</span></div>' +
       '<div class="edit-rows">' + alloc.budgets.map((b) => {
@@ -3830,6 +3976,39 @@
   }
 
   // Home → Maybe expenses: what's held, what today's limit would be if the maybe ones come, and the list.
+  // Plan → Categories: each category's subcategories; add your own, hide the ones you don't use.
+  function categoriesPage() {
+    const sc = state.subcats || {};
+    const cats = categories().filter((c) => ['Emergency', 'Cash', 'Savings'].indexOf(c) === -1);
+    return '<section class="card cats-card"><div class="card-head">' + titled('Categories', 'cats') + '</div>' +
+      '<p class="hint">' + tr('A second level for detail in your reports: Bills → Electricity, Food & dining → Food delivery. Budgets stay on the category.') + '</p>' +
+      cats.map((c, i) => {
+        const subs = Core.subcategories(state, c);
+        const hidden = ((sc.hide || {})[c] || []).filter((n) => (Core.SUBCATS[c] || []).indexOf(n) !== -1);
+        return '<div class="cat-block"><h3>' + esc(label(c)) + '</h3><div class="chips">' +
+          (subs.length ? subs.map((s) => '<span class="chip">' + esc(tr(s)) + ' <button class="link small" data-action="sub-hide" data-cat="' + esc(c) + '" data-sub="' + esc(s) + '" aria-label="' + esc(tr('Remove {name}', { name: tr(s) })) + '">✕</button></span>').join(' ')
+            : '<span class="hint">' + tr('No subcategories') + '</span>') + '</div>' +
+          (hidden.length ? '<p class="hint">' + tr('Hidden:') + ' ' + hidden.map((s) => '<button class="link small" data-action="sub-unhide" data-cat="' + esc(c) + '" data-sub="' + esc(s) + '">' + esc(tr(s)) + ' ↺</button>').join(' ') + '</p>' : '') +
+          '<div class="row"><input type="text" id="sub-new-' + i + '" maxlength="30" placeholder="' + esc(tr('Add one, like Gym or Maid')) + '" aria-label="' + esc(tr('New subcategory under {name}', { name: label(c) })) + '">' +
+          '<button class="ghost small" data-action="sub-add" data-cat="' + esc(c) + '" data-i="' + i + '">' + tr('Add') + '</button></div></div>';
+      }).join('') + '</section>';
+  }
+
+  // Old payments whose shop tells the subcategory: suggested, never changed without a yes.
+  function subSuggestCard() {
+    if (state.subAskOff) return '';
+    const list = Core.subSuggestions(state);
+    if (!list.length) return '';
+    const row = (x) => '<div class="list-item"><div class="grow"><div class="title">' + esc(x.tx.note || label(x.tx.category)) + ' · ' + inr(x.tx.amount) + '</div>' +
+      '<div class="meta">' + fmtDate(x.tx.date) + ' · ' + esc(label(x.tx.category)) + ' → <b>' + esc(tr(x.sub)) + '</b></div></div>' +
+      '<button class="ghost small" data-action="sub-yes" data-id="' + esc(x.tx.id) + '" data-sub="' + esc(x.sub) + '">' + tr('Yes') + '</button>' +
+      '<button class="ghost small" data-action="sub-no" data-id="' + esc(x.tx.id) + '">' + tr('No') + '</button></div>';
+    return '<section class="card income-card sub-suggest"><div class="card-head"><h2>' + tr(list.length === 1 ? 'Add detail to 1 payment?' : 'Add detail to {n} payments?', { n: list.length }) + '</h2></div>' +
+      '<p class="hint">' + tr('From the shop name. Nothing changes until you say yes.') + '</p><div class="list">' + list.slice(0, 3).map(row).join('') + '</div>' +
+      '<div class="row">' + (list.length > 1 ? '<button class="primary" data-action="sub-all">' + tr('Yes to all {n}', { n: list.length }) + '</button>' : '') +
+      '<button class="ghost" data-action="sub-off">' + tr('Stop asking') + '</button></div></section>';
+  }
+
   // ---------- trips and events ----------
 
   const dateSpan = (a, b) => (a === b ? fmtDate(a) : fmtDate(a) + ' – ' + fmtDate(b));
@@ -4177,7 +4356,7 @@
       (locked ? '' : field('edit-amount', 'Amount (₹)', '<input id="edit-amount" type="number" inputmode="decimal" min="1" max="1000000000" step="any" value="' + esc(x.amount) + '">') +
         field('edit-date', 'Date', '<input id="edit-date" type="date" max="' + t + '" value="' + esc(x.date) + '">')) +
       field('edit-note', isIn ? 'From' : 'Where / what', '<input id="edit-note" type="text" value="' + esc(x.note || '') + '">') +
-      (flex || isIn ? field('edit-cat', 'Category', '<select id="edit-cat">' + (isIn ? incomeCategoryOptions(x.category) : categoryOptions(x.category)) + '</select>') : '') +
+      (flex || isIn ? field('edit-cat', 'Category', '<select id="edit-cat">' + pickerHtml(isIn, x) + '</select>') : '') +
       (flex && ((state.cards || []).length || (state.wallets || []).length) ? '<label class="field wide" for="edit-from"><span>' + tr('Paid from') + '</span><select id="edit-from">' + fromOptions(x) + '</select></label>' : '') +
       ((isIn || saved) && (state.wallets || []).length ? '<label class="field wide" for="edit-from"><span>' + tr(isIn ? 'Into' : 'From') + '</span><select id="edit-from">' + intoOptions(x) + '</select></label>' : '') +
       '</div>' +
@@ -4271,13 +4450,16 @@
       x.date = date;
     }
     x.note = note;
-    const cat = val('edit-cat');
-    if (cat && cat !== x.category) {
-      x.category = cat;
+    const choice = val('edit-cat');
+    // A choice that does something (a bill, an EMI, savings, People) is done once the rest is saved.
+    const later = choice && (isSmart(choice) || personPick(choice)) ? choice : null;
+    const cat = later ? null : choice;
+    if (cat && cat !== (x.sub ? x.category + '|' + x.sub : x.category)) {
+      setCategoryChoice(x, cat, false);
       if (Core.isIncome(x)) {
-        x.borrowed = cat === LOAN_CATEGORY;
+        x.borrowed = x.category === LOAN_CATEGORY;
         if (x.borrowed && !x.useFor) x.useFor = 'spend';
-      } else if (cat === 'Savings' && Core.isFlexible(x)) {
+      } else if (x.category === 'Savings' && Core.isFlexible(x)) {
         x.kind = 'move';
         x.useFor = null;
       } else {
@@ -4306,10 +4488,17 @@
       Core.reimbForget(state, x);
       if (ids.length) Core.recordPayout(state, x.id, ids);
     }
+    let said = 'Saved';
+    if (later && personPick(later)) { linkPerson(x, personPick(later)); said = smsNews.join(' · ') || said; smsNews = []; }
+    else if (later) {
+      const msg = applySmart(x, later);
+      if (!msg) { ui.editError = tr('That doesn’t fit this entry.'); state = JSON.parse(before); render(); return; }
+      said = msg;
+    }
     ui.editTx = null; ui.editError = '';
     save();
     rerenderKeepScroll();
-    offerUndo('Saved', before);
+    offerUndo(said, before);
   }
 
   // Undo: the state just before a change, usable only while nothing else has changed since.
@@ -4390,7 +4579,7 @@
     const cat = Core.isTransfer(x) ? esc(walletName(x.from)) + ' → ' + esc(walletName(x.to))
       : x.emiFor ? esc(tr('Loan EMI')) : x.fixedId ? esc(tr('Fixed payment'))
       : edit && !saved && !Core.isBillPayment(x) && !Core.isCardTransfer(x)
-      ? '<select data-tx-cat="' + esc(x.id) + '" aria-label="' + tr('Category') + '">' + (isIn ? incomeCategoryOptions(x.category) : categoryOptions(x.category)) + peopleOptionsFor(x) + '</select>'
+      ? '<select data-tx-cat="' + esc(x.id) + '" aria-label="' + tr('Category') + '">' + pickerHtml(isIn, x) + '</select>'
       : saved ? esc(x.useFor ? tr('Saved → {place}', { place: savedWhere(x) }) : tr('Saved: choose where it goes'))
         : esc(label(Core.isCardTransfer(x) ? 'Card' : Core.isBillPayment(x) ? 'Bills' : x.category || ''));
     const sub = cat + ' · ' + fmtDate(x.date) +
@@ -6673,6 +6862,42 @@
         save(); rerenderKeepScroll(); offerUndo(tr('Not a fixed payment any more'), before);
         return;
       }
+      // Subcategories
+      case 'sub-add': {
+        const c = btn.dataset.cat;
+        const el = document.getElementById('sub-new-' + btn.dataset.i);
+        const name = (el && el.value || '').trim().replace(/\|/g, '/').slice(0, 30);
+        if (!name) return;
+        state.subcats = state.subcats || {};
+        const add = (state.subcats.add = state.subcats.add || {});
+        const hide = (state.subcats.hide = state.subcats.hide || {});
+        hide[c] = (hide[c] || []).filter((n) => n !== name);
+        if (Core.subcategories(state, c).indexOf(name) === -1) add[c] = (add[c] || []).concat(name);
+        save(); break;
+      }
+      case 'sub-hide': case 'sub-unhide': {
+        const c = btn.dataset.cat, n = btn.dataset.sub;
+        state.subcats = state.subcats || {};
+        const add = (state.subcats.add = state.subcats.add || {});
+        const hide = (state.subcats.hide = state.subcats.hide || {});
+        if (btn.dataset.action === 'sub-unhide') hide[c] = (hide[c] || []).filter((x) => x !== n);
+        else if ((add[c] || []).indexOf(n) !== -1) add[c] = add[c].filter((x) => x !== n);
+        else hide[c] = (hide[c] || []).concat(n);
+        save(); break;
+      }
+      case 'sub-yes': case 'sub-no': {
+        const x = state.transactions.find((y) => y.id === btn.dataset.id);
+        if (!x) return;
+        if (btn.dataset.action === 'sub-yes') x.sub = btn.dataset.sub; else x.subNo = true;
+        save(); break;
+      }
+      case 'sub-all': {
+        const before = JSON.stringify(state);
+        const list = Core.subSuggestions(state);
+        list.forEach((y) => { y.tx.sub = y.sub; });
+        save(); rerenderKeepScroll(); offerUndo(tr('{n} payments now have a subcategory', { n: list.length }), before); return;
+      }
+      case 'sub-off': state.subAskOff = true; save(); break;
       // Trips and events
       case 'ev-form': ui.evForm = true; ui.evError = ''; break;
       case 'ev-form-cancel': ui.evForm = false; ui.evError = ''; ui.evFromTx = null; break;
@@ -7700,8 +7925,16 @@
         smsNews = [];
         return;
       }
-      tx.category = el.value;
-      if (el.value === 'Savings' && Core.isFlexible(tx)) {
+      if (isSmart(el.value)) {
+        const before = JSON.stringify(state);
+        const msg = applySmart(tx, el.value);
+        if (!msg) { state = JSON.parse(before); toast(tr('That doesn’t fit this entry.')); rerenderKeepScroll(); return; }
+        tx.needsReview = false;
+        save(); rerenderKeepScroll(); offerUndo(msg, before); return;
+      }
+      const chosen = el.value;
+      setCategoryChoice(tx, chosen, false);
+      if (tx.category === 'Savings' && Core.isFlexible(tx)) {
         tx.kind = 'move';
         tx.useFor = null;
         tx.needsReview = true;
@@ -7714,8 +7947,8 @@
         save(); rerenderKeepScroll(); return;
       }
       const key = Core.normalizeMerchant(tx.note);
-      if (key) state.merchantRules[key] = el.value;
-      save(); toast(key ? tr('Saved. Future payments to {shop} will go to {category}.', { shop: tx.note, category: label(el.value) }) : tr('Saved')); return;
+      if (key) state.merchantRules[key] = chosen;
+      save(); toast(key ? tr('Saved. Future payments to {shop} will go to {category}.', { shop: tx.note, category: label(tx.category) + (tx.sub ? ' › ' + tr(tx.sub) : '') }) : tr('Saved')); return;
     }
     if (el.dataset.smsCheck !== undefined) { ui.smsRows[Number(el.dataset.smsCheck)].checked = el.checked; rerenderKeepScroll(); return; }
     if (el.dataset.smsCat !== undefined) { ui.smsRows[Number(el.dataset.smsCat)].parsed.category = el.value; return; }
@@ -7830,8 +8063,11 @@
     const amount = Math.round(Number(document.getElementById('tx-amount').value) || 0);
     if (amount <= 0) return;
     const note = document.getElementById('tx-note').value.trim();
-    const category = document.getElementById('tx-category').value;
+    const choice = document.getElementById('tx-category').value;
+    const special = isSmart(choice) || personPick(choice) ? choice : null;
+    const category = special ? (ui.txKind === 'in' ? 'Money received' : 'Misc') : Core.splitCat(choice).category;
     const tx = { id: uid(), date: document.getElementById('tx-date').value || today(), amount, category, note, source: 'manual' };
+    if (!special && Core.splitCat(choice).sub) tx.sub = Core.splitCat(choice).sub;
     if (ui.txKind === 'in') {
       tx.kind = 'in';
       tx.useFor = null;
@@ -7841,7 +8077,16 @@
     const from = document.getElementById(ui.txKind === 'in' ? 'tx-into' : 'tx-from');
     if (from) setFrom(tx, from.value);
     const wasOver = Core.projectRunway(state, today()).overToday > 0;
+    const beforeAdd = JSON.stringify(state);
     state.transactions.push(tx);
+    if (special) {
+      if (personPick(special)) { if (tx.kind === 'in') tx.useFor = 'spend'; linkPerson(tx, personPick(special)); }
+      const msg = personPick(special) ? smsNews.join(' · ') : applySmart(tx, special);
+      smsNews = [];
+      save(); rerenderKeepScroll();
+      if (msg) offerUndo(msg, beforeAdd); else toast(tr('{amount} added', { amount: inr(amount) }));
+      return;
+    }
     save();
     sound(ui.txKind !== 'in' && !wasOver && tx.date === today() && Core.projectRunway(state, today()).overToday > 0 ? 'low' : 'tick');
     toast(ui.txKind === 'in' ? (tx.borrowed ? tr('{amount} added as borrowed money', { amount: inr(amount) }) : tr('{amount} received. Choose what it should do.', { amount: inr(amount) }))
@@ -8345,8 +8590,9 @@
   // Gives the notification pop-up the same categories and learned shops as the app.
   function syncAlerts() {
     if (!SmsInbox || !state.smsAlerts) return;
-    const out = categories().filter((c) => c !== 'Emergency').map((c) => [c, label(c)]).concat(personChoices(false));
-    const inn = INCOME_CATEGORIES.map((c) => [c, label(c)]).concat(personChoices(true));
+    // The same choices as in the app: subcategories, bills, card bills, EMIs, savings, your own money and People.
+    const out = pickerFlat(false).filter((c) => c[0] !== 'Emergency');
+    const inn = pickerFlat(true);
     const payload = {
       categories: out.map((c) => c[0]),
       categoryLabels: out.map((c) => c[1]),

@@ -4209,6 +4209,7 @@
     });
     if (!s.savings || typeof s.savings !== 'object') delete s.savings;
     if (s.reimb != null && (typeof s.reimb !== 'object' || !Array.isArray(s.reimb.claims || []) || !Array.isArray(s.reimb.payouts || []))) delete s.reimb;
+    if (s.subcats != null && (typeof s.subcats !== 'object' || Array.isArray(s.subcats))) delete s.subcats;
     if (s.events) s.events = s.events.filter((e) => e && e.id && Array.isArray(e.people) && Array.isArray(e.items) && okDate(e.from) && okDate(e.to))
       .map((e) => Object.assign({}, e, { budget: Math.max(0, Math.round(Number(e.budget) || 0)),
         items: e.items.filter((it) => it && it.id && okDate(it.date) && it.shares && typeof it.shares === 'object' && Number(it.total) > 0) }));
@@ -4465,6 +4466,88 @@
     ['Savings', ['=jar', 'changejar', 'groww', 'zerodha', 'kuvera', 'upstox', 'paytm money', 'indmoney', 'etmoney', 'mutual fund', '=sip', '=nps', '=ppf', 'recurring deposit', 'fixed deposit', 'safegold', 'digigold', 'digital gold', 'augmont', 'gullak']],
   ];
 
+  /*
+   * Subcategories: a second level under a spending category, for detail in
+   * reports (Bills → Electricity, Food & dining → Food delivery). Budgets
+   * stay on the category. Defaults below; the person can add their own and
+   * hide any: state.subcats = { add: { category: [names] }, hide: { category: [names] } }.
+   * A choice or a learned shop rule is stored as 'Category|Sub'.
+   */
+  const SUBCATS = {
+    Groceries: ['Vegetables & fruit', 'Milk & dairy', 'Kirana', 'Supermarket & apps'],
+    'Food & dining': ['Eating out', 'Food delivery', 'Tea & snacks'],
+    Travel: ['Fuel', 'Auto & cab', 'Metro & bus', 'Train & flight', 'Parking & toll'],
+    Shopping: ['Clothes & shoes', 'Electronics', 'Home items'],
+    Entertainment: ['Movies & outings', 'Streaming & apps', 'Hobbies'],
+    Health: ['Doctor', 'Medicines', 'Tests', 'Health insurance'],
+    'Personal care': ['Salon & grooming', 'Products'],
+    Family: ['Given to family', 'Kids', 'Parents', 'Domestic help'],
+    Gifts: ['Gift given', 'Wedding & functions', 'Donations'],
+    Bills: ['Electricity', 'Water', 'Gas', 'Mobile recharge', 'Internet & DTH', 'Rent', 'Society maintenance', 'Bank charges'],
+    Education: ['School & college fees', 'Courses', 'Books'],
+  };
+  // Shop words that tell the subcategory, within the category the payment already has. "=" means a whole word.
+  const SUB_KEYWORDS = [
+    ['Food & dining', 'Food delivery', ['swiggy', 'zomato', 'eatsure']],
+    ['Food & dining', 'Tea & snacks', ['chai', '=tea', 'chaayos', 'snacks', 'bakery']],
+    ['Food & dining', 'Eating out', ['restaurant', 'cafe', 'dhaba', 'dominos', 'pizza', 'mcdonald', 'kfc', 'starbucks', 'hotel']],
+    ['Groceries', 'Supermarket & apps', ['bigbasket', 'blinkit', 'zepto', 'dmart', 'jiomart', 'instamart', 'reliance fresh', 'more retail', 'grofers']],
+    ['Groceries', 'Milk & dairy', ['milk', 'dairy', 'amul', 'gokul', 'mother dairy']],
+    ['Groceries', 'Vegetables & fruit', ['vegetable', 'sabzi', 'fruit']],
+    ['Groceries', 'Kirana', ['kirana', 'general store', 'provision']],
+    ['Travel', 'Fuel', ['petrol', 'fuel', 'hpcl', 'iocl', 'bpcl', 'indian oil', 'bharat petroleum', 'shell']],
+    ['Travel', 'Auto & cab', ['uber', '=ola', 'rapido', 'auto', 'taxi', 'cab']],
+    ['Travel', 'Metro & bus', ['metro', 'redbus', '=bus', 'best', 'msrtc', 'ksrtc']],
+    ['Travel', 'Train & flight', ['irctc', 'indigo', 'air india', 'vistara', 'akasa', 'spicejet', 'makemytrip', 'goibibo', 'cleartrip', 'ixigo']],
+    ['Travel', 'Parking & toll', ['fastag', 'parking', 'toll']],
+    ['Shopping', 'Clothes & shoes', ['myntra', 'ajio', 'trends', 'max fashion', 'westside', 'pantaloons', 'bata', 'zudio']],
+    ['Shopping', 'Electronics', ['croma', 'reliance digital', 'vijay sales', 'electronics']],
+    ['Entertainment', 'Movies & outings', ['bookmyshow', 'pvr', 'inox', 'cinepolis']],
+    ['Entertainment', 'Streaming & apps', ['netflix', 'spotify', 'hotstar', 'prime video', 'youtube', 'sonyliv', 'zee5', 'jiocinema']],
+    ['Health', 'Medicines', ['pharmacy', 'medical', 'chemist', 'medplus', '1mg', 'pharmeasy', 'netmeds', 'apollo pharmacy']],
+    ['Health', 'Tests', ['diagnostic', 'pathology', '=lab', 'thyrocare', 'lal path', 'metropolis']],
+    ['Health', 'Doctor', ['clinic', 'hospital', 'doctor', '=dr']],
+    ['Personal care', 'Salon & grooming', ['salon', 'parlour', 'barber', 'urban company', 'spa']],
+    ['Bills', 'Electricity', ['electricity', 'bescom', 'msedcl', 'mahavitaran', 'tata power', 'adani electricity', 'torrent power', 'tneb', 'bses', 'mseb']],
+    ['Bills', 'Gas', ['indane', 'hp gas', 'bharatgas', 'bharat gas', 'mahanagar gas', 'igl', 'adani gas', 'gujarat gas']],
+    ['Bills', 'Water', ['water', 'jal board', 'municipal']],
+    ['Bills', 'Mobile recharge', ['recharge', 'airtel', '=jio', 'vodafone', '=vi', 'bsnl']],
+    ['Bills', 'Internet & DTH', ['broadband', 'fibernet', 'fiber', 'tata play', 'dish tv', 'd2h', 'airtel dth', 'hathway']],
+    ['Bills', 'Society maintenance', ['maintenance', 'society']],
+    ['Education', 'School & college fees', ['school', 'college', 'university', 'fees']],
+    ['Education', 'Courses', ['udemy', 'coursera', 'byju', 'unacademy', 'course', 'class']],
+  ];
+  function subcategories(state, category) {
+    const sc = (state && state.subcats) || {};
+    const hide = ((sc.hide || {})[category]) || [];
+    return (SUBCATS[category] || []).concat(((sc.add || {})[category]) || []).filter((n, i, a) => a.indexOf(n) === i && hide.indexOf(n) === -1);
+  }
+  // 'Bills|Electricity' → { category: 'Bills', sub: 'Electricity' }.
+  function splitCat(v) {
+    const s = String(v || '');
+    const i = s.indexOf('|');
+    return i < 0 ? { category: s, sub: null } : { category: s.slice(0, i), sub: s.slice(i + 1) || null };
+  }
+  function guessSub(t) {
+    const lower = String(t.note || '').toLowerCase();
+    const hit = SUB_KEYWORDS.find(([cat, , words]) => cat === t.category && words.some((w) => keywordMatches(lower, w)));
+    return hit ? hit[1] : null;
+  }
+  // Payments with no subcategory where the shop tells one: offered, never applied without a yes.
+  function subSuggestions(state) {
+    return state.transactions.filter((t) => isFlexible(t) && !t.sub && !t.subNo && !t.eventId)
+      .map((t) => ({ tx: t, sub: guessSub(t) })).filter((x) => x.sub && subcategories(state, x.tx.category).indexOf(x.sub) !== -1)
+      .sort((a, b) => (a.tx.date < b.tx.date ? 1 : -1));
+  }
+  // A category this round, by subcategory (what's left without one is "other").
+  function subBreakdown(state, todayIso, category) {
+    const cyc = cycleFor(todayIso, Number(state.settings.payday) || 1);
+    const out = {};
+    spendInRange(state.transactions, cyc).filter((t) => t.date <= todayIso && t.category === category)
+      .forEach((t) => { const k = t.sub || ''; out[k] = (out[k] || 0) + personalAmt(t); });
+    return Object.keys(out).map((k) => ({ sub: k || null, spent: Math.round(out[k]) })).filter((x) => x.spent).sort((a, b) => b.spent - a.spent);
+  }
+
   function keywordMatches(lower, w) {
     return w[0] === '=' ? new RegExp('\\b' + w.slice(1) + '\\b').test(lower) : lower.indexOf(w) !== -1;
   }
@@ -4504,9 +4587,16 @@
     });
   }
 
+  // The subcategory for a shop: the learned one, else from its name (null when it doesn't tell).
+  function subOf(text, rules) {
+    const key = normalizeMerchant(text);
+    if (rules && key && rules[key]) return splitCat(rules[key]).sub;
+    return guessSub({ note: text, category: categorize(text, rules) });
+  }
   function categorize(text, rules) {
     const key = normalizeMerchant(text);
-    if (rules && key && rules[key]) return rules[key];
+    // A learned rule may carry a subcategory ('Bills|Electricity'): the category is the part before it.
+    if (rules && key && rules[key]) return splitCat(rules[key]).category;
     const lower = String(text || '').toLowerCase();
     for (const [cat, words] of CATEGORY_KEYWORDS) {
       if (words.some((w) => keywordMatches(lower, w))) return cat;
@@ -4724,6 +4814,7 @@
       merchant: merchant || 'Bank payment',
       date: dateOf(t),
       category: self ? 'Savings' : atm ? 'Cash' : categorize(merchant || t, rules),
+      sub: self || atm ? null : subOf(merchant || t, rules),
       paidFrom, last4, acct, atm: atm && !onCard,
       // Cash from an ATM on a credit card: borrowed on the card (interest from day one), not spending.
       cashAdvance: atm && onCard,
@@ -4757,6 +4848,7 @@
     insights, simulateDebts, compareDebtPlans, debtFreeDates, emergencyPlan, parseSms,
     splitSmsBatch, smsKey, categorize, normalizeMerchant, sinkingMonthly, inCycle,
     spendInRange, incomeInRange, incomeKept, isIncome, isMove, isBillPayment, isFixedPayment, isCashAdvance, emiLoans,
+    personalAmt, SUBCATS, subcategories, splitCat, guessSub, subOf, subSuggestions, subBreakdown,
     addEvent, editEvent, splitShares, addEventExpense, removeEventExpense, eventForgetTx, deleteEvent, eventBalances, settleEvent, settleCandidates, tripHeld, eventView, eventStatement,
     cutOptions, weekTarget, fitWeekGoal, rupeeAmounts, checkAdviceNumbers,
     linkRefund, unlinkRefund, forgetRefunds, refundMatches, isEarned, earnedIn, fixedPaidFor, fixedDueFor, payFixed, unpayFixed, fixedMatches, isFlexible, incomeOptions,
