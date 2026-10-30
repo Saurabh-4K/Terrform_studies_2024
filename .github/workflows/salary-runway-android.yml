@@ -1,11 +1,11 @@
 name: Hisab Se Android APK
 
-# One release a week: Sunday 10:21 UTC (about 3:51 PM in India).
+# One release a week: Sunday 04:30 UTC, which is 10:00 AM in India.
 # Pushes don't build. Use "Run workflow" on the Actions tab for an urgent build,
 # or untick "release" to only check that the app compiles.
 on:
   schedule:
-    - cron: '21 10 * * 0'
+    - cron: '30 4 * * 0'
   workflow_dispatch:
     inputs:
       release:
