@@ -8460,17 +8460,32 @@
   });
 
   document.addEventListener('keydown', (ev) => {
-    if (ev.key === 'Escape' && ui.explain) { ui.explain = null; rerenderKeepScroll(); }
-    else if (ev.key === 'Escape' && document.getElementById('onboard-card')) { ui.onboardHidden = true; rerenderKeepScroll(); }
-    else if (ev.key === 'Escape' && ui.help) { ui.helpFrom = ui.help; ui.help = null; rerenderKeepScroll(); }
-    else if (ev.key === 'Escape' && ui.borrow) { ui.borrow = null; rerenderKeepScroll(); }
-    else if (ev.key === 'Escape' && document.getElementById('report-card')) { ui.report = false; ui.reportHidden = true; ui.reportThenPay = false; rerenderKeepScroll(); }
-    else if (ev.key === 'Escape' && ui.reset) { ui.reset = null; rerenderKeepScroll(); }
-    else if (ev.key === 'Escape' && ui.editTx) { ui.editTx = null; rerenderKeepScroll(); }
-    else if (ev.key === 'Escape' && ui.tour) tourEnd();
-    else if (ev.key === 'Escape' && ui.page) { if (history.state && history.state.page) history.back(); else closePage(); }
-    else if (ev.key === 'Escape' && tab === 'profile') { if (history.state && history.state.profile) history.back(); else closeProfile(); }
+    if (ev.key === 'Escape') goBack(false);
   });
+
+  /*
+   * Back, the same everywhere: Escape, the app's own back, and the phone's
+   * back button (MainActivity asks here first). It closes what's open: a
+   * pop-up or explanation, then a page, then Profile; with tabs, another tab
+   * goes back to Runway. Returns false when there's nothing to close, and
+   * the phone then leaves the app as usual.
+   */
+  function goBack(tabs) {
+    if (locked) return false;
+    if (ui.explain) { ui.explain = null; rerenderKeepScroll(); return true; }
+    if (document.getElementById('onboard-card') && !ui.onboardHidden) { ui.onboardHidden = true; rerenderKeepScroll(); return true; }
+    if (ui.help) { ui.helpFrom = ui.help; ui.help = null; rerenderKeepScroll(); return true; }
+    if (ui.borrow) { ui.borrow = null; rerenderKeepScroll(); return true; }
+    if (document.getElementById('report-card')) { ui.report = false; ui.reportHidden = true; ui.reportThenPay = false; rerenderKeepScroll(); return true; }
+    if (ui.reset) { ui.reset = null; rerenderKeepScroll(); return true; }
+    if (ui.editTx) { ui.editTx = null; rerenderKeepScroll(); return true; }
+    if (ui.tour) { tourEnd(); return true; }
+    if (ui.page) { if (history.state && history.state.page) history.back(); else closePage(); return true; }
+    if (tab === 'profile') { if (history.state && history.state.profile) history.back(); else closeProfile(); return true; }
+    if (tabs && tab !== 'home') { setTab('home'); return true; }
+    return false;
+  }
+  window.hisabBack = () => goBack(true);
 
   window.addEventListener('hashchange', () => {
     const h = (location.hash || '').replace('#', '');

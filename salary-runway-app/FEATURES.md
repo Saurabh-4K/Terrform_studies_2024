@@ -252,6 +252,8 @@ On the two-row widget the zone replaces the app name. On the one-row widget it r
 
 ## Layout: essentials open, the rest as icons
 Every tab keeps what always matters open, and shows its other cards as small icons in groups, four to a row. Tap an icon and that card opens as its own page; **Back** (or the phone's back button) returns to the icons.
+
+**The phone's back button works like the app's Back** (`MainActivity` asks the app first; `goBack()` in app.js, the same steps as Escape): it closes an open pop-up or explanation, then the page, then Profile; on Spend, Plan, Debts or Grow it goes to Runway. Only on Runway with nothing open does it leave the app.
 - **Always open:**
   - Runway: today's limit with the zone, and Days of Freedom
   - Spend: the form to add a payment
