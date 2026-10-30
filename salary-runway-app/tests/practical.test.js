@@ -136,3 +136,28 @@ test('a sum of two facts counts only when the line shows it', () => {
   // About a week of a daily amount, rounded
   assert.equal(Core.checkAdviceNumbers(step('₹765 a day is about ₹5,400 a week'), facts).dropped, 0);
 });
+
+test('no usual week until three weeks are recorded: the facts don\'t call anything "above a usual ₹0"', () => {
+  const s = household(30000);
+  s.transactions = s.transactions.filter((t) => t.date >= '2026-10-10');
+  const f = Core.planFacts(s, T, null);
+  assert.match(f, /No usual week yet/);
+  assert.doesNotMatch(f, /usual ₹0\)/);
+  // Four weeks recorded: the usual week is there
+  assert.match(Core.planFacts(household(30000), T, null), /against the usual week \(average of the [34] weeks before\)/);
+});
+
+test('extra on loans only when the app\'s plan puts money there: other loan steps are left out', () => {
+  const s = household(2000);
+  s.debts = [{ id: 'c', name: 'Card EMI', balance: 20000, rate: 22, minPayment: 6000, dueDay: 3 }];
+  const plan = { sections: [{ kind: 'loans', title: 'Loans', steps: [
+    { action: 'Pay every minimum on time', why: 'late fees', amount: null, basis: 'numbers' },
+    { action: 'Pay the ₹6,000 EMI', why: 'due', amount: 6000, basis: 'numbers' },
+    { action: 'Put ₹1,000 extra on the card EMI', why: 'costly', amount: 1000, basis: 'numbers' }] }] };
+  const g = Core.guardExtraLoans(plan, s, T);
+  assert.equal(g.dropped, 1);
+  assert.deepEqual(g.plan.sections[0].steps.map((x) => x.amount), [null, 6000]);
+  // A plan with only the extra step loses the section
+  const only = { sections: [{ kind: 'loans', title: 'Loans', steps: [plan.sections[0].steps[2]] }] };
+  assert.equal(Core.guardExtraLoans(only, s, T).plan.sections.length, 0);
+});

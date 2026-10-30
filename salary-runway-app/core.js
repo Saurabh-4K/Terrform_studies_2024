@@ -3540,11 +3540,17 @@
     const week = byCategory(flex.filter((t) => t.date >= from && t.date <= todayIso));
     const before = byCategory(flex.filter((t) => t.date >= addDays(from, -28) && t.date < from));
     const cats = Object.keys(Object.assign({}, week, before));
-    if (cats.length) {
-      L.push('Spending, last 7 days against the usual week (average of the 4 weeks before): ' + cats
-        .map((c) => ({ c, now: week[c] || 0, usual: (before[c] || 0) / 4 }))
+    // The usual week: only from weeks really recorded (a "usual ₹0" from no records would mislead).
+    const firstTx = state.transactions.reduce((m, t) => (!m || t.date < m ? t.date : m), null);
+    const weeks = firstTx ? Math.min(4, Math.floor(daysBetween(firstTx > addDays(from, -28) ? firstTx : addDays(from, -28), from) / 7)) : 0;
+    if (cats.length && weeks >= 3) {
+      L.push('Spending, last 7 days against the usual week (average of the ' + weeks + ' weeks before): ' + cats
+        .map((c) => ({ c, now: week[c] || 0, usual: (before[c] || 0) / weeks }))
         .sort((a, b) => b.now - a.now).slice(0, 8)
         .map((x) => x.c + ' ' + R(x.now) + ' (usual ' + R(x.usual) + ')').join('; ') + '.');
+    } else if (Object.keys(week).length) {
+      L.push('Spending, last 7 days: ' + Object.keys(week).sort((a, b) => week[b] - week[a]).slice(0, 8).map((c) => c + ' ' + R(week[c])).join('; ') +
+        '. No usual week yet (fewer than 3 weeks recorded before this one): do not compare with a usual amount or call anything above usual.');
     }
     const small = flex.filter((t) => t.date >= from && t.amount < 200);
     if (small.length) L.push('Small payments under ₹200 this week: ' + small.length + ', together ' + R(sum(small, (t) => t.amount)) + '.');
@@ -4189,6 +4195,30 @@
     (out.sections || []).filter((sec) => sec.kind === 'save').forEach((sec) => (sec.steps || []).forEach((st) => { const n = hit(st.action + ' ' + st.why); if (n) st.protect = n; }));
     if (out.diagnosis) (out.diagnosis.actions || []).forEach((a) => { const n = hit(a.action + ' ' + a.changes); if (n) a.protect = n; });
     return out;
+  }
+
+  /*
+   * Extra on loans only when the app's own plan puts money there this round
+   * (its step on the ladder, and not short): otherwise a loans step with an
+   * amount other than a minimum or EMI (or their total) is left out, whatever
+   * the AI wrote. Paying every minimum on time always stays.
+   */
+  function guardExtraLoans(plan, state, todayIso) {
+    if (!plan) return { plan, dropped: 0 };
+    const wi = whatIf(state, todayIso);
+    const fe = feasibility(state, todayIso);
+    if (wi.debt && wi.debt.extra > 0 && fe.status !== 'short') return { plan, dropped: 0 };
+    const mins = (state.debts || []).map((d) => Math.round(Number(d.minPayment) || 0)).filter((n) => n > 0);
+    const ok = new Set(mins.concat([sum(mins, (n) => n)]));
+    let dropped = 0;
+    const out = JSON.parse(JSON.stringify(plan));
+    (out.sections || []).filter((sec) => sec.kind === 'loans').forEach((sec) => {
+      const keep = (sec.steps || []).filter((st) => st.amount == null || ok.has(Math.round(Number(st.amount))));
+      dropped += (sec.steps || []).length - keep.length;
+      sec.steps = keep;
+    });
+    out.sections = (out.sections || []).filter((sec) => sec.kind !== 'loans' || sec.steps.length);
+    return { plan: out, dropped };
   }
 
   function checkAdviceNumbers(plan, facts) {
@@ -5357,7 +5387,7 @@
     insights, simulateDebts, compareDebtPlans, debtFreeDates, emergencyPlan, parseSms,
     splitSmsBatch, smsKey, categorize, normalizeMerchant, sinkingMonthly, inCycle,
     spendInRange, incomeInRange, incomeKept, isIncome, isMove, isBillPayment, isFixedPayment, isCashAdvance, emiLoans,
-    fixedCandidate, fixedTwins, mergeFixedTwin, bankTwin, joinBankTwin, iouTwin, scrubText, pseudonymize, crashReport, privateWords, usualDaily, roadToPayday, affordCheck, PROTECT_MAX, PROTECT_PRESETS, protectList, addProtect, linkProtect, removeProtect, protectOf, protectSummary, markProtected, personalAmt, SUBCATS, subcategories, splitCat, guessSub, subOf, subSuggestions, subBreakdown,
+    fixedCandidate, fixedTwins, mergeFixedTwin, bankTwin, joinBankTwin, iouTwin, scrubText, pseudonymize, crashReport, privateWords, usualDaily, roadToPayday, affordCheck, PROTECT_MAX, PROTECT_PRESETS, protectList, addProtect, linkProtect, removeProtect, protectOf, protectSummary, markProtected, guardExtraLoans, personalAmt, SUBCATS, subcategories, splitCat, guessSub, subOf, subSuggestions, subBreakdown,
     addEvent, editEvent, splitShares, addEventExpense, removeEventExpense, eventForgetTx, deleteEvent, eventBalances, settleEvent, settleCandidates, tripHeld, eventView, eventStatement,
     cutOptions, weekTarget, fitWeekGoal, rupeeAmounts, checkAdviceNumbers,
     linkRefund, unlinkRefund, forgetRefunds, refundMatches, isEarned, earnedIn, fixedPaidFor, fixedDueFor, payFixed, unpayFixed, fixedMatches, isFlexible, incomeOptions,

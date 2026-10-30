@@ -5805,7 +5805,9 @@
         // Every rupee amount must come from the numbers sent; a line with another one is left out.
         const checked = Core.checkAdviceNumbers(plan, facts);
         // A step that touches something you protect says so.
-        plan = Object.assign({}, Core.markProtected(checked.plan, state), { numbersDropped: checked.dropped });
+        // No extra on loans when the app's plan doesn't put money there this round.
+        const loans = Core.guardExtraLoans(checked.plan, state, t);
+        plan = Object.assign({}, Core.markProtected(loans.plan, state), { numbersDropped: checked.dropped + loans.dropped });
         // The week's goal uses the week's target the app worked out from the month's plan.
         const fit = Core.fitWeekGoal(plan.week_goal, Core.weekTarget(state, t));
         plan.week_goal = fit.changed ? Object.assign(fit.goal, { text: weekGoalText(fit.goal) }) : fit.goal;
