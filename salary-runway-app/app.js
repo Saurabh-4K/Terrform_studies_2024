@@ -1771,6 +1771,41 @@
   const REDUCE_MOTION = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
 
   /*
+   * The logo animation (media/intro.mp4, 2.5 s) when the app opens, once a
+   * day at most, so it never stands between someone and their limit. A tap
+   * skips it; with Android's "remove animations" the logo shows still for a
+   * moment instead.
+   */
+  const INTRO_KEY = 'salary-runway-intro';
+  (function intro() {
+    const el = document.getElementById('intro');
+    const video = document.getElementById('intro-video');
+    if (!el || !video || navigator.webdriver) return;
+    const d = new Date();
+    const day = d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate();
+    try {
+      if (localStorage.getItem(INTRO_KEY) === day) return;
+      localStorage.setItem(INTRO_KEY, day);
+    } catch (e) { return; }
+    el.hidden = false;
+    let done = false;
+    const end = () => {
+      if (done) return;
+      done = true;
+      el.classList.add('out');
+      setTimeout(() => el.remove(), 320);
+    };
+    el.addEventListener('click', end);
+    // Never longer than this, whatever the video does.
+    setTimeout(end, REDUCE_MOTION ? 700 : 3500);
+    if (REDUCE_MOTION) return;
+    video.addEventListener('ended', () => setTimeout(end, 250));
+    video.addEventListener('error', end);
+    const playing = video.play();
+    if (playing && playing.catch) playing.catch(end);
+  })();
+
+  /*
    * Light animation, once per change: the ring moves to today's amount, and
    * on opening the app the amount counts up. Nothing loops, so it costs
    * almost no battery; the phone's "reduce animations" setting turns it off.

@@ -15,6 +15,8 @@
   <style>:root { padding-top: env(safe-area-inset-top, 0px); }</style>
 </head>
 <body>
+  <!-- The logo animation, at most once a day (app.js decides); a tap skips it. -->
+  <div id="intro" class="intro" hidden><video id="intro-video" muted playsinline preload="auto" poster="media/intro-end.webp" aria-label="Hisab Se"><source src="media/intro.webm" type="video/webm"><source src="media/intro.mp4" type="video/mp4"></video></div>
   <div id="app"></div>
   <script src="i18n-mr.js"></script>
   <script src="i18n-hi.js"></script>

@@ -1220,3 +1220,9 @@ td .pick2 select { max-width: 132px; }
 .protect-note { display: block; margin-top: 4px; font-size: 0.85rem; color: var(--good); }
 .protect-note-box { border-left: 4px solid var(--good); }
 .protect-chip { background: var(--good-soft); }
+
+/* The logo animation on opening: the video's own cream, so its edges don't show. */
+.intro { position: fixed; inset: 0; z-index: 10000; background: #f1edda; display: grid; place-items: center; transition: opacity 0.3s ease; }
+.intro[hidden] { display: none; }
+.intro.out { opacity: 0; pointer-events: none; }
+.intro video { width: min(80vw, 380px); height: auto; display: block; -webkit-mask-image: radial-gradient(circle, #000 52%, transparent 70%); mask-image: radial-gradient(circle, #000 52%, transparent 70%); }

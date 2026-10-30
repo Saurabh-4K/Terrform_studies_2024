@@ -10,6 +10,9 @@ fs.mkdirSync(path.join(out, 'fonts'), { recursive: true });
 
 ['i18n.js', 'i18n-mr.js', 'i18n-hi.js', 'core.js', 'demo.js', 'app.js', 'styles.css'].forEach((f) => fs.copyFileSync(path.join(root, f), path.join(out, f)));
 fs.copyFileSync(path.join(root, 'node_modules/@capacitor/core/dist/capacitor.js'), path.join(out, 'capacitor.js'));
+// The logo animation shown when the app opens (media/intro.webm and .mp4, 2.5 s) and its last frame.
+fs.mkdirSync(path.join(out, 'media'), { recursive: true });
+['intro.webm', 'intro.mp4', 'intro-end.webp'].forEach((f) => fs.copyFileSync(path.join(root, 'media', f), path.join(out, 'media', f)));
 
 const fonts = [
   ['Bricolage Grotesque', '@fontsource-variable/bricolage-grotesque', 'bricolage-grotesque-latin-wght-normal.woff2', '200 800'],

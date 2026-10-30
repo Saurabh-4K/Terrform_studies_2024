@@ -428,6 +428,9 @@ Plan → **What matters most**: up to five things the person won't compromise on
 - **Protected isn't unlimited:** today's limit, the zones, the road and *Can I afford something?* count every rupee as before. When a protected thing runs a quarter above usual (₹500 or more) while money is tight, its card says so, without suggesting a cut. *Can I afford something?* asks *What is it for?*: for a protected thing it says so, and still shows what it does before payday.
 - Kept in backups (`cleanState`); in a problem report with numbers its names become codes. `tests/protect.test.js`; `scripts/protect-app.js` in the real app.
 
+### Opening animation
+The logo animation (the two pillars rise, the line climbs from red to mint, *Hisab Se* appears) plays when the app opens, **once a day at most**, so it never stands between someone and their limit. It's the 10-second video cut to its moving part, 2.2× faster: **2.5 seconds**, 36 KB (WebM, with an MP4 copy), cropped square and faded into the app's cream at the edges. A tap skips it; it's never on screen longer than 3.5 seconds; with Android's *Remove animations* the still logo shows for a moment instead. Files in `media/`.
+
 ### Road to payday
 Runway → **See the road to payday** (under today's limit; also *Check & plan → Road to payday*, with a *₹6.7k short* badge when a payment falls short): your money from today to payday, day by day.
 - **The warning first, across the whole width, in the zone's colour** (never a small tag in a corner): *Personal loan on 7 Nov would be ₹6,700 short · The payments still due before payday are more than your money, at your usual ₹435 a day*; or *Money runs out on 22 Nov*, *Tight until payday*, *On track to payday*.
