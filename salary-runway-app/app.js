@@ -1731,6 +1731,7 @@
 
   function affordCard() {
     const a = ui.afford;
+    const forItem = a && ui.affordFor ? Core.protectList(state).find((x) => x.id === ui.affordFor) : null;
     let res = '';
     if (a) {
       if (a.verdict === 'yes') {
@@ -1749,7 +1750,14 @@
     }
     return '<section class="card afford"><h3>' + tr('Can I afford something?') + '</h3><p class="hint">' + tr('Type what it costs: the app checks it against every payment until payday.') + '</p>' +
       '<form id="afford-form" class="row" autocomplete="off"><label class="field grow-field" for="afford-amt"><span>' + tr('Amount (₹)') + '</span><input id="afford-amt" type="number" inputmode="numeric" min="1" value="' + (a ? a.amount : '') + '"></label>' +
-      '<button class="primary" type="submit">' + tr('Check') + '</button></form>' + res + '</section>';
+      (Core.protectList(state).length ? '<label class="field" for="afford-for"><span>' + tr('What is it for? (optional)') + '</span><select id="afford-for"><option value="">—</option>' +
+        Core.protectList(state).map((x) => '<option value="' + esc(x.id) + '"' + (ui.affordFor === x.id ? ' selected' : '') + '>🛡 ' + esc(protectLabel(x.name)) + '</option>').join('') + '</select></label>' : '') +
+      '<button class="primary" type="submit">' + tr('Check') + '</button></form>' +
+      // Protected isn't unlimited: the same check, said with respect for what it's for.
+      (forItem ? '<p class="protect-note">🛡 ' + (a.verdict === 'yes'
+        ? tr('It’s for {name}, which you protect, and it fits.', { name: esc(protectLabel(forItem.name)) })
+        : tr('It’s for {name}, which you protect. The app won’t tell you to give it up, but protected doesn’t mean any amount: here is what it does before payday.', { name: esc(protectLabel(forItem.name)) })) + '</p>' : '') +
+      res + '</section>';
   }
 
   // The runway graph.
@@ -3966,6 +3974,7 @@
         ? sv.notes.map((n) => '<p class="hint">' + esc(n) + '</p>').join('')
         : '<div class="row"><span class="hint">' + tr('You set these amounts.') + '</span><button class="ghost" data-action="savings-auto">' + tr('Work them out for me') + '</button></div>') + '</section>' },
         { key: 'categories', group: 'Your plan', icon: 'list', label: 'Categories', tone: 'amber', badge: null, html: () => categoriesPage() },
+        { key: 'protect', group: 'Your plan', icon: 'shield', label: 'What matters most', tone: 'mint', badge: { text: tr('{n} of {max}', { n: Core.protectList(state).length, max: Core.PROTECT_MAX }) }, html: () => protectPage() },
         { key: 'budgets', group: 'Your plan', icon: 'sliders', label: 'Flexible budgets', tone: 'amber', badge: { text: shortInr(sharedOut) }, html: () =>
       '<section class="card"><div class="card-head">' + titled('Flexible budgets', 'flex') + '<span class="hint">' + tr('{amount} to spend this month', { amount: inr(Math.max(0, alloc.pool)) }) + '</span></div>' +
       '<div class="edit-rows">' + alloc.budgets.map((b) => {
@@ -4744,6 +4753,7 @@
       (flex && ((state.cards || []).length || (state.wallets || []).length) ? '<label class="field wide" for="edit-from"><span>' + tr('Paid from') + '</span><select id="edit-from">' + fromOptions(x) + '</select></label>' : '') +
       ((isIn || saved) && (state.wallets || []).length ? '<label class="field wide" for="edit-from"><span>' + tr(isIn ? 'Into' : 'From') + '</span><select id="edit-from">' + intoOptions(x) + '</select></label>' : '') +
       '</div>' +
+      (flex && Core.protectList(state).length ? protectTxField(x) : '') +
       (flex && ui.split && ui.split.id === x.id ? splitEditor(x) : flex ? '<button class="link" data-action="split-open">' + tr('Split this payment into categories') + '</button>' : '') +
       (ui.editError ? '<p class="bad" role="alert">' + ui.editError + '</p>' : '') +
       '<div class="row"><button class="primary" data-action="edit-save">' + tr('Save changes') + '</button><button class="ghost" data-action="edit-cancel">' + tr('Cancel') + '</button></div>' +
@@ -4760,6 +4770,16 @@
       '</div></div>';
   }
 
+  // "What you protect" for one payment: set on the payment itself; its category or shop may already protect it.
+  function protectTxField(x) {
+    const list = Core.protectList(state);
+    const own = list.find((p) => (p.txIds || []).indexOf(x.id) !== -1);
+    const via = own ? null : Core.protectOf(state, x);
+    return '<label class="field wide" for="edit-protect"><span>' + tr('What you protect') + '</span><select id="edit-protect"><option value="">' + tr('—') + '</option>' +
+      list.map((p) => '<option value="' + esc(p.id) + '"' + (own === p ? ' selected' : '') + '>🛡 ' + esc(protectLabel(p.name)) + '</option>').join('') + '</select>' +
+      (via ? '<span class="hint">' + tr('Already protected as {name}, through its category or shop.', { name: esc(protectLabel(via.name)) }) + '</span>' : '') + '</label>';
+  }
+
   // Applies the edit and keeps everything tied to the payment right: a fund or loan it went to, money taken from the fund.
   function saveEdit() {
     const x = state.transactions.find((t) => t.id === ui.editTx);
@@ -4768,6 +4788,11 @@
     const val = (id) => { const el = document.getElementById(id); return el ? el.value : null; };
     const before = JSON.stringify(state);
     const note = (val('edit-note') || '').trim();
+    const protectId = val('edit-protect');
+    if (protectId !== null) {
+      Core.protectList(state).forEach((p) => { if ((p.txIds || []).indexOf(x.id) !== -1 && p.id !== protectId) Core.linkProtect(state, p.id, { txId: x.id }, false); });
+      if (protectId) Core.linkProtect(state, protectId, { txId: x.id }, true);
+    }
     if (!txLocked(x)) {
       const amount = Math.round(Number(val('edit-amount')));
       const date = val('edit-date');
@@ -4974,6 +4999,7 @@
       (x.eventId ? ' · <span class="chip">' + esc(((state.events || []).find((e) => e.id === x.eventId) || {}).name || '') + '</span>' : '') +
       (x.passedOn ? ' · <span class="chip">' + tr('Passed on') + '</span>' : '') +
       (x.iouId || x.iouPay ? ' · <span class="chip">' + tr('People') + '</span>' : '') +
+      (Core.protectOf(state, x) && Core.isFlexible(x) ? ' · <span class="chip protect-chip">🛡 ' + esc(protectLabel(Core.protectOf(state, x).name)) + '</span>' : '') +
       (x.claimId ? ' · <span class="chip">' + tr('Reimbursable') + '</span>' : '') +
       (x.maybeId ? ' · <span class="chip">' + tr('Expected cost') + '</span>' : '') +
       (x.payoutId ? ' · <span class="chip">' + tr('Reimbursement') + '</span>' : '') +
@@ -5438,15 +5464,95 @@
       (wi.room.freed || []).map((e) => '<p class="hint good">' + tr('{name} ends in {month}: {amount} a month is free after that.', { name: esc(e.name), month: monthYear(e.last), amount: inr(e.emi) }) + '</p>').join('');
   }
 
+
+  // ---------- what matters most: things I protect ----------
+
+  // A protected thing's name: the list's own names in your language, your own as you wrote them.
+  function protectLabel(name) {
+    const preset = Core.PROTECT_PRESETS.find((p) => p[1] === name);
+    return preset ? tr(name) : name;
+  }
+  // Categories and subcategories to link: 'Family', 'Travel|Fuel'.
+  function protectCatOptions(taken) {
+    const cats = BUILT_IN_CATEGORIES.concat((state.budgets || []).map((b) => b.name)).filter((c, i, a) => a.indexOf(c) === i && c !== 'Savings' && c !== 'Cash');
+    return cats.map((c) => [c].concat(Core.subcategories(state, c).map((sub) => c + '|' + sub)))
+      .reduce((a, b) => a.concat(b), []).filter((v) => taken.indexOf(v) === -1)
+      .map((v) => '<option value="' + esc(v) + '">' + esc(v.split('|').map(label).join(' › ')) + '</option>').join('');
+  }
+  // Places you paid in the last 3 months, most often first.
+  function protectShopOptions(taken) {
+    const from = Core.addDays(today(), -90);
+    const count = {};
+    const name = {};
+    state.transactions.filter((t) => Core.isFlexible(t) && t.date >= from && t.note).forEach((t) => {
+      const k = Core.normalizeMerchant(t.note);
+      if (!k || taken.indexOf(k) !== -1) return;
+      count[k] = (count[k] || 0) + 1;
+      name[k] = name[k] || t.note;
+    });
+    return Object.keys(count).sort((a, b) => count[b] - count[a]).slice(0, 40)
+      .map((k) => '<option value="' + esc(name[k]) + '">' + esc(name[k]) + '</option>').join('');
+  }
+
+  function protectPage() {
+    const t = today();
+    const list = Core.protectList(state);
+    const sum = Core.protectSummary(state, t);
+    const taken = (k) => list.reduce((a, x) => a.concat(x[k] || []), []);
+    const cards = list.map((x) => {
+      const m = sum.find((y) => y.id === x.id) || {};
+      const chip = (kind, val, text) => '<button class="chip-x" data-action="protect-unlink" data-id="' + esc(x.id) + '" data-kind="' + kind + '" data-val="' + esc(val) + '" aria-label="' + esc(tr('Remove {name}', { name: text })) + '">' + esc(text) + ' ✕</button>';
+      const links = (x.cats || []).map((c) => chip('cat', c, c.split('|').map(label).join(' › ')))
+        .concat((x.shops || []).map((sh) => chip('shop', sh, sh)))
+        .concat((x.txIds || []).length ? ['<span class="chip">' + tr('{n} single payments', { n: x.txIds.length }) + '</span>'] : []);
+      const open = ui.protectLink === x.id;
+      return '<div class="protect-item">' +
+        '<div class="protect-top"><b>🛡 ' + esc(protectLabel(x.name)) + '</b><button class="ghost small" data-action="protect-remove" data-id="' + esc(x.id) + '">' + tr('Remove') + '</button></div>' +
+        '<span class="hint">' + (m.count ? tr('{round} this round · usually about {usual} a month', { round: inr(m.round), usual: inr(m.usual) }) : tr('Nothing linked has been spent yet.')) + '</span>' +
+        (m.high ? '<div class="callout warn"><span class="hint">' + tr('Running above usual: about {pace} this round at this pace, while money is tight. It stays protected and no cut is suggested, but it’s part of why money is short. Your call.', { pace: inr(m.pace) }) + '</span></div>' : '') +
+        '<div class="protect-links">' + (links.length ? links.join('') : '<span class="hint">' + tr('Nothing linked yet: add a category or a shop.') + '</span>') + '</div>' +
+        (open
+          ? '<div class="protect-add"><label class="field" for="pl-cat-' + esc(x.id) + '"><span>' + tr('Category') + '</span><select id="pl-cat-' + esc(x.id) + '"><option value="">—</option>' + protectCatOptions(taken('cats')) + '</select></label>' +
+            '<label class="field" for="pl-shop-' + esc(x.id) + '"><span>' + tr('Shop or person you pay') + '</span><select id="pl-shop-' + esc(x.id) + '"><option value="">—</option>' + protectShopOptions(taken('shops')) + '</select></label>' +
+            '<div class="row"><button class="primary small" data-action="protect-link-save" data-id="' + esc(x.id) + '">' + tr('Add') + '</button><button class="ghost small" data-action="protect-link" data-id="">' + tr('Done') + '</button></div>' +
+            '<span class="hint">' + tr('A single payment: open it in Payments and choose this under “What you protect”.') + '</span></div>'
+          : '<button class="link" data-action="protect-link" data-id="' + esc(x.id) + '">' + tr('Link a category, shop or payment') + '</button>') + '</div>';
+    }).join('');
+    const free = Core.PROTECT_MAX - list.length;
+    const presets = Core.PROTECT_PRESETS.filter((p) => !list.some((x) => x.preset === p[0] || x.name === p[1]));
+    return '<section class="card protect"><h2>' + tr('What matters most') + '</h2>' +
+      '<p>' + tr('<b>Things I protect:</b> up to five things you won’t compromise on. Where to cut, little leaks and the AI plan leave them alone; when a cut would touch one, the app says what it would save and offers other ways first.') + '</p>' +
+      '<p class="hint">' + tr('Protected doesn’t mean unlimited: today’s limit, the zones and “can I afford it?” still count every rupee, and the app tells you when one runs above usual while money is tight.') + '</p>' +
+      cards +
+      (free > 0
+        ? '<h3>' + tr('Add one ({n} left)', { n: free }) + '</h3>' +
+          '<div class="protect-presets">' + presets.map((p) => '<button class="ghost small" data-action="protect-add" data-preset="' + p[0] + '">+ ' + tr(p[1]) + '</button>').join('') + '</div>' +
+          '<form id="protect-form" class="row" autocomplete="off"><label class="field grow-field" for="protect-name"><span>' + tr('Your own') + '</span><input id="protect-name" type="text" maxlength="40" placeholder="' + esc(tr('Sunday lunch with parents')) + '"></label>' +
+          '<button class="primary" type="submit">' + tr('Add') + '</button></form>'
+        : '<p class="hint">' + tr('Five is the most: remove one to add another.') + '</p>') +
+      (ui.protectError ? '<p class="bad" role="alert">' + esc(ui.protectError) + '</p>' : '') + '</section>';
+  }
+
   // Where to cut: halving spending that isn't essentials, by category, with what it saves by payday and where payday lands.
   function cutsBox(cu) {
     if (!cu.days) return '';
-    if (!cu.cuts.length) return '<h3>' + tr('Where to cut') + '</h3><p class="hint">' + tr('Nothing to suggest yet: cuts show once two weeks of spending outside essentials are recorded.') + '</p>';
+    if (!cu.cuts.length) return '<h3>' + tr('Where to cut') + '</h3><p class="hint">' + tr('Nothing to suggest yet: cuts show once two weeks of spending outside essentials are recorded.') + '</p>' + protectTradeOff(cu);
     return '<h3>' + tr('Where to cut') + '</h3><div class="summary">' +
       cu.cuts.map((c) => '<div class="line"><span>' + tr('{name}: {from} → {to} a day', { name: esc(label(c.category)), from: inr(c.daily), to: inr(c.keep) }) + '</span><span>' + tr('saves {amount}', { amount: inr(c.toPayday) }) + '</span></div>').join('') +
       '<div class="line"><span><b>' + tr('Payday at this pace → with these cuts') + '</b></span><span><b>' + inr(cu.endPace) + ' → ' + inr(cu.afterCuts) + '</b></span></div></div>' +
       '<p class="hint">' + tr('Halving each one until payday, from your last 8 weeks. In a month that’s {amount}.', { amount: inr(cu.perMonth) }) +
-      (cu.status === 'short' ? ' ' + tr('Essentials alone are still short by {amount}: cuts stop the gap growing, they don’t close it.', { amount: inr(cu.shortBy) }) : '') + '</p>';
+      (cu.status === 'short' ? ' ' + tr('Essentials alone are still short by {amount}: cuts stop the gap growing, they don’t close it.', { amount: inr(cu.shortBy) }) : '') + '</p>' +
+      protectTradeOff(cu);
+  }
+
+  // What the cuts leave alone because you protect it, what halving it would save, and the other ways first when money is short.
+  function protectTradeOff(cu) {
+    if (!cu.protected || !cu.protected.length) return '';
+    return '<div class="callout protect-note-box"><b>🛡 ' + tr('Left alone: you protect these') + '</b>' +
+      '<span class="hint">' + cu.protected.map((c) => tr('{name}: about {daily} a day. Halving it would save {amount} by payday.', { name: esc(protectLabel(c.name)), daily: inr(c.daily), amount: inr(c.toPayday) })).join(' ') + '</span>' +
+      (cu.gapAfterCuts > 0
+        ? '<span class="hint">' + tr('Essentials alone are short by {amount}, and cuts don’t close that. Before touching what you protect: use the emergency fund, ask a lender to move a due date, or ask for money owed to you (Runway shows these). If you choose to cut a protected one, that’s your call.', { amount: inr(cu.gapAfterCuts) }) + '</span>'
+        : '<span class="hint">' + tr('Your payments and essentials are covered without touching them.') + '</span>') + '</div>';
   }
 
   // Runway → Monthly review: the diagnosis report. The app's numbers (health check, what-ifs, ladder) always;
@@ -5533,7 +5639,8 @@
   }
 
   function planSteps(sec) {
-    return '<ol class="plan-steps">' + sec.steps.map((st) => '<li><b>' + esc(st.action) + '</b>' + (st.why ? '<span class="hint">' + esc(st.why) + '</span>' : '') + '</li>').join('') + '</ol>';
+    return '<ol class="plan-steps">' + sec.steps.map((st) => '<li><b>' + esc(st.action) + '</b>' + (st.why ? '<span class="hint">' + esc(st.why) + '</span>' : '') +
+      (st.protect ? '<span class="protect-note">🛡 ' + tr('This touches {name}, which you protect. The app’s own cuts leave it alone: your call.', { name: esc(protectLabel(st.protect)) }) + '</span>' : '') + '</li>').join('') + '</ol>';
   }
 
   // The last 4 weeks, week by week: worked out by the app, with or without the AI.
@@ -5612,7 +5719,7 @@
     return '<section class="card ai-settings">' + titled('AI weekly plan', 'plan') +
       '<p>' + tr('A plan each week from your own numbers, written by Claude from Anthropic.') + '</p>' +
       '<div class="callout"><b>' + tr('Sent once a week, when your plan is made') + '</b>' +
-      '<span class="hint">' + tr('A summary the app has already worked out: today’s limit, zone, spending by category this week and usually, budgets, bills to come, costs that may come, past rounds, your loans, cards and goals by the names you gave them, and how many payments look unusual.') + '</span>' +
+      '<span class="hint">' + tr('A summary the app has already worked out: today’s limit, zone, spending by category this week and usually, budgets, bills to come, costs that may come, past rounds, your loans, cards, goals and what you protect by the names you gave them, and how many payments look unusual.') + '</span>' +
       '<b>' + tr('Never sent') + '</b><span class="hint">' + tr('SMS text, shop names, notes, account or card numbers.') + '</span>' +
       '<b>' + tr('Once a month') + '</b><span class="hint">' + tr('The server looks up official rates (RBI, inflation, PPF and small savings) on government sites. That request carries nothing about you.') + '</span>' +
       '<b>' + tr('Where it goes') + '</b><span class="hint">' + tr('To your app’s server, which keeps nothing, and on to Anthropic to write the plan. Anthropic doesn’t use it to train its models.') + '</span>' +
@@ -5697,7 +5804,8 @@
         plan = Core.cleanAdvice(plan, state);
         // Every rupee amount must come from the numbers sent; a line with another one is left out.
         const checked = Core.checkAdviceNumbers(plan, facts);
-        plan = Object.assign({}, checked.plan, { numbersDropped: checked.dropped });
+        // A step that touches something you protect says so.
+        plan = Object.assign({}, Core.markProtected(checked.plan, state), { numbersDropped: checked.dropped });
         // The week's goal uses the week's target the app worked out from the month's plan.
         const fit = Core.fitWeekGoal(plan.week_goal, Core.weekTarget(state, t));
         plan.week_goal = fit.changed ? Object.assign(fit.goal, { text: weekGoalText(fit.goal) }) : fit.goal;
@@ -7641,6 +7749,33 @@
       case 'crash-no': { const c = crashCfg(); c.on = false; c.queue = []; saveCrashCfg(c); toast(tr('Crash reports off.')); break; }
       case 'crash-sample': ui.crashSample = !ui.crashSample; break;
       case 'road-view': ui.roadView = btn.dataset.view; break;
+      case 'protect-add': {
+        const item = Core.addProtect(state, { preset: btn.dataset.preset });
+        ui.protectError = item ? '' : tr('Five is the most: remove one to add another.');
+        if (item) { save(); toast(tr('{name} is protected', { name: protectLabel(item.name) })); }
+        break;
+      }
+      case 'protect-remove': {
+        const before = JSON.stringify(state);
+        const x = Core.protectList(state).find((y) => y.id === btn.dataset.id);
+        if (!x || !Core.removeProtect(state, x.id)) return;
+        save(); rerenderKeepScroll(); offerUndo(tr('{name} is no longer protected', { name: protectLabel(x.name) }), before); return;
+      }
+      case 'protect-link': ui.protectLink = btn.dataset.id || null; break;
+      case 'protect-link-save': {
+        const id = btn.dataset.id;
+        const cat = (document.getElementById('pl-cat-' + id) || {}).value;
+        const shop = (document.getElementById('pl-shop-' + id) || {}).value;
+        if (cat) Core.linkProtect(state, id, { cat }, true);
+        if (shop) Core.linkProtect(state, id, { shop }, true);
+        if (cat || shop) save();
+        break;
+      }
+      case 'protect-unlink': {
+        const k = btn.dataset.kind;
+        Core.linkProtect(state, btn.dataset.id, k === 'cat' ? { cat: btn.dataset.val } : { shop: btn.dataset.val }, false);
+        save(); break;
+      }
       case 'road-rate': ui.roadRate = btn.dataset.rate; ui.afford = null; break;
       case 'report-preview': {
         const note = ((document.getElementById('report-note') || {}).value || '').trim();
@@ -8543,10 +8678,21 @@
       if (amount > 0) { ui.borrow = { amount, urgent: true, months: 12, focus: true }; rerenderKeepScroll(); }
       return;
     }
+    if (ev.target.id === 'protect-form') {
+      ev.preventDefault();
+      const name = (document.getElementById('protect-name').value || '').trim();
+      if (!name) return;
+      const item = Core.addProtect(state, { name });
+      ui.protectError = item ? '' : Core.protectList(state).length >= Core.PROTECT_MAX ? tr('Five is the most: remove one to add another.') : tr('That one is already on your list.');
+      if (item) { save(); toast(tr('{name} is protected', { name: item.name })); }
+      rerenderKeepScroll();
+      return;
+    }
     if (ev.target.id === 'afford-form') {
       ev.preventDefault();
       const amount = Math.round(Number(document.getElementById('afford-amt').value) || 0);
       ui.afford = amount > 0 ? Core.affordCheck(state, today(), amount) : null;
+      ui.affordFor = (document.getElementById('afford-for') || {}).value || null;
       logEvent('afford', { verdict: ui.afford ? ui.afford.verdict : null });
       rerenderKeepScroll();
       return;

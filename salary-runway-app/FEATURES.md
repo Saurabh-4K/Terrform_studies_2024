@@ -416,6 +416,18 @@ A zone label on the Runway card, **Green · Careful · Red**, with a headline th
 
 **The pace** is your average flexible spending a day over **finished days** only; today counts as at least a usual day until it's over. So the zone doesn't change at midnight by itself: it gets better when a day ends under your usual spending, money comes in, or you move money to savings. (Emergency spending isn't part of the pace.)
 
+### What matters most: things I protect
+Plan → **What matters most**: up to five things the person won't compromise on.
+- **Pick from the list** (Family, Home, Health, Children's education, Commute, Pets, Small pleasures, each with its usual categories linked) **or write your own** (*Sunday lunch with parents*).
+- **Link what it covers:** a category or subcategory (*Food & dining › Tea & snacks*), a shop or person you pay (from the last 3 months), or **one payment** (its edit screen: *What you protect*). A payment counts by the payment itself first, then its shop, subcategory, category. One category, shop or payment belongs to one protected thing at most. Payments show *🛡 Small pleasures*.
+- **Each one shows** this round's spending and the usual month (the last 8 weeks, over the days recorded).
+- **The suggestions respect it:**
+  - *Where to cut* never cuts protected spending. It shows *Left alone: you protect these · Small pleasures: about ₹100 a day. Halving it would save ₹550 by payday.* When essentials are short, it says cuts don't close that and names the other ways first (the emergency fund, moving a due date, money owed to you); cutting a protected thing stays the person's call.
+  - *Little leaks* never calls protected spending a leak.
+  - **The AI plan** gets a WHAT MATTERS MOST section (each one, this round, usual month, running above usual) and the rule: never suggest cutting them; if there's no other way, say so plainly with the amounts, alternatives first. A plan step that still touches one is kept but marked *🛡 This touches Small pleasures, which you protect. The app's own cuts leave it alone: your call.*
+- **Protected isn't unlimited:** today's limit, the zones, the road and *Can I afford something?* count every rupee as before. When a protected thing runs a quarter above usual (₹500 or more) while money is tight, its card says so, without suggesting a cut. *Can I afford something?* asks *What is it for?*: for a protected thing it says so, and still shows what it does before payday.
+- Kept in backups (`cleanState`); in a problem report with numbers its names become codes. `tests/protect.test.js`; `scripts/protect-app.js` in the real app.
+
 ### Road to payday
 Runway → **See the road to payday** (under today's limit; also *Check & plan → Road to payday*, with a *₹6.7k short* badge when a payment falls short): your money from today to payday, day by day.
 - **The warning first, across the whole width, in the zone's colour** (never a small tag in a corner): *Personal loan on 7 Nov would be ₹6,700 short · The payments still due before payday are more than your money, at your usual ₹435 a day*; or *Money runs out on 22 Nov*, *Tight until payday*, *On track to payday*.

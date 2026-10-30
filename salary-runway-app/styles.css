@@ -1207,3 +1207,16 @@ td .pick2 select { max-width: 132px; }
 .road-link small { font-weight: 400; color: var(--muted); }
 .good-text { color: var(--good); }
 .legend i.road-sal { border-top: 2px dashed var(--good); }
+
+/* ---------- What matters most ---------- */
+.protect { display: grid; gap: 10px; }
+.protect-item { border: 1.5px solid var(--line); border-radius: 14px; padding: 12px; display: grid; gap: 6px; background: var(--surface); }
+.protect-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.protect-top b { font-size: 1.05rem; }
+.protect-links { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip-x { border: 1px solid var(--line); background: var(--good-soft); color: var(--ink); border-radius: 999px; padding: 4px 10px; font-size: 0.85rem; min-height: 32px; }
+.protect-add { display: grid; gap: 8px; }
+.protect-presets { display: flex; flex-wrap: wrap; gap: 8px; }
+.protect-note { display: block; margin-top: 4px; font-size: 0.85rem; color: var(--good); }
+.protect-note-box { border-left: 4px solid var(--good); }
+.protect-chip { background: var(--good-soft); }

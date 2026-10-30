@@ -3631,7 +3631,16 @@
     L.push(cu.cuts.length ? 'Halving spending that is not essentials, until payday (' + cu.days + ' days): ' + cu.cuts.map((c) => c.category + ' from about ' + R(c.daily) + ' to ' + R(c.keep) + ' a day saves ' + R(c.toPayday) +
       ' by payday (' + R(c.perMonth) + ' a month)').join('; ') + '. Together ' + R(cu.total) + ' by payday: at this pace payday comes with ' + R(cu.endPace) + ', with these cuts ' + R(cu.afterCuts) + '.' +
       (cu.status === 'short' ? ' Even so, essentials alone are short by ' + R(cu.shortBy) + ': the cuts stop the gap growing, they do not close it.' : '')
-      : 'No cuts to suggest: not enough spending outside essentials, family and savings recorded in the last 8 weeks.');
+      : 'No cuts to suggest: not enough spending outside essentials, family, savings and what they protect recorded in the last 8 weeks.');
+    if (cu.protected.length) {
+      L.push('Not suggested because they protect it: ' + cu.protected.map((c) => c.name + ' about ' + R(c.daily) + ' a day (halving it would save ' + R(c.toPayday) + ' by payday)').join('; ') + '.' +
+        (cu.gapAfterCuts > 0 ? ' Essentials alone are still short by ' + R(cu.gapAfterCuts) + ', whatever is cut.' : ''));
+    }
+    const ps = protectSummary(state, todayIso);
+    if (ps.length) {
+      L.push('', 'WHAT MATTERS MOST (the person protects these; never suggest cutting or spending less on them. If the numbers leave no other way, say so plainly with the amounts above, and offer the alternatives first: other cuts, the emergency fund, moving a due date. Protected is not unlimited: when one runs above usual while money is short, say it and what it costs the plan, without telling them to give it up)');
+      ps.forEach((x) => L.push(x.name + ': ' + R(x.round) + ' this round so far' + (x.usual ? ', usually about ' + R(x.usual) + ' a month' : '') + (x.high ? '; running above usual (about ' + R(x.pace) + ' this round at this pace) while money is ' + feasibility(state, todayIso).status : '') + '.'));
+    }
     const wt = weekTarget(state, todayIso);
     L.push('', "THIS WEEK'S TARGET (worked out by the app from the month's plan; week_goal uses one of these, with exactly this amount)");
     L.push('spend_cap ' + R(wt.cap) + ' for the week ' + D(wt.from) + ' to ' + D(wt.to) + ': ' + R(wt.spent) + ' already spent before today + ' + R(wt.daily) + ' a day for ' + wt.days + ' day' + (wt.days > 1 ? 's' : '') +
@@ -3980,19 +3989,115 @@
     const first = recent.reduce((m, t) => (t.date < m ? t.date : m), todayIso);
     const span = daysBetween(first, todayIso);
     const ten = (n) => Math.round(n / 10) * 10;
-    const out = { status: fe.status, shortBy: fe.shortBy, days: fe.days, endPace: Math.round(r.endPace), cuts: [], total: 0, perMonth: 0, afterCuts: Math.round(r.endPace) };
+    const out = { status: fe.status, shortBy: fe.shortBy, days: fe.days, endPace: Math.round(r.endPace), cuts: [], total: 0, perMonth: 0, afterCuts: Math.round(r.endPace), protected: [], gapAfterCuts: 0 };
     if (span < 14 || fe.days < 1) return out;
     const byCat = {};
+    // What you protect is never cut: kept apart, with what halving it would have saved, so the trade-off can be said.
+    const byProtect = {};
     recent.filter((t) => !isEssential(t) && NOT_CUTS.indexOf(String(t.category || '').toLowerCase()) === -1)
-      .forEach((t) => { byCat[t.category] = (byCat[t.category] || 0) + ownPart(t); });
-    out.cuts = Object.keys(byCat).map((c) => {
-      const daily = byCat[c] / span;
-      return { category: c, daily: ten(daily), keep: ten(daily / 2), toPayday: ten((daily / 2) * fe.days), perMonth: ten((daily / 2) * 30) };
-    }).filter((c) => c.perMonth >= 300 && c.toPayday > 0).sort((a, b) => b.perMonth - a.perMonth).slice(0, 4);
+      .forEach((t) => {
+        const p = protectOf(state, t);
+        if (p) byProtect[p.id] = (byProtect[p.id] || 0) + ownPart(t);
+        else byCat[t.category] = (byCat[t.category] || 0) + ownPart(t);
+      });
+    const halve = (amount) => { const daily = amount / span; return { daily: ten(daily), keep: ten(daily / 2), toPayday: ten((daily / 2) * fe.days), perMonth: ten((daily / 2) * 30) }; };
+    out.cuts = Object.keys(byCat).map((c) => Object.assign({ category: c }, halve(byCat[c])))
+      .filter((c) => c.perMonth >= 300 && c.toPayday > 0).sort((a, b) => b.perMonth - a.perMonth).slice(0, 4);
     out.total = sum(out.cuts, (c) => c.toPayday);
     out.perMonth = sum(out.cuts, (c) => c.perMonth);
     out.afterCuts = out.endPace + out.total;
+    out.protected = protectList(state).filter((x) => byProtect[x.id]).map((x) => Object.assign({ id: x.id, name: x.name }, halve(byProtect[x.id])))
+      .filter((c) => c.toPayday > 0).sort((a, b) => b.perMonth - a.perMonth);
+    // Short on essentials: cuts to other spending stop the gap growing but don't close it; the gap stays, for the other ways first.
+    out.gapAfterCuts = out.status === 'short' ? out.shortBy : 0;
     return out;
+  }
+
+  // ---------- what matters most: things I protect ----------
+
+  /*
+   * Up to five things the person won't compromise on (family, home, health,
+   * children's education, commute, pets, small pleasures, or their own),
+   * each linked to categories ('Family' or 'Travel|Fuel'), shops (as
+   * normalizeMerchant writes them) and single payments. Suggestions to cut
+   * (where to cut, little leaks, the AI plan) leave them alone, and say what
+   * they leave alone and what that costs. Protected isn't unlimited: the
+   * money checks (zones, the road, can I afford it) count it as always.
+   */
+  const PROTECT_MAX = 5;
+  const PROTECT_PRESETS = [
+    ['family', 'Family', ['Family', 'Gifts']],
+    ['home', 'Home', ['Bills|Rent', 'Bills|Society maintenance', 'Bills|Electricity', 'Bills|Water', 'Bills|Gas', 'Shopping|Home items']],
+    ['health', 'Health', ['Health']],
+    ['education', 'Children’s education', ['Education', 'Family|Kids']],
+    ['commute', 'Commute', ['Travel|Fuel', 'Travel|Auto & cab', 'Travel|Metro & bus', 'Travel|Parking & toll']],
+    ['pets', 'Pets', []],
+    ['pleasures', 'Small pleasures', ['Food & dining|Tea & snacks', 'Entertainment|Streaming & apps']],
+  ];
+  function protectList(state) { return (state.protect || []).slice(0, PROTECT_MAX); }
+  function addProtect(state, o) {
+    const list = state.protect || [];
+    const preset = PROTECT_PRESETS.find((p) => p[0] === o.preset);
+    const name = String(preset ? preset[1] : o.name || '').trim().slice(0, 40);
+    if (!name || list.length >= PROTECT_MAX || list.some((x) => x.name.toLowerCase() === name.toLowerCase())) return null;
+    // A category already protected by another stays with that one.
+    const taken = new Set(list.flatMap((x) => x.cats || []));
+    const item = { id: newId('pr'), name, preset: preset ? preset[0] : null, cats: preset ? preset[2].filter((c) => !taken.has(c)) : [], shops: [], txIds: [] };
+    state.protect = list.concat(item);
+    return item;
+  }
+  // Adds or removes one link: { cat } ('Family' or 'Travel|Fuel'), { shop } (a payee's name) or { txId }.
+  function linkProtect(state, id, link, on) {
+    const item = (state.protect || []).find((x) => x.id === id);
+    if (!item) return false;
+    const [key, val] = link.cat ? ['cats', String(link.cat)] : link.shop ? ['shops', normalizeMerchant(link.shop)] : link.txId ? ['txIds', String(link.txId)] : [];
+    if (!key || !val) return false;
+    // One payment, shop or category belongs to one thing at most.
+    if (on) (state.protect || []).forEach((x) => { x[key] = (x[key] || []).filter((v) => v !== val); });
+    item[key] = (item[key] || []).filter((v) => v !== val).concat(on ? [val] : []);
+    return true;
+  }
+  function removeProtect(state, id) {
+    const before = (state.protect || []).length;
+    state.protect = (state.protect || []).filter((x) => x.id !== id);
+    return state.protect.length < before;
+  }
+  // What a payment is part of: the payment itself, then its shop, then its subcategory, then its category.
+  function protectOf(state, t) {
+    const list = protectList(state);
+    if (!list.length || !t) return null;
+    const shop = normalizeMerchant(t.note);
+    return list.find((x) => (x.txIds || []).indexOf(t.id) !== -1) ||
+      (shop && list.find((x) => (x.shops || []).indexOf(shop) !== -1)) ||
+      (t.sub && list.find((x) => (x.cats || []).indexOf(t.category + '|' + t.sub) !== -1)) ||
+      list.find((x) => (x.cats || []).indexOf(t.category) !== -1) || null;
+  }
+  /*
+   * Each protected thing this round: spent so far, the usual month (the last
+   * 8 weeks, as a month), and whether this round runs well above usual (a
+   * quarter more and ₹500 or more) while money is short or tight: protected,
+   * but the person should know.
+   */
+  function protectSummary(state, todayIso) {
+    const list = protectList(state);
+    if (!list.length) return [];
+    const r = projectRunway(state, todayIso);
+    const fe = feasibility(state, todayIso);
+    const from = addDays(todayIso, -56);
+    const flex = state.transactions.filter((t) => isFlexible(t) && !t.gap);
+    const daysIn = daysBetween(r.cycle.start, todayIso) + 1;
+    // Usual: up to 8 weeks before this round, over the days actually recorded (a month's worth).
+    const first = state.transactions.reduce((m, t) => (!m || t.date < m ? t.date : m), null);
+    const start = first && first > from ? first : from;
+    const span = Math.max(0, daysBetween(start, r.cycle.start));
+    return list.map((x) => {
+      const mine = flex.filter((t) => protectOf(state, t) === x);
+      const round = Math.round(sum(mine.filter((t) => inCycle(t.date, r.cycle) && t.date <= todayIso), personalAmt));
+      const usual = span >= 7 ? Math.round((sum(mine.filter((t) => t.date >= start && t.date < r.cycle.start), personalAmt) / span) * 30) : 0;
+      const pace = Math.round((round / daysIn) * r.cycle.days);
+      const high = usual > 0 && pace > usual * 1.25 && pace - usual >= 500 && fe.status !== 'ok';
+      return { id: x.id, name: x.name, preset: x.preset, round, usual, pace, high, count: mine.length };
+    });
   }
 
   /*
@@ -4066,6 +4171,26 @@
    * left out; a headline or verdict with one is blanked. Returns the plan
    * and how many lines went.
    */
+  /*
+   * A step of the AI plan that names something the person protects (its name,
+   * or a category or subcategory linked to it) is kept, marked with what it
+   * touches, so the app can say it's protected and that the choice is theirs.
+   */
+  function markProtected(plan, state) {
+    const list = protectList(state);
+    if (!plan || !list.length) return plan;
+    const words = list.map((x) => ({ name: x.name, words: [x.name].concat(...(x.cats || []).map((c) => c.split('|'))).filter((w) => w && w.length >= 3) }));
+    const hit = (text) => {
+      const t = String(text || '').toLowerCase();
+      const w = words.find((x) => x.words.some((v) => new RegExp('(^|[^\\p{L}])' + v.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '($|[^\\p{L}])', 'u').test(t)));
+      return w ? w.name : null;
+    };
+    const out = JSON.parse(JSON.stringify(plan));
+    (out.sections || []).filter((sec) => sec.kind === 'save').forEach((sec) => (sec.steps || []).forEach((st) => { const n = hit(st.action + ' ' + st.why); if (n) st.protect = n; }));
+    if (out.diagnosis) (out.diagnosis.actions || []).forEach((a) => { const n = hit(a.action + ' ' + a.changes); if (n) a.protect = n; });
+    return out;
+  }
+
   function checkAdviceNumbers(plan, facts) {
     if (!plan) return { plan, dropped: 0 };
     const known = Array.from(new Set(rupeeAmounts(facts).filter((n) => n > 0)));
@@ -4338,6 +4463,10 @@
     if (!s.savings || typeof s.savings !== 'object') delete s.savings;
     if (s.reimb != null && (typeof s.reimb !== 'object' || !Array.isArray(s.reimb.claims || []) || !Array.isArray(s.reimb.payouts || []))) delete s.reimb;
     if (s.subcats != null && (typeof s.subcats !== 'object' || Array.isArray(s.subcats))) delete s.subcats;
+    if (s.protect != null) {
+      s.protect = Array.isArray(s.protect) ? s.protect.filter((x) => x && x.id && typeof x.name === 'string' && x.name.trim()).slice(0, PROTECT_MAX)
+        .map((x) => Object.assign({}, x, ['cats', 'shops', 'txIds'].reduce((o, k) => Object.assign(o, { [k]: (Array.isArray(x[k]) ? x[k] : []).map(String) }), {}))) : [];
+    }
     if (s.events) s.events = s.events.filter((e) => e && e.id && Array.isArray(e.people) && Array.isArray(e.items) && okDate(e.from) && okDate(e.to))
       .map((e) => Object.assign({}, e, { budget: Math.max(0, Math.round(Number(e.budget) || 0)),
         items: e.items.filter((it) => it && it.id && okDate(it.date) && it.shares && typeof it.shares === 'object' && Number(it.total) > 0) }));
@@ -4568,6 +4697,8 @@
     state.transactions.filter((t) => isFlexible(t) && t.date >= from && t.date <= todayIso).forEach((t) => {
       const key = normalizeMerchant(t.note);
       if (!key || rules[key] || no.indexOf(key) !== -1) return;
+      // Something you protect is never called a leak.
+      if (protectOf(state, t)) return;
       const leak = Object.keys(LEAK_HINTS).find((l) => LEAK_HINTS[l].some((w) => keywordMatches(key, w)));
       if (!leak) return;
       const x = seen[key] || (seen[key] = { payee: key, name: t.note, leak, total: 0, count: 0 });
@@ -5123,7 +5254,10 @@
     const names = new Map(); const digits = new Map(); const secrets = new Map();
     // Stand-ins in random order, so their numbers say nothing about the order things were added.
     const pool = (n) => { const a = Array.from({ length: n }, (_, i) => i + 1); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
-    const nums = pool(5000); const fours = pool(8999).map((n) => String(1000 + n)); let ni = 0; let di = 0; let ki = 0;
+    // Never a stand-in that repeats digits found in the data (a card's last four as "name4417", say).
+    const real = (JSON.stringify(data).match(/\d{3,}/g) || []).join(' ');
+    const fresh = (x) => String(x).length < 3 || real.indexOf(String(x)) === -1;
+    const nums = pool(5000).filter(fresh); const fours = pool(8999).map((n) => String(1000 + n)).filter(fresh); let ni = 0; let di = 0; let ki = 0;
     const name = (v) => {
       const s = String(v);
       if (safe.has(s.toLowerCase()) || s === 'me') return s;
@@ -5223,7 +5357,7 @@
     insights, simulateDebts, compareDebtPlans, debtFreeDates, emergencyPlan, parseSms,
     splitSmsBatch, smsKey, categorize, normalizeMerchant, sinkingMonthly, inCycle,
     spendInRange, incomeInRange, incomeKept, isIncome, isMove, isBillPayment, isFixedPayment, isCashAdvance, emiLoans,
-    fixedCandidate, fixedTwins, mergeFixedTwin, bankTwin, joinBankTwin, iouTwin, scrubText, pseudonymize, crashReport, privateWords, usualDaily, roadToPayday, affordCheck, personalAmt, SUBCATS, subcategories, splitCat, guessSub, subOf, subSuggestions, subBreakdown,
+    fixedCandidate, fixedTwins, mergeFixedTwin, bankTwin, joinBankTwin, iouTwin, scrubText, pseudonymize, crashReport, privateWords, usualDaily, roadToPayday, affordCheck, PROTECT_MAX, PROTECT_PRESETS, protectList, addProtect, linkProtect, removeProtect, protectOf, protectSummary, markProtected, personalAmt, SUBCATS, subcategories, splitCat, guessSub, subOf, subSuggestions, subBreakdown,
     addEvent, editEvent, splitShares, addEventExpense, removeEventExpense, eventForgetTx, deleteEvent, eventBalances, settleEvent, settleCandidates, tripHeld, eventView, eventStatement,
     cutOptions, weekTarget, fitWeekGoal, rupeeAmounts, checkAdviceNumbers,
     linkRefund, unlinkRefund, forgetRefunds, refundMatches, isEarned, earnedIn, fixedPaidFor, fixedDueFor, payFixed, unpayFixed, fixedMatches, isFlexible, incomeOptions,
