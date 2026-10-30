@@ -966,9 +966,14 @@
     if (planDue()) setTimeout(requestPlan, 0);
     const streak = withinStreak();
     let headline, sub;
-    if (z.zone === 'red') {
-      headline = tr('Red zone: <span class="date bad">{amount} short</span> for bills and basics', { amount: inr(z.shortBy) });
-      sub = tr('The money left doesn’t cover the bills still to pay and groceries, medicine and day-to-day travel until {date}. Here’s how to stay above ₹0:', { date: fmtDate(cyc.next) });
+    if (z.zone === 'red' && z.cause === 'bills') {
+      // The payments alone are more than the money: say so, so a planned payment (rent) never reads as overspending.
+      headline = tr('<span class="date bad">{amount} short</span> for payments due before {date}', { amount: inr(z.billsShort), date: fmtDate(cyc.next) });
+      sub = tr('Even with no spending at all, the payments still due ({bills}) are more than your money ({money}). Groceries, medicine and day-to-day travel need about {daily} a day on top: {basics} until payday. Ways to close the gap:',
+        { bills: inr(r.billsAhead), money: inr(z.money), daily: inr(z.essentialPerDay), basics: inr(z.basicsAhead) });
+    } else if (z.zone === 'red') {
+      headline = tr('Red zone: <span class="date bad">{amount} short</span> for groceries and basics', { amount: inr(z.shortBy) });
+      sub = tr('Your payments until {date} are covered. What’s left doesn’t cover groceries, medicine and day-to-day travel, about {daily} a day. Here’s how to stay above ₹0:', { date: fmtDate(cyc.next), daily: inr(z.essentialPerDay) });
     } else if (z.zone === 'amber') {
       // The same number the card shows: today's limit, or tomorrow's once today is over it.
       const keep = r.overToday > 0 && r.savedToday < r.overToday ? r.tomorrowAllowance : r.dailyAllowance;
@@ -1439,7 +1444,9 @@
     const banner = {
       green: zoneBanner('green', tr('Green: on track'), tr('You’re winning this round. Keep going.')),
       amber: zoneBanner('amber', tr('Careful'), tr('At this pace the money runs out before payday.')),
-      red: zoneBanner('red', tr('Red zone: stop'), tr('Bills and basics aren’t covered. Basics only now.')),
+      red: z.cause === 'bills'
+        ? zoneBanner('red', tr('Red zone: payments ahead'), tr('What’s due before payday is more than your money. Basics only now.'))
+        : zoneBanner('red', tr('Red zone: stop'), tr('Bills and basics aren’t covered. Basics only now.')),
     }[z.zone];
     return '<div class="runway-card zone-' + z.zone + '">' + banner +
       '<div class="runway-head"><span class="hero-label">' + tr('Today’s limit') + '</span></div>' +
@@ -1908,10 +1915,24 @@
         return '<li>' + tr('<b>Pause this month’s Grow and extra debt payments</b> ({amount}), if you haven’t moved that money yet.', { amount: inr(o.amount) }) + ' ' +
           '<button class="link" data-action="zone-pause">' + tr('Pause until payday') + '</button></li>';
       }
+      if (o.kind === 'askback') return '<li>' + tr('<b>Ask {name} for the {amount} they owe you.</b>', { name: esc(o.name), amount: inr(o.amount) }) + '</li>';
+      if (o.kind === 'wait') return '<li>' + tr('<b>Ask {name} if the {amount} due {date} can wait until after payday.</b>', { name: esc(o.name), amount: inr(o.amount), date: fmtDate(o.date) }) + '</li>';
+      if (o.kind === 'move') {
+        // How to ask, said once, after the last EMI.
+        const last = z.options.filter((x) => x.kind === 'move').pop() === o;
+        return '<li>' + tr('<b>Ask the lender to move the {name} EMI ({amount}, due {date}) to after payday.</b>', { name: esc(o.name), amount: inr(o.amount), date: fmtDate(o.date) }) +
+          (last ? ' ' + tr('Some lenders change the EMI date on request, sometimes for a small charge or a few days’ interest. Don’t just skip it: a missed EMI costs a late fee and lowers your credit score.') : '') + '</li>';
+      }
       return '<li>' + tr('<b>Spend only on basics</b>, about {amount} a day for groceries, medicine and day-to-day travel, until {date}.', { amount: inr(o.amount), date: fmtDate(r.cycle.next) }) + '</li>';
     });
     items.push('<li>' + tr('<b>Avoid the credit card for daily spending.</b> It turns this month’s gap into next month’s debt.') + '</li>');
-    return '<ol class="red-options">' + items.join('') + '</ol>';
+    // What the gap is made of: the biggest payments still due.
+    const due = z.cause === 'bills' && z.ahead.length
+      ? '<p class="hint red-due"><b>' + tr('Still to pay before {date}:', { date: fmtDate(r.cycle.next) }) + '</b> ' +
+        z.ahead.slice(0, 4).map((e) => esc(e.name) + ' ' + inr(e.amount) + ' (' + fmtDate(e.date) + ')').join(' · ') +
+        (z.ahead.length > 4 ? ' · ' + tr('{n} more', { n: z.ahead.length - 4 }) : '') + '</p>'
+      : '';
+    return due ? '<div class="red-box">' + due + '<ol class="red-options">' + items.join('') + '</ol></div>' : '<ol class="red-options">' + items.join('') + '</ol>';
   }
 
   // Remembers today's amount so tomorrow the app can say what was saved.

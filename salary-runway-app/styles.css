@@ -1151,3 +1151,7 @@ td .pick2 select { max-width: 132px; }
 .callout .check-row { align-items: flex-start; }
 .callout .check-row input { flex: none; margin-top: 3px; }
 .report-preview { font-family: ui-monospace, monospace; font-size: 0.72rem; white-space: pre; overflow-x: auto; }
+/* Red for payments ahead: what's still due, then the ways to close the gap, in one box. */
+.red-box { background: var(--bad-soft); border-radius: 12px; padding: 12px 14px 0; }
+.red-box .red-due { margin: 0; }
+.red-box .red-options { background: none; padding-left: 20px; padding-right: 0; }

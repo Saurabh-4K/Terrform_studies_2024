@@ -1739,10 +1739,28 @@
     else if (r.zeroPace || r.endPace < 0 || (r.remainingDays > 0 && r.dailyAllowance < 1)) zone = 'amber';
 
     const out = { zone, money, needs, shortBy: Math.max(0, needs - money), safeDaily, essentialPerDay, needsLine, options: [] };
+    /*
+     * Why it's red. 'bills': the payments still due before payday (rent, EMIs,
+     * bills, money you owe) are more than the money there is, even with no
+     * spending at all. 'basics': the payments are covered, groceries,
+     * medicine and travel until payday aren't. ahead: those payments, biggest first.
+     */
+    out.billsShort = Math.max(0, Math.round(r.billsAhead - money));
+    out.basicsAhead = Math.round(essentialPerDay * r.remainingDays);
+    out.cause = zone !== 'red' ? null : out.billsShort > 0 ? 'bills' : 'basics';
+    out.ahead = r.dueNow.concat(r.events.filter((e) => e.date > todayIso)).filter((e) => e.amount > 0).sort((a, b) => b.amount - a.amount);
     if (zone === 'red') {
       const fund = Number(state.savings.emergencyBalance) || 0;
       // Rounded up to ₹10 so moving it really clears the gap.
       if (fund > 0) out.options.push({ kind: 'fund', amount: Math.min(fund, Math.ceil(out.shortBy / 10) * 10) });
+      // Money people owe you: asking for it back closes the gap without borrowing.
+      openIous(state, 'lent').sort((a, b) => iouLeft(b) - iouLeft(a)).slice(0, 2)
+        .forEach((i) => out.options.push({ kind: 'askback', name: i.name, amount: iouLeft(i), iouId: i.id }));
+      // Money you owe a person before payday: they may wait until after it.
+      out.ahead.filter((e) => e.kind === 'iou').slice(0, 2).forEach((e) => out.options.push({ kind: 'wait', name: e.name, amount: e.amount, date: e.date }));
+      // A loan's EMI due before payday: the lender may move the date (a card's EMI is paid with the card bill, so not those).
+      out.ahead.filter((e) => e.kind === 'debt' && !((state.debts || []).find((d) => d.id === e.debtId) || {}).viaCard).slice(0, 2)
+        .forEach((e) => out.options.push({ kind: 'move', name: e.name, amount: e.amount, date: e.date }));
       const setAsides = r.plan.invest + r.plan.debtExtra;
       if (setAsides > 0 && !r.plan.adjustment) out.options.push({ kind: 'pause', amount: setAsides });
       out.options.push({ kind: 'basics', amount: Math.round(essentialPerDay) });

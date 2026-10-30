@@ -409,20 +409,26 @@ A zone label on the Runway card, **Green · Careful · Red**, with a headline th
 |---|---|---|
 | **Green** | At the current pace, money lasts until payday | Money left at payday, days in a row within the daily amount, card-free days |
 | **Careful** | Bills and basics are covered, but this pace runs out before payday | The date money runs out, your daily pace, and the daily amount that keeps you safe |
-| **Red** | The money left doesn't cover the bills still to pay plus groceries and health until payday | How much you're short, and ways out with amounts (below) |
+| **Red: payments ahead** | The payments still due before payday (rent, EMIs, bills, money you owe) are more than the money, even with no spending | *₹5,220 short for payments due before 28 Nov*, then: *Even with no spending at all, the payments still due (₹66,477) are more than your money (₹61,257). Groceries, medicine and day-to-day travel need about ₹273 a day on top.* The biggest payments still due, with dates, and the ways out (below) |
+| **Red** | The payments are covered, but not groceries, medicine and travel until payday | How much you're short for basics, and ways out with amounts (below) |
 
 **The pace** is your average flexible spending a day over **finished days** only; today counts as at least a usual day until it's over. So the zone doesn't change at midnight by itself: it gets better when a day ends under your usual spending, money comes in, or you move money to savings. (Emergency spending isn't part of the pace.)
 
-**Ways out of the red:**
+**Paying a planned payment never changes the zone.** Rent, an EMI or a bill that was still due was already counted: paying it lowers the money and the payments still due by the same amount, so today's limit and the zone stay as they were (`tests/red-cause.test.js`). Red after paying rent means either it was already red before (the table above says why), or the payment was counted twice, which the *Rent counted twice?* card repairs.
+
+**Ways out of the red**, only the ones that apply, with amounts:
 1. Use money from the emergency fund. One tap moves it in, rounded up so it really clears the gap.
-2. Pause this month's Grow and extra debt payments until payday.
-3. Spend only on basics (a daily amount for groceries and health).
-4. Avoid the credit card for daily spending.
+2. Ask someone who owes you for it back (the two biggest under People).
+3. Ask a person you owe before payday if it can wait until after it.
+4. Ask the lender to move a loan's EMI due before payday to after it (the two biggest; not EMIs on a card). Some lenders do it on request, sometimes for a small charge or a few days' interest; a missed EMI costs a late fee and lowers the credit score, so never just skip it.
+5. Pause this month's Grow and extra debt payments until payday.
+6. Spend only on basics (a daily amount for groceries, medicine and day-to-day travel).
+7. Avoid the credit card for daily spending.
 
 ### The first screen
 Each salary cycle is a **round**: reach payday without borrowing, and build Days of Freedom. Only two hero numbers, then the round:
 - **A coach line first**, one friendly sentence: *Slow down a little. You're nearly at payday.*, *Today went over. Tomorrow is a fresh start.*, *You're on track. Keep it going.*, or a streak within the daily amount. Never shaming.
-- **Today's limit** (win the day): **the whole card takes the zone's colour, with a banner that can't be missed**: deep green with a celebration sign (*GREEN: ON TRACK · You're winning this round*), amber with a warning sign (*CAREFUL · At this pace the money runs out before payday*), or red with a stop sign (*RED ZONE: STOP · Bills and basics aren't covered. Basics only now*). The warning and stop signs pulse twice when the screen opens (not with reduce-motion). Then the amount, a spent/left bar (with tomorrow's limit when over) and what to do. *How is this calculated?* shows the smaller of what the budget allows and what the account can cover after bills still to come, with your numbers.
+- **Today's limit** (win the day): **the whole card takes the zone's colour, with a banner that can't be missed**: deep green with a celebration sign (*GREEN: ON TRACK · You're winning this round*), amber with a warning sign (*CAREFUL · At this pace the money runs out before payday*), or red with a stop sign (*RED ZONE: STOP · Bills and basics aren't covered. Basics only now*; when the payments alone are more than the money, *RED ZONE: PAYMENTS AHEAD · What's due before payday is more than your money*). The warning and stop signs pulse twice when the screen opens (not with reduce-motion). Then the amount, a spent/left bar (with tomorrow's limit when over) and what to do. *How is this calculated?* shows the smaller of what the budget allows and what the account can cover after bills still to come, with your numbers.
 - **Days of Freedom** (win the game): savings ÷ basics a day. **Red 0–6 days** (*At risk*, stop sign), **amber 7–29** (*Building*, warning sign), **green 30+** (*A month safe*; 90+ *Three months safe*, celebration sign): the card is tinted and outlined in the level's colour, with the same kind of banner. The next milestone in days and rupees: *1 more day (₹470) turns it amber.* *How is this calculated?* shows fixed payments + loan minimums + bills + groceries and health, ÷ 30, and the fund ÷ that.
 - **This round:** a tile for each day: **won** (inside that day's limit, ✓), **over** (amber outline), today, days to come, and days not tracked. *Borrowed this round: ₹0 ✓*. After a day over: *Yesterday went over. Today's limit already takes it into account: keep to ₹364 and you're back on track.* Logging a bad day still counts; nothing "breaks".
 - **Debt-free date** (with loans): *Minimums only* against *With your plan* (the extra each month on the costliest loan first, and each cleared loan's payment moving on), with *11 months sooner, saving about ₹35,503 in interest*, or a nudge to set an extra amount aside. *How is this calculated?* explains both.
