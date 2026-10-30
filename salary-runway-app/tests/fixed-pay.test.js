@@ -94,3 +94,28 @@ test('one transfer, two purposes: ₹10,000 split into a ₹9,000 class fee and 
   assert.equal(r.spentToDate, 1000);
   assert.equal(Core.projectRunway(s, '2026-11-02').balanceToday, left(plain, '2026-11-02') - 1000);
 });
+
+test('marked paid while the bank SMS is already there: that payment is linked, not a second one', () => {
+  const s = base();
+  sms(s, 9000, '2026-10-30');
+  const tx = Core.payFixed(s, 'cls', { amount: 9000, date: '2026-10-30' });
+  assert.equal(tx.id, 'sms');
+  assert.equal(s.transactions.length, 1);
+  assert.equal(bal(s, '2026-11-02'), 50000 - 9000);
+});
+
+test('counted twice (marked paid by hand, and the bank SMS too): found, and kept once', () => {
+  const s = base();
+  // "Paid?" first: a hand-made entry
+  Core.payFixed(s, 'cls', { amount: 9000, date: '2026-10-30' });
+  // Then the bank SMS, put down as spending
+  s.transactions.push({ id: 'sms', date: '2026-10-30', amount: 9000, category: 'Bills', sub: 'Rent', note: 'Report', source: 'sms' });
+  assert.equal(bal(s, '2026-11-02'), 50000 - 18000);
+  const tw = Core.fixedTwins(s, '2026-11-02');
+  assert.deepEqual(tw.map((x) => [x.extra.id, x.name]), [['sms', 'Data science class']]);
+  const kept = Core.mergeFixedTwin(s, tw[0].paid.id, 'sms');
+  assert.deepEqual([kept.id, kept.fixedId, kept.forDue], ['sms', 'cls', '2026-11-01']);
+  assert.equal(s.transactions.length, 1);
+  assert.equal(bal(s, '2026-11-02'), 50000 - 9000);
+  assert.equal(Core.fixedTwins(s, '2026-11-02').length, 0);
+});

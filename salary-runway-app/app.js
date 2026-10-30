@@ -957,7 +957,7 @@
       '</section>' +
       cardHomeNotes(cyc) +
       savedCard() +
-      alertsNudge() + iouDueCard() + dueAskCard() + maybeDueCard() + fixedMatchCard() + refundMatchCard() + passCard() + incomeCard() +
+      alertsNudge() + iouDueCard() + fixedTwinCard() + dueAskCard() + maybeDueCard() + fixedMatchCard() + refundMatchCard() + passCard() + incomeCard() +
       weekCard() +
       bal +
       (needsCheck().length
@@ -2872,7 +2872,7 @@
       sortCard() +
       importCard() +
       needsCheckCard() +
-      alertsNudge() + iouDueCard() + fixedMatchCard() + refundMatchCard() + passCard() + incomeCard() + subSuggestCard() +
+      alertsNudge() + iouDueCard() + fixedTwinCard() + fixedMatchCard() + refundMatchCard() + passCard() + incomeCard() + subSuggestCard() +
       addCard, [
         { key: 'viz-where', group: 'Your spending', icon: 'where', label: 'Where it went', tone: 'mint', viz: 'where', badge: null, html: () => vizCard() },
         { key: 'viz-when', group: 'Your spending', icon: 'when', label: 'When', tone: 'mint', viz: 'when', badge: null, html: () => vizCard() },
@@ -3254,10 +3254,20 @@
       (Core.isIncome(x) && x.useFor && x.useFor !== 'spend'));
     const groups = [];
     if (!isIn) {
+      // A subcategory with the name of one of your own payments (Bills › Rent and your fixed Rent) is that payment.
+      const norm = (n) => String(n || '').toLowerCase().replace(/[^a-z0-9\u0900-\u097f]+/g, ' ').trim();
+      const mine = linked ? [] : (state.fixed || []).map((f) => ['@fixed:' + f.id, f.name, tr('{name} (your fixed payment)', { name: f.name })])
+        .concat((state.bills || []).filter((b) => (Number(b.estimate) || 0) > 0).map((b) => ['@bill:' + b.id, b.name, tr('{name} (your bill)', { name: b.name })]))
+        .concat(Core.emiLoans(state).map((d) => ['@loan:' + d.id, d.name, tr('{name} EMI (your loan)', { name: d.name })]));
+      const connect = (sub) => {
+        const w = norm(sub);
+        const hits = mine.filter((m) => { const n = norm(m[1]); return n === w || norm(tr(sub)) === n || (' ' + n + ' ').indexOf(' ' + w + ' ') !== -1; });
+        return hits.length === 1 ? [hits[0][0], hits[0][2]] : null;
+      };
       categories().forEach((c) => {
         const subs = Core.subcategories(state, c);
         if (!subs.length) { groups.push({ label: null, cat: c, items: [[c, label(c)]] }); return; }
-        groups.push({ label: label(c), cat: c, items: [[c, tr('{name}: anything', { name: label(c) })]].concat(subs.map((s) => [c + '|' + s, tr(s)])) });
+        groups.push({ label: label(c), cat: c, items: [[c, tr('{name}: anything', { name: label(c) })]].concat(subs.map((s) => connect(s) || [c + '|' + s, tr(s)])) });
       });
       if (!linked) {
         const smart = []
@@ -3958,8 +3968,10 @@
   function dueAskCard() {
     const t = today();
     const asked = state.dueAsked || {};
+    // A payment that looks like it is already in (the bank SMS): asked about that one instead (fixedMatchCard), never both.
+    const waiting = Core.fixedMatches(state, t).map((m) => m.fixed.id + ':' + m.due);
     const due = Core.projectRunway(state, t).dueNow
-      .filter((e) => (e.kind === 'fixed' || e.kind === 'debt') && e.date < t && asked[(e.fixedId || e.debtId) + ':' + e.date] !== t);
+      .filter((e) => (e.kind === 'fixed' || e.kind === 'debt') && e.date < t && asked[(e.fixedId || e.debtId) + ':' + e.date] !== t && waiting.indexOf((e.fixedId || e.debtId) + ':' + e.date) === -1);
     if (!due.length) return '';
     const e = due[0];
     const id = e.fixedId || e.debtId;
@@ -3970,6 +3982,17 @@
         '<div class="row"><button class="primary" data-action="due-paid" data-id="' + esc(id) + '" data-date="' + e.date + '" data-amount="' + e.amount + '">' + tr('Yes, on {date}', { date: fmtDate(e.date) }) + '</button>' +
         '<button data-action="fixed-pay-open" data-id="' + esc(id) + '">' + tr('Another day or amount') + '</button>' +
         '<button class="ghost" data-action="due-later" data-key="' + esc(id + ':' + e.date) + '">' + tr('Not yet') + '</button></div>') + '</section>';
+  }
+
+  // Marked paid by hand while the bank's entry is also there: counted twice. Keep one.
+  function fixedTwinCard() {
+    const tw = Core.fixedTwins(state, today())[0];
+    if (!tw) return '';
+    return '<section class="card income-card twin-card"><div class="card-head"><h2>' + tr('{name} counted twice?', { name: esc(tw.name) }) + '</h2></div>' +
+      '<p class="hint">' + tr('{amount} on {date} ({note}) and {paid} marked as {name} paid. If it’s one payment, the bank’s entry is kept and the other goes.',
+        { amount: inr(tw.extra.amount), date: fmtDate(tw.extra.date), note: esc(tw.extra.note || label(tw.extra.category)), paid: inr(tw.paid.amount), name: esc(tw.name) }) + '</p>' +
+      '<div class="row"><button class="primary" data-action="twin-merge" data-paid="' + esc(tw.paid.id) + '" data-extra="' + esc(tw.extra.id) + '">' + tr('Same payment: keep one') + '</button>' +
+      '<button data-action="twin-no" data-extra="' + esc(tw.extra.id) + '">' + tr('I paid twice') + '</button></div></section>';
   }
 
   // A payment with a fixed payment's amount near its due date: is it that one?
@@ -6928,6 +6951,16 @@
         ui.fixedPay = null;
         save(); rerenderKeepScroll(); offerUndo(tr('Recorded as paid. It won’t be counted again on its due date.'), before);
         return;
+      }
+      case 'twin-merge': {
+        const before = JSON.stringify(state);
+        if (!Core.mergeFixedTwin(state, btn.dataset.paid, btn.dataset.extra)) { toast(tr('That doesn’t fit this entry.')); return; }
+        save(); rerenderKeepScroll(); offerUndo(tr('Counted once now.'), before); return;
+      }
+      case 'twin-no': {
+        const x = state.transactions.find((y) => y.id === btn.dataset.extra);
+        if (x) { x.notTwin = true; save(); }
+        break;
       }
       case 'due-paid': {
         const before = JSON.stringify(state);

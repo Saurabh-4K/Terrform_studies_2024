@@ -2445,4 +2445,12 @@
   "Choose…": "चुनें…",
   "Detail": "ब्योरा",
   "Choose what it was.": "यह किसके लिए था, चुनें.",
+  "{name} (your fixed payment)": "{name} (आपका तय खर्च)",
+  "{name} (your bill)": "{name} (आपका बिल)",
+  "{name} EMI (your loan)": "{name} EMI (आपका कर्ज़)",
+  "{name} counted twice?": "{name} दो बार गिना गया?",
+  "{amount} on {date} ({note}) and {paid} marked as {name} paid. If it’s one payment, the bank’s entry is kept and the other goes.": "{date} को {amount} ({note}) और {name} चुकाया के रूप में {paid}. अगर यह एक ही भुगतान है तो बैंक की एंट्री रहेगी और दूसरी हटेगी.",
+  "Same payment: keep one": "एक ही भुगतान: एक रखें",
+  "I paid twice": "मैंने दो बार चुकाया",
+  "Counted once now.": "अब एक ही बार गिना गया.",
 };

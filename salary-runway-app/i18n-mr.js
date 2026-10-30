@@ -2445,4 +2445,12 @@
   "Choose…": "निवडा…",
   "Detail": "तपशील",
   "Choose what it was.": "हे कशासाठी होते ते निवडा.",
+  "{name} (your fixed payment)": "{name} (तुमचा ठरलेला खर्च)",
+  "{name} (your bill)": "{name} (तुमचे बिल)",
+  "{name} EMI (your loan)": "{name} EMI (तुमचे कर्ज)",
+  "{name} counted twice?": "{name} दोनदा मोजले?",
+  "{amount} on {date} ({note}) and {paid} marked as {name} paid. If it’s one payment, the bank’s entry is kept and the other goes.": "{date} ला {amount} ({note}) आणि {name} भरले म्हणून {paid}. हा एकच खर्च असेल तर बँकेची नोंद ठेवली जाईल आणि दुसरी काढली जाईल.",
+  "Same payment: keep one": "एकच खर्च: एक ठेवा",
+  "I paid twice": "मी दोनदा भरले",
+  "Counted once now.": "आता एकदाच मोजले.",
 };

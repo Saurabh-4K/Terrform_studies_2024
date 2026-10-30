@@ -210,6 +210,11 @@
     if (o.txId && (!tx || !isFlexible(tx) || (tx.paidFrom && tx.paidFrom !== 'account') || tx.claimId || tx.maybeId || tx.covered || tx.iouId || tx.eventId)) return null;
     const due = fixedDueFor(state, f, tx ? tx.date : o.date);
     if (!due) return null;
+    // Marked paid while the payment is already there (from the bank SMS, or typed in): that one is it, not a second payment.
+    if (!tx) {
+      const want = Math.round(Number(o.amount));
+      tx = state.transactions.find((t) => fixedCandidate(t) && Math.abs(t.amount - want) <= want * 0.02 && daysBetween(t.date, due) <= 10 && daysBetween(due, t.date) <= 15) || null;
+    }
     if (!tx) {
       const amount = Math.round(Number(o.amount));
       if (!(amount > 0) || amount > 1e9 || !o.date) return null;
@@ -236,10 +241,14 @@
    * (within 2%), from the account, in the 10 days before its due date or up
    * to 15 days after.
    */
+  // A payment that could be a fixed payment or EMI: plain spending from the account, not tied to anything else.
+  function fixedCandidate(t) {
+    return isFlexible(t) && !t.notFixed && !(t.paidFrom && t.paidFrom !== 'account') && !t.claimId && !t.maybeId && !t.covered && !t.iouId && !t.eventId;
+  }
   function fixedMatches(state, todayIso) {
     const out = [];
     state.transactions.forEach((t) => {
-      if (!isFlexible(t) || t.notFixed || (t.paidFrom && t.paidFrom !== 'account') || t.claimId || t.maybeId || t.covered || t.iouId || t.eventId) return;
+      if (!fixedCandidate(t)) return;
       if (t.date > todayIso || t.date < addDays(todayIso, -20)) return;
       (state.fixed || []).concat(emiLoans(state)).forEach((f) => {
         const amt = Number(f.minPayment != null ? f.minPayment : f.amount) || 0;
@@ -249,6 +258,31 @@
       });
     });
     return out;
+  }
+
+  /*
+   * Counted twice: a fixed payment or EMI recorded as paid by hand ("Paid?",
+   * "Mark paid") while the same payment also came in from the bank SMS or was
+   * typed in as spending, within 3 days at the same amount. Offered to keep
+   * one: the bank's entry becomes the payment, the hand-made one goes.
+   */
+  function fixedTwins(state, todayIso) {
+    const out = [];
+    state.transactions.filter((p) => isFixedPayment(p) && p.fixedNew && p.date >= addDays(todayIso, -40) && p.date <= todayIso).forEach((p) => {
+      const x = state.transactions.find((t) => t !== p && fixedCandidate(t) && !t.notTwin && Math.abs(t.amount - p.amount) <= p.amount * 0.02 &&
+        Math.abs(daysBetween(t.date, p.date)) <= 3 && !out.some((o) => o.extra === t));
+      if (x) out.push({ paid: p, extra: x, name: ((state.fixed || []).concat(state.debts || []).find((f) => f.id === (p.fixedId || p.emiFor)) || {}).name || p.note });
+    });
+    return out;
+  }
+  // Keep one: the bank's entry becomes the payment (amount and date as the bank says); the hand-made one goes.
+  function mergeFixedTwin(state, paidId, extraId) {
+    const p = state.transactions.find((t) => t.id === paidId);
+    const x = state.transactions.find((t) => t.id === extraId);
+    if (!p || !x || !p.fixedNew || !isFixedPayment(p)) return null;
+    const id = p.fixedId || p.emiFor;
+    state.transactions = state.transactions.filter((t) => t !== p);
+    return payFixed(state, id, { txId: x.id }) || null;
   }
 
   // The next due date of a fixed payment on or after iso.
@@ -4867,7 +4901,7 @@
     insights, simulateDebts, compareDebtPlans, debtFreeDates, emergencyPlan, parseSms,
     splitSmsBatch, smsKey, categorize, normalizeMerchant, sinkingMonthly, inCycle,
     spendInRange, incomeInRange, incomeKept, isIncome, isMove, isBillPayment, isFixedPayment, isCashAdvance, emiLoans,
-    personalAmt, SUBCATS, subcategories, splitCat, guessSub, subOf, subSuggestions, subBreakdown,
+    fixedCandidate, fixedTwins, mergeFixedTwin, personalAmt, SUBCATS, subcategories, splitCat, guessSub, subOf, subSuggestions, subBreakdown,
     addEvent, editEvent, splitShares, addEventExpense, removeEventExpense, eventForgetTx, deleteEvent, eventBalances, settleEvent, settleCandidates, tripHeld, eventView, eventStatement,
     cutOptions, weekTarget, fitWeekGoal, rupeeAmounts, checkAdviceNumbers,
     linkRefund, unlinkRefund, forgetRefunds, refundMatches, isEarned, earnedIn, fixedPaidFor, fixedDueFor, payFixed, unpayFixed, fixedMatches, isFlexible, incomeOptions,
