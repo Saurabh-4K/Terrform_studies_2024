@@ -68,3 +68,13 @@ test("/crashes is for the developer's key only", async () => {
   // No key set on the server: nobody can read them
   assert.equal((await worker.fetch(new Request("https://x.workers.dev/crashes", { headers: { "X-Admin-Key": "" } }), { CRASHES: store })).status, 401);
 });
+
+test("crash reports only (no Anthropic key, no invite codes): the AI plan refuses everyone, crashes are kept", async () => {
+  const store = kv();
+  const env = { CRASHES: store };
+  const plan = await worker.fetch(new Request("https://x.workers.dev/plan", { method: "POST", headers: { "X-Invite-Code": "" }, body: JSON.stringify({ facts: "x" }) }), env);
+  assert.equal(plan.status, 401);
+  const rates = await worker.fetch(new Request("https://x.workers.dev/rates", { method: "POST", headers: { "X-Invite-Code": "anything" } }), env);
+  assert.equal(rates.status, 401);
+  assert.equal((await post(report, env)).status, 204);
+});

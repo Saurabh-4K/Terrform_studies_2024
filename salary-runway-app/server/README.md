@@ -16,10 +16,11 @@ Once a month, before the plan with the monthly review, the app asks `/rates`. Th
 2. **Cloudflare** (free account at dash.cloudflare.com):
    - Copy your **Account ID** (shown on the Workers & Pages page).
    - My Profile → API Tokens → Create Token → template **Edit Cloudflare Workers** → copy the token.
-3. **GitHub** → this repository → Settings → Secrets and variables → Actions → New repository secret, four times:
-   - `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `ANTHROPIC_API_KEY`
+3. **GitHub** → this repository → Settings → Secrets and variables → Actions → New repository secret:
+   - `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` (needed), `CRASH_READ_KEY` (to read crash reports)
+   - `ANTHROPIC_API_KEY` (only for the AI plan; without it the server runs crash reports only)
    - `INVITE_CODES`: one code per tester, comma-separated, e.g. `asha-71k2,ravi-9pq4`. Make them hard to guess.
-4. **Actions** tab → *AI weekly plan server (deploy)* → Run workflow. When it finishes, the log shows the address, like `https://salary-runway-ai.<your-name>.workers.dev`.
+4. **Actions** tab → *App server (deploy)* → Run workflow. When it finishes, the log shows the address, like `https://salary-runway-ai.<your-name>.workers.dev`.
 5. Give each tester the address and their own code. In the app: Profile → AI weekly plan → paste both → Turn on the weekly plan. The first plan is made right away.
 
 To stop one tester, remove their code from `INVITE_CODES` and run the workflow again. To stop everyone, delete the key in the Claude Console.
