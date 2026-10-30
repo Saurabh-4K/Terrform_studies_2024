@@ -74,6 +74,26 @@ This only starts the server. It doesn't release the app.
 
 ---
 
+## 6. Crash reports (optional, about 5 minutes)
+Crash reports come from people who said yes in the app. They hold no money data (see `PRIVACY.md`). The server keeps them for 90 days.
+
+- [ ] **Cloudflare token:** it needs **Workers KV Storage: Edit** as well. The *Edit Cloudflare Workers* template usually has it; if the deploy shows *Couldn't make the crash reports storage*, edit the token and add it.
+- [ ] **A key for reading them:** make a long random password, for example in a password manager. Add it as a GitHub **secret** named:
+  ```
+  CRASH_READ_KEY
+  ```
+- [ ] **Tell the app where to send them:** open **https://github.com/saurabh-4k/terrform_studies_2024/settings/variables/actions/new** and add a **variable** (not a secret, it isn't private):
+  - Name: `HISAB_CRASH_URL`
+  - Value: the server address from step 4, e.g. `https://salary-runway-ai.<your-name>.workers.dev`
+- [ ] Run the **AI weekly plan server (deploy)** workflow again (step 4). The next app build sends crash reports there.
+- [ ] To read them, in a terminal:
+  ```
+  curl -H "X-Admin-Key: <your CRASH_READ_KEY>" https://salary-runway-ai.<your-name>.workers.dev/crashes
+  ```
+  Or open Cloudflare → **Storage & Databases → KV → salary-runway-crashes**.
+
+---
+
 ## If something goes wrong
 | What you see | What to do |
 |---|---|

@@ -66,6 +66,9 @@
   const TOUR_KEY = 'salary-runway-tour';
   // AI weekly plan: off unless the person turns it on. Its settings are kept apart from the money data.
   const AI_KEY = 'salary-runway-ai';
+  // Automatic crash reports: asked once, off until the person says yes. Where they go is set when the app is built.
+  const CRASH_KEY = 'salary-runway-crash';
+  const CRASH_URL = window.HISAB_CRASH_URL || '';
   const AI_LANG = { en: 'English', mr: 'Marathi', hi: 'Hindi' };
   // The build number, written by the Android build; absent in the browser preview.
   const BUILD = window.HISAB_BUILD || '';
@@ -418,6 +421,7 @@
   let errorSeen = false;
   function logError(message, where, stack) {
     logEvent('error', { message: String(message || '').slice(0, 300), where: where || undefined, stack: stack ? String(stack).slice(0, 1500) : undefined });
+    try { queueCrash(message, where, stack); } catch (e) { /* a crash report never breaks the app */ }
     // Once a session: say where to report it.
     if (!errorSeen) {
       errorSeen = true;
@@ -429,6 +433,62 @@
     const r = e.reason || {};
     logError(r.message || String(r), 'promise', r.stack);
   });
+
+  function crashCfg() {
+    const none = { on: null, queue: [], seen: [], day: '', sent: 0 };
+    try { return Object.assign(none, JSON.parse(localStorage.getItem(CRASH_KEY) || '{}')); } catch (e) { return none; }
+  }
+  function saveCrashCfg(c) {
+    try { localStorage.setItem(CRASH_KEY, JSON.stringify(c)); } catch (e) { /* private mode */ }
+  }
+  // The app's own server (set at build), or the AI plan's server when that's the one there is.
+  function crashUrl() {
+    const u = CRASH_URL || aiCfg().url || '';
+    return u ? u.replace(/\/+$/, '') + '/crash' : '';
+  }
+  function crashOf(message, where, stack) {
+    return Core.crashReport({ state: state || null, build: BUILD || 'browser', day: today(), lang: I18N.getLang(), screen: window.innerWidth + 'x' + window.innerHeight,
+      ua: navigator.userAgent, message, where, stack, log: logRead() });
+  }
+
+  /*
+   * After an error, once the person said yes: a crash report (Core.crashReport:
+   * the error, where in the code, the build, the phone and the last screens;
+   * never an amount, a name, a note or a payment) waits here and goes when
+   * there's a network. The same error once a day; 10 sent a day at most.
+   */
+  function queueCrash(message, where, stack) {
+    const c = crashCfg();
+    if (c.on !== true) return;
+    const r = crashOf(message, where, stack);
+    const id = r.day + '|' + r.where + '|' + r.message.slice(0, 80);
+    if (c.seen.indexOf(id) !== -1) return;
+    c.seen = c.seen.filter((x) => x.slice(0, 10) === r.day).concat(id).slice(-20);
+    c.queue = c.queue.concat(r).slice(-5);
+    saveCrashCfg(c);
+    setTimeout(flushCrashes, 1000);
+  }
+
+  function flushCrashes() {
+    const c = crashCfg();
+    const url = crashUrl();
+    const d = today();
+    if (c.on !== true || !c.queue.length || !url || flushCrashes.busy || navigator.onLine === false) return;
+    if (c.day === d && c.sent >= 10) return;
+    flushCrashes.busy = true;
+    fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(c.queue[0]) })
+      .then((res) => {
+        const n = crashCfg();
+        // Sent, or refused as it is (it would be refused again): it leaves the queue.
+        if (res.ok || res.status === 400 || res.status === 413) n.queue = n.queue.slice(1);
+        n.sent = (n.day === d ? n.sent : 0) + 1;
+        n.day = d;
+        saveCrashCfg(n);
+        flushCrashes.busy = false;
+        if (res.ok && n.queue.length) flushCrashes();
+      }, () => { flushCrashes.busy = false; });
+  }
+  window.addEventListener('online', () => { try { flushCrashes(); } catch (e) { /* ignore */ } });
 
   function toast(msg, kind) {
     logEvent('toast', { text: logText(tr(msg)), tone: kind || undefined });
@@ -973,6 +1033,7 @@
         [adj.flexCutPct ? tr('Flexible budgets are {pct}% lower.', { pct: adj.flexCutPct }) : '', adj.pauseInvest ? tr('The Grow budget is paused.') : '', adj.pauseDebtExtra ? tr('Extra debt payments are paused.') : '']
           .filter(Boolean).join(' ') + '</span></div>' : '') +
       backupNudge() +
+      crashAsk() +
       weekChart(r) +
       recentCard();
 
@@ -5388,7 +5449,7 @@
       '<span class="hint">' + tr('A summary the app has already worked out: today’s limit, zone, spending by category this week and usually, budgets, bills to come, costs that may come, past rounds, your loans, cards and goals by the names you gave them, and how many payments look unusual.') + '</span>' +
       '<b>' + tr('Never sent') + '</b><span class="hint">' + tr('SMS text, shop names, notes, account or card numbers.') + '</span>' +
       '<b>' + tr('Once a month') + '</b><span class="hint">' + tr('The server looks up official rates (RBI, inflation, PPF and small savings) on government sites. That request carries nothing about you.') + '</span>' +
-      '<b>' + tr('Where it goes') + '</b><span class="hint">' + tr('To your app’s server, which keeps nothing, and on to Anthropic to write the plan.') + '</span>' +
+      '<b>' + tr('Where it goes') + '</b><span class="hint">' + tr('To your app’s server, which keeps nothing, and on to Anthropic to write the plan. Anthropic doesn’t use it to train its models.') + '</span>' +
       '<div><button class="link" data-action="ai-show-facts">' + tr(ui.aiFacts ? 'Hide what’s sent' : 'See exactly what’s sent') + '</button></div>' +
       (ui.aiFacts ? '<pre class="ai-facts">' + esc(Core.planFacts(state, today(), state.weeklyPlan && state.weeklyPlan.goal)) + '</pre>' : '') + '</div>' +
       '<form id="ai-settings-form" class="form-grid" autocomplete="off">' +
@@ -5506,20 +5567,42 @@
   // Every line here was checked against the app: the manifest, the native code and the web code.
   const PRIVACY = [
     ['ai', ''],
-    ['good', '<b>No account, no ads, no analytics, no crash reports.</b>'],
+    ['good', '<b>No account, no ads, no analytics.</b>'],
+    ['crash', ''],
     ['good', '<b>Bank SMS</b> are read only when you tap Read bank SMS or turn on alerts. Messages from phone numbers (friends, family) are skipped before the app sees them. Only a payment’s amount, date and shop are saved, never the message.'],
     ['good', '<b>Your data stays on this phone</b>, in the app’s private storage. Android’s cloud backup is off for Hisab Se, so not even Google gets a copy.'],
-    ['good', '<b>Something leaves the phone only when you choose:</b> a backup file you share, a problem report you send, or the weekly summary for your AI plan.'],
+    ['good', '<b>Something leaves the phone only when you choose:</b> a backup file you share, a problem report you send, crash reports if you said yes, or the weekly summary for your AI plan.'],
     ['warn', '<b>If the phone is lost, reset, or the app is uninstalled, your data goes with it,</b> unless you have a backup file.'],
   ];
 
   function privacyCard() {
-    return '<section class="card privacy-card">' + titled('Your privacy', 'privacy') +
-      '<ul class="privacy-list">' + PRIVACY.map((x) => (x[0] === 'ai'
-        ? (aiCfg().on
+    const crash = crashCfg().on === true;
+    const item = (x) => {
+      if (x[0] === 'crash') {
+        return '<li class="pv-good"><span>' + tr(crash
+          ? '<b>Crash reports are on.</b> When the app hits an error, the error, the screen and the phone model go to the developer. Never your amounts, payments, names or SMS, and nothing that says who you are.'
+          : '<b>Crash reports are off.</b> Errors stay on this phone, in the app’s log, until you send a problem report yourself.') + '</span></li>';
+      }
+      if (x[0] === 'ai') {
+        return aiCfg().on
           ? '<li class="pv-warn"><span>' + tr('<b>The AI weekly plan is on.</b> Once a week, a summary of your numbers goes to your app’s server and on to Anthropic (Claude) to write your plan. SMS text, shop names, notes and account numbers are never sent.') + '</span></li>'
-          : '<li class="pv-good"><span>' + tr('<b>Nothing is sent anywhere.</b> The AI weekly plan is off, so the app never connects to the internet. Turn on airplane mode: everything still works.') + '</span></li>')
-        : '<li class="pv-' + x[0] + '"><span>' + tr(x[1]) + '</span></li>')).join('') + '</ul></section>';
+          : crash ? '<li class="pv-good"><span>' + tr('<b>Nothing about your money is sent.</b> The AI weekly plan is off. Turn on airplane mode: everything still works.') + '</span></li>'
+            : '<li class="pv-good"><span>' + tr('<b>Nothing is sent anywhere.</b> The AI weekly plan is off, so the app never connects to the internet. Turn on airplane mode: everything still works.') + '</span></li>';
+      }
+      return '<li class="pv-' + x[0] + '"><span>' + tr(x[1]) + '</span></li>';
+    };
+    let sample = '';
+    if (ui.crashSample) { try { sample = JSON.stringify(crashOf('TypeError: Cannot read properties of undefined (reading \'amount\')', 'app.js:1200:15', 'TypeError: …\n    at render (app.js:1200:15)'), null, 1); } catch (e) { sample = ''; } }
+    return '<section class="card privacy-card">' + titled('Your privacy', 'privacy') +
+      '<ul class="privacy-list">' + PRIVACY.map(item).join('') + '</ul>' +
+      '<div class="callout"><b>' + tr('Crash reports') + '</b>' +
+      '<span class="hint">' + tr('Sent by themselves after an error, only if you say yes: what went wrong and where in the app, the screens you opened, the phone model, the app’s build and how many entries you have. They are kept for 90 days, then deleted, and only the developer can read them.') + '</span>' +
+      '<div class="row">' + (crash
+        ? '<button data-action="crash-no">' + tr('Turn off crash reports') + '</button>'
+        : '<button data-action="crash-yes">' + tr('Turn on crash reports') + '</button>') +
+      '<button class="link" data-action="crash-sample">' + tr(ui.crashSample ? 'Hide the example' : 'See an example report') + '</button></div>' +
+      (ui.crashSample ? '<pre class="ai-facts report-preview">' + esc(sample) + '</pre>' : '') + '</div>' +
+      '<p class="hint">' + tr('Questions about your data: write to the developer at the e-mail on the app’s Google Play page.') + '</p></section>';
   }
 
   function dataCard() {
@@ -5564,6 +5647,14 @@
   }
 
   // Once a month, when there's data worth keeping and no recent backup.
+  // Asked once, after setup: both answers are one tap, and either can be changed in Profile → Privacy.
+  function crashAsk() {
+    if (state.isDemo || !state.settings.salary || crashCfg().on !== null) return '';
+    return '<div class="callout crash-ask"><b>' + tr('Help fix crashes?') + '</b>' +
+      '<span class="hint">' + tr('If the app hits an error, it can send the developer what went wrong: the error, the screen and the phone model. Never your amounts, payments, names or SMS. You can change this any time in Profile → Privacy.') + '</span>' +
+      '<div class="row"><button data-action="crash-yes">' + tr('Send crash reports') + '</button><button data-action="crash-no">' + tr('Don’t send') + '</button></div></div>';
+  }
+
   function backupNudge() {
     if (state.isDemo || !state.settings.salary) return '';
     const t = today();
@@ -5615,43 +5706,67 @@
   function reportCard() {
     const f = ui.reportForm || {};
     const log = logRead();
+    let preview = '';
+    if (f.preview) { try { preview = problemReport(f.note || '', !!f.withData); } catch (e) { preview = tr('Couldn’t make the report. Try again.'); } }
     return '<section class="card"><h2>' + tr('Report a problem') + '</h2>' +
-      '<p class="hint">' + tr('Something wrong or confusing? Make a report file and send it to the developer. It shows exactly what your app saw, so the bug can be found and fixed.') + '</p>' +
+      '<p class="hint">' + tr('Something wrong or confusing? Make a report file and send it to the developer. Nothing is sent by itself.') + '</p>' +
       '<label class="field" for="report-note"><span>' + tr('What went wrong, and what did you expect?') + '</span>' +
       '<textarea id="report-note" rows="4" placeholder="' + esc(tr('Today’s limit shows ₹0, but I have money in my account')) + '">' + esc(f.note || '') + '</textarea></label>' +
-      '<div class="callout warn"><b>' + tr('The report has your money data') + '</b><span class="hint">' +
-      tr('Your amounts, payments, loans and the names you typed, and the app’s log ({n} events). It isn’t locked with a password, so send it only to the developer. Nothing is sent by itself.', { n: log.length }) +
-      '</span></div>' +
+      '<span class="hint">' + tr('Please don’t write names or account numbers here.') + '</span>' +
+      '<div class="callout"><b>' + tr('What the report holds') + '</b>' +
+      '<span class="hint">' + tr('<b>Always:</b> the errors the app hit, where in the app, the screens you opened, the phone model and how many entries you have. Never your amounts, payments, names, notes or SMS.') + '</span>' +
+      '<label class="check-row" for="report-data"><input id="report-data" type="checkbox"' + (f.withData ? ' checked' : '') + '> <span>' +
+      tr('<b>Add my numbers, names hidden</b> (for a wrong amount or limit): the amounts and dates of your payments, loans and budgets, so the developer sees the same numbers you do. Every shop, person, account and note becomes a random code; no SMS text, account digits or times of day.') + '</span></label>' +
+      '<div><button class="link" data-action="report-preview">' + tr(f.preview ? 'Hide what’s inside' : 'See exactly what’s inside') + '</button></div>' +
+      (f.preview ? '<pre class="ai-facts report-preview">' + esc(preview) + '</pre>' : '') + '</div>' +
       (f.error ? '<p class="bad" role="alert">' + esc(f.error) + '</p>' : '') +
       '<div class="row"><button class="primary" data-action="report-save">' + tr('Save report file') + '</button>' +
       '<button data-action="report-share">' + tr('Share report') + '</button></div>' +
       (log.length ? '<div class="row"><button class="link" data-action="report-clear">' + tr('Clear the log') + '</button></div>' : '') + '</section>';
   }
 
-  // Everything needed to see the bug: the note, the numbers the app worked out today, the log and the data.
-  function problemReport(note) {
+  /*
+   * The problem report. Always: the errors (their text cleaned of names,
+   * numbers and UPI ids), the screens, the phone and how many entries of each
+   * kind. withData: also the app's data and log with every name a random
+   * stand-in (Core.pseudonymize), so the developer's copy works out the same
+   * numbers; no SMS text, account digits or times of day.
+   */
+  function problemReport(note, withData) {
     const t = today();
+    const log = logRead();
+    const { known, words } = Core.privateWords(state);
+    const clean = (e) => Object.assign({}, e, { message: Core.scrubText(e.message, words, 300), where: Core.scrubText(e.where, known, 120),
+      stack: String(e.stack || '').split('\n').map((l) => Core.scrubText(l, /^\s+at\s/.test(l) ? known : words, 300)).join('\n') });
+    const errors = log.filter((x) => x.kind === 'error').slice(-10);
+    const last = errors[errors.length - 1] || {};
+    const crash = crashOf(last.message || '', last.where || '', last.stack || '');
+    const head = { kind: 'hisab-problem-report', version: 2, level: withData ? 'numbers' : 'errors', made: t, today: t, build: BUILD || 'browser',
+      android: crash.android, model: crash.model, screen: crash.screen, lang: I18N.getLang(), theme: themeChoice() || 'phone', lock: !!lockCfg().on, ai: !!aiCfg().on,
+      note: Core.scrubText(note, words, 1000, withData) };
+    if (!withData) {
+      return JSON.stringify(Object.assign(head, { errors: errors.map((e) => Object.assign({ day: String(e.at || '').slice(0, 10), tab: e.tab || null, page: e.page || null }, clean({ message: e.message, where: e.where, stack: e.stack }))),
+        screens: crash.screens, counts: crash.counts }), null, 1);
+    }
     let numbers;
     try {
       const r = Core.projectRunway(state, t);
       const z = Core.zoneStatus(state, t, r);
       numbers = { limit: Math.round(r.dailyAllowance), parts: r.limit, balance: r.balanceToday, zone: z.zone, endPace: Math.round(r.endPace), plan: r.plan };
     } catch (e) { numbers = { error: String(e && e.message), stack: String(e && e.stack).slice(0, 1500) }; }
-    return JSON.stringify({
-      kind: 'hisab-problem-report', version: 1, made: new Date().toISOString(), today: t,
-      build: BUILD || 'browser', device: navigator.userAgent, screen: window.innerWidth + 'x' + window.innerHeight,
-      lang: I18N.getLang(), theme: themeChoice() || 'phone', lock: !!lockCfg().on, ai: !!aiCfg().on,
-      note, numbers, log: logRead(), state,
-    }, null, 1);
+    const hidden = Core.pseudonymize({ numbers, log: log.map((e) => (e.kind === 'error' ? clean(e) : e)), state },
+      INCOME_CATEGORIES.concat(BUILT_IN_CATEGORIES, EARNED_PICK, OTHER_IN_PICK, LOAN_CATEGORY));
+    return JSON.stringify(Object.assign(head, hidden), null, 1);
   }
 
   function makeReport(how) {
     const note = ((document.getElementById('report-note') || {}).value || '').trim();
-    ui.reportForm = { note };
+    const withData = !!(document.getElementById('report-data') || {}).checked;
+    ui.reportForm = { note, withData };
     const t = today();
     const name = 'HisabSe-report-' + t + '.json';
     let text;
-    try { text = problemReport(note); } catch (e) { ui.reportForm.error = tr('Couldn’t make the report. Try again.'); render(); return; }
+    try { text = problemReport(note, withData); } catch (e) { ui.reportForm.error = tr('Couldn’t make the report. Try again.'); render(); return; }
     const done = (msg) => { ui.reportForm = null; rerenderKeepScroll(); toast(msg); };
     if (ShareFile && how === 'share') {
       ShareFile.share({ name, text, title: tr('Send the report'), mime: 'application/json' })
@@ -7356,6 +7471,15 @@
         ui.iouAdd = false; save();
         toast(tr('{name} added', { name }) + (bank ? ' ' + tr('Linked to the bank SMS of {date} ({merchant}): counted once.', { date: fmtDate(bank.date), merchant: bank.note || '' }) : '')); break;
       }
+      case 'crash-yes': { const c = crashCfg(); c.on = true; saveCrashCfg(c); toast(tr('Crash reports on. Nothing about your money is in them.')); break; }
+      case 'crash-no': { const c = crashCfg(); c.on = false; c.queue = []; saveCrashCfg(c); toast(tr('Crash reports off.')); break; }
+      case 'crash-sample': ui.crashSample = !ui.crashSample; break;
+      case 'report-preview': {
+        const note = ((document.getElementById('report-note') || {}).value || '').trim();
+        const withData = !!(document.getElementById('report-data') || {}).checked;
+        ui.reportForm = Object.assign({}, ui.reportForm, { note, withData, preview: !(ui.reportForm && ui.reportForm.preview) });
+        break;
+      }
       case 'report-save': makeReport('save'); return;
       case 'report-share': makeReport('share'); return;
       case 'report-clear':
@@ -7365,7 +7489,7 @@
       case 'wipe-cancel': ui.confirmWipe = false; break;
       case 'wipe-confirm':
         // Everything the app keeps: its storage here, and the widget, SMS alerts, notifications and shared files.
-        try { [KEY, LANG_KEY, CHART_KEY, VIZ_KEY, LOCK_KEY, THEME_KEY, TOUR_KEY, LOG_KEY].forEach((k) => localStorage.removeItem(k)); } catch (e) { /* ignore */ }
+        try { [KEY, LANG_KEY, CHART_KEY, VIZ_KEY, LOCK_KEY, THEME_KEY, TOUR_KEY, LOG_KEY, CRASH_KEY].forEach((k) => localStorage.removeItem(k)); } catch (e) { /* ignore */ }
         logList = [];
         dataKey = null;
         applyTheme('');
@@ -8905,6 +9029,7 @@
     if (!seen && state.isDemo) { ui.tour = true; ui.tourStep = 0; }
     render();
     announceAutoSaved();
+    setTimeout(flushCrashes, 5000);
   }
 
   state = load();

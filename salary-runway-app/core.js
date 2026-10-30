@@ -4970,13 +4970,153 @@
     return withAmount.length > 1 && withAmount.length === lines.length ? lines : blocks;
   }
 
+  // ---------- privacy: reports without personal data ----------
+
+  /*
+   * Text that may hold someone's details, made safe to send: UPI ids and
+   * e-mails, long numbers (phone, account, card), rupee amounts, and any of
+   * the given names (shops, people, notes from the data) are taken out.
+   * Code positions like app.js:1234:56 stay, so the bug can be found.
+   */
+  function scrubText(text, names, max, keepMoney) {
+    let s = String(text == null ? '' : text);
+    (names || []).filter((n) => n && n.length >= 3).sort((a, b) => b.length - a.length).forEach((n) => {
+      const re = n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      // A name made of letters only matches whole words, so "Neha" doesn't eat "Nehanagar" or a function name.
+      s = s.replace(new RegExp(/^[A-Za-z]+$/.test(n) ? '\\b' + re + '\\b' : re, 'gi'), '…');
+    });
+    s = s.replace(/[\w.+-]+@[\w.-]+/g, '<id>')
+      .replace(/(?:₹|rs\.?|inr)\s*[\d,]+(?:\.\d+)?/gi, (m) => (keepMoney ? m : '₹#'))
+      .replace(/\d[\d\s-]{4,}\d/g, (m) => (m.replace(/\D/g, '').length >= 6 ? '#' : m));
+    return s.slice(0, max || 1500);
+  }
+
+  /*
+   * A copy of the app's data (or its log) with every name replaced by a
+   * random stand-in: shops, people, accounts, cards, loans, goals, notes,
+   * your own name, words you skip. The same name gets the same stand-in
+   * everywhere (written as the app compares names), so the app works on the
+   * copy exactly as on the original: every amount, date and link is kept.
+   * Gone: SMS text and keys, account and card digits, times of day (dates
+   * stay). Built-in category names stay; your own become stand-ins.
+   * keep: more words that are safe as they are (the app's category names).
+   */
+  const PRIV_ID_KEYS = new Set(['id', 'txId', 'txIds', 'iouPay', 'emiFor', 'splitOf', 'refundOf', 'eventItem', 'viaCard', 'passedOn', 'from', 'to', 'wallet', 'paidFrom', 'fraudOk']);
+  const PRIV_ENUM_KEYS = new Set(['kind', 'source', 'dir', 'useFor', 'type', 'tone', 'tab', 'page', 'action', 'use', 'payoffOrder', 'risk', 'likely', 'zone', 'lastBackupWhere', 'theme', 'lang', 'leak', 'status', 'basis', 'mode', 'method']);
+  const PRIV_CATEGORY_KEYS = new Set(['category', 'sub', 'reason']);
+  const PRIV_DIGIT_KEYS = new Set(['last4', 'mainLast4', 'acct']);
+  // An error's own text (already cleaned of names by the app): kept, with long numbers and UPI ids taken out.
+  const PRIV_TEXT_KEYS = new Set(['message', 'stack', 'where']);
+  const PRIV_SECRET_KEYS = new Set(['smsKey', 'smsKeyIn', 'key', 'keys', 'smsIgnored', 'raw', 'text', 'body', 'sms', 'unread']);
+  // Objects whose keys are names (a shop, a person, a word) rather than field names.
+  const PRIV_NAME_MAPS = new Set(['merchantRules', 'payeeLinks', 'leakRules', 'leakGoals', 'smsSkipNames', 'savingRules', 'shares', 'add', 'hide']);
+  function pseudonymize(data, keep) {
+    const safe = new Set(Object.keys(SUBCATS).concat(...Object.keys(SUBCATS).map((k) => SUBCATS[k]), EARNED, ESSENTIAL_CATEGORIES, BASICS, LEAKS, NON_PACE_CATEGORIES,
+      DEFAULT_SPLIT.map((x) => x[0]), keep || []).map((w) => String(w).toLowerCase()));
+    const names = new Map(); const digits = new Map(); const secrets = new Map();
+    // Stand-ins in random order, so their numbers say nothing about the order things were added.
+    const pool = (n) => { const a = Array.from({ length: n }, (_, i) => i + 1); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+    const nums = pool(5000); const fours = pool(8999).map((n) => String(1000 + n)); let ni = 0; let di = 0; let ki = 0;
+    const name = (v) => {
+      const s = String(v);
+      if (safe.has(s.toLowerCase()) || s === 'me') return s;
+      const k = normalizeMerchant(s).replace(/\s+/g, '') || s.toLowerCase().trim();
+      if (!names.has(k)) names.set(k, 'name' + (nums[ni++] || ni));
+      return names.get(k);
+    };
+    const four = (v) => String(v).replace(/\d{3,}/g, (m) => { if (!digits.has(m)) digits.set(m, fours[di++] || '0000'); return digits.get(m); });
+    const secret = (v) => { if (!secrets.has(v)) secrets.set(v, 'k' + (++ki)); return secrets.get(v); };
+    const isDate = (v) => /^\d{4}-\d{2}-\d{2}(?:[T ][\d:.]+(?:Z|[+-]\d{2}:?\d{2})?)?$/.test(v);
+    const enumLike = (v) => /^[a-z@][A-Za-z0-9_:@.|-]{0,40}$/.test(v);
+    const str = (v, key) => {
+      if (isDate(v)) return v.slice(0, 10);
+      if (PRIV_TEXT_KEYS.has(key)) return scrubText(v, [], 1500, true);
+      if (PRIV_SECRET_KEYS.has(key)) return secret(v);
+      if (PRIV_DIGIT_KEYS.has(key)) return four(v);
+      if (PRIV_ID_KEYS.has(key) || /(?:Id|Ids|Tx)$/.test(key)) return /^card:/.test(v) ? 'card:' + four(v.slice(5)) : v;
+      if (PRIV_ENUM_KEYS.has(key) && enumLike(v)) return v;
+      // Category|subcategory as one value (rules learned from your choices)
+      if (v.indexOf('|') > 0 && v.split('|').every((x) => safe.has(x.toLowerCase()))) return v;
+      return name(v);
+    };
+    // An app-made id (letters and digits, at least one digit) or a date stays; anything else in a key is a name.
+    const keyPart = (p) => (isDate(p) || /^(?=.*\d)[a-z0-9_-]{5,}$/i.test(p) ? p : name(p));
+    const walk = (v, key, inNameMap) => {
+      if (typeof v === 'string') return str(v, key);
+      if (typeof v === 'number') {
+        if (PRIV_DIGIT_KEYS.has(key)) return Number(four(String(v)));
+        // Times kept as numbers (when SMS were last read): the day only.
+        return v > 1e12 && v < 2.5e12 ? v - (v % 86400000) : v;
+      }
+      if (Array.isArray(v)) return v.map((x) => walk(x, key));
+      if (!v || typeof v !== 'object') return v;
+      const out = {};
+      Object.keys(v).forEach((k) => {
+        const nk = inNameMap ? (isDate(k) ? k : name(k))
+          : /^[A-Za-z][A-Za-z0-9_]*$/.test(k) || isDate(k) ? k : k.split(':').map(keyPart).join(':');
+        out[nk] = walk(v[k], k, PRIV_NAME_MAPS.has(k));
+      });
+      return out;
+    };
+    return walk(data, '', false);
+  }
+
+  /*
+   * What an automatic crash report holds: the error and where in the code,
+   * the build, the phone, language and screen size, the last screens opened
+   * (no amounts, names or what was typed), and how many entries of each
+   * kind there are. Never an amount, a name, a note or a payment's date.
+   */
+  /*
+   * The words in the data that can tell who someone is: shops and notes,
+   * people, accounts, cards, loans, goals, your name, words you skip, and
+   * each word of them. Used to take them out of an error's text.
+   */
+  function privateWords(st) {
+    st = st || {};
+    const names = [];
+    const collect = (v, key) => {
+      if (typeof v === 'string') { if (v.length >= 3 && !/^\d{4}-\d{2}-\d{2}/.test(v) && !PRIV_ENUM_KEYS.has(key)) names.push(v); return; }
+      if (Array.isArray(v)) { v.forEach((x) => collect(x, key)); return; }
+      if (v && typeof v === 'object') Object.keys(v).forEach((k) => { if (k.length >= 3) names.push(k); collect(v[k], k); });
+    };
+    collect({ transactions: (st.transactions || []).map((t) => [t.note, t.category, t.sub]), names: ['iou', 'fixed', 'debts', 'bills', 'cards', 'wallets', 'goals', 'sinking', 'events', 'maybe'].map((k) => (st[k] || []).map((x) => [x.name, x.note, x.people, x.place])),
+      settings: st.settings && st.settings.name, rules: st.merchantRules, links: st.payeeLinks, skip: [st.smsSkip, st.smsSkipText, st.smsSkipNames] }, '');
+    // Field names and code words aren't anyone's details.
+    const code = /^(?:[a-z]+[A-Z][A-Za-z]*|amount|note|name|date|kind|category|transactions|settings|undefined|null|true|false)$/;
+    const known = Array.from(new Set(names.filter((n) => !code.test(n))));
+    // Each word of a name too (a surname alone in an error), as whole words.
+    return { known, words: known.concat(...known.map((n) => n.split(/[^A-Za-z\u0900-\u097f]+/).filter((w) => w.length >= 4 && !code.test(w)))) };
+  }
+
+  function crashReport(o) {
+    const st = o.state || {};
+    const { known, words } = privateWords(st);
+    const count = (k) => (Array.isArray(st[k]) ? st[k].length : 0);
+    const counts = {};
+    ['transactions', 'budgets', 'fixed', 'debts', 'bills', 'cards', 'wallets', 'goals', 'sinking', 'iou', 'events', 'maybe'].forEach((k) => { counts[k] = count(k); });
+    counts.fromSms = (st.transactions || []).filter((t) => t.smsKey).length;
+    const ua = String(o.ua || '');
+    const android = (ua.match(/Android\s([\d.]+)/) || [])[1] || null;
+    const model = (ua.match(/Android[^;)]*;\s*([^;)]+?)(?:\s+Build\/|\s*[;)])/) || [])[1] || null;
+    return {
+      v: 1, build: String(o.build || 'dev').slice(0, 20), day: String(o.day || '').slice(0, 10),
+      android, model: model ? model.slice(0, 40) : null, lang: String(o.lang || '').slice(0, 5), screen: String(o.screen || '').slice(0, 12),
+      message: scrubText(o.message, words, 300), where: scrubText(o.where, known, 120),
+      // Lines of code ("at recordSms (app.js:3145:22)") keep their function names; the error's own words are checked word by word.
+      stack: String(o.stack || '').split('\n').map((l) => scrubText(l, /^\s+at\s/.test(l) ? known : words, 300)).join('\n').slice(0, 1500),
+      screens: (o.log || []).slice(-15).map((e) => ({ kind: String(e.kind || '').slice(0, 20), tab: e.tab || null, page: e.page || null, action: /^[a-z][a-z0-9-]{0,30}$/.test(e.action || '') ? e.action : undefined })),
+      counts,
+    };
+  }
+
   const Core = {
     parseISO, toISO, addDays, addMonths, daysBetween, cycleFor, previousCycle,
     occurrenceInCycle, monthlyPlan, cycleEvents, projectRunway, autoSavings, allocate,
     insights, simulateDebts, compareDebtPlans, debtFreeDates, emergencyPlan, parseSms,
     splitSmsBatch, smsKey, categorize, normalizeMerchant, sinkingMonthly, inCycle,
     spendInRange, incomeInRange, incomeKept, isIncome, isMove, isBillPayment, isFixedPayment, isCashAdvance, emiLoans,
-    fixedCandidate, fixedTwins, mergeFixedTwin, bankTwin, joinBankTwin, iouTwin, personalAmt, SUBCATS, subcategories, splitCat, guessSub, subOf, subSuggestions, subBreakdown,
+    fixedCandidate, fixedTwins, mergeFixedTwin, bankTwin, joinBankTwin, iouTwin, scrubText, pseudonymize, crashReport, privateWords, personalAmt, SUBCATS, subcategories, splitCat, guessSub, subOf, subSuggestions, subBreakdown,
     addEvent, editEvent, splitShares, addEventExpense, removeEventExpense, eventForgetTx, deleteEvent, eventBalances, settleEvent, settleCandidates, tripHeld, eventView, eventStatement,
     cutOptions, weekTarget, fitWeekGoal, rupeeAmounts, checkAdviceNumbers,
     linkRefund, unlinkRefund, forgetRefunds, refundMatches, isEarned, earnedIn, fixedPaidFor, fixedDueFor, payFixed, unpayFixed, fixedMatches, isFlexible, incomeOptions,

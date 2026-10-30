@@ -279,11 +279,17 @@ Every tab keeps what always matters open, and shows its other cards as small ico
 ## 1. Privacy and your data
 
 Plan → **Your privacy** lists what the app does and never does, and each line is true of the app as built:
-- **Offline by default.** The app connects to the internet only for the optional **AI weekly plan**, which is off until you turn it on; with it off, nothing is ever sent. Airplane mode changes nothing else. A unit test checks that the weekly plan is the only network call in the code. Every build is installed on an emulator with Wi-Fi and data off; the download is only updated if it opens and works normally.
-- **Nothing from outside:** a content security policy stops the app's screens loading any outside script, font, image or request, and the fonts are bundled. No account, no ads, no analytics, no crash reports sent by themselves, no Google services.
+- **Offline by default.** The app connects to the internet only for the optional **AI weekly plan** and, if you said yes, **crash reports**; both are off until you turn them on, and with both off nothing is ever sent. Airplane mode changes nothing else. A unit test checks that these are the only network calls in the code and that each is behind its own yes. Every build is installed on an emulator with Wi-Fi and data off; the download is only updated if it opens and works normally.
+- **Nothing from outside:** a content security policy stops the app's screens loading any outside script, font, image or request, and the fonts are bundled. No account, no ads, no analytics, no Google services.
 - **Bank SMS** are read only when you tap *Read bank SMS* or turn on alerts. Messages from phone numbers (friends, family) are skipped in the native code, before the app sees them. Only a payment's amount, date and shop are saved, never the message.
 - **Android's cloud backup and device-to-device transfer are turned off** for the app's data, so not even Google gets a copy.
-- Something leaves the phone only when you share it (the AI report or a backup file), to the app you pick.
+- Something leaves the phone only when you choose: a backup file or a problem report you share (to the app you pick), crash reports if you said yes, or the AI plan's weekly summary.
+- **Crash reports** (asked once on Home, *Help fix crashes?*, with **Send crash reports** and **Don't send** side by side; changed any time in Profile → Privacy, which also shows **an example report**):
+  - Sent by themselves after an error, only after a yes: the error and where in the code (file and line), the last 15 screens and buttons, the phone's Android version and model, the app's build, language and screen size, and how many entries of each kind there are.
+  - Never an amount, a payment, a date of a payment, a name, a note, SMS text or anything that says who you are. Before it leaves, every name in your data (shops, people, accounts, loans, goals, your own name, and each word of them), UPI ids, e-mails, long numbers and rupee amounts are taken out of the error's text. The server takes them out again and keeps only the known fields.
+  - The same error is sent once a day, 10 reports a day at most; with no network they wait (5 at most) and go later.
+  - The server keeps each error as one record (how often, first and last day) for 90 days, then Cloudflare deletes it. No IP address or anything else about the sender is kept. Only the developer's key can read them.
+- **Privacy law:** built to India's Digital Personal Data Protection Act 2023 and its Rules (main duties from May 2027): a plain notice before anything is sent, a yes that's as easy to undo, only what's needed for the purpose, kept for a set time, and a contact for questions (the e-mail on the Google Play page). See `PRIVACY.md`.
 - **If the phone is lost, reset, or the app is uninstalled, the data goes with it**, unless you have a backup file. The app says so plainly.
 
 ### Backup and restore
@@ -692,9 +698,11 @@ Small habits that quietly cost a lot: cigarettes, liquor, tea and snacks, food d
 - **Report a problem** (Profile → Help), for the testing phase:
   - The app keeps a log on the phone of its last 500 events: taps (which button, which page), messages it showed, errors with where in the code they happened, each day's limit and how it was worked out, and for bank SMS it couldn't read, the wording with every digit hidden. With the app lock on, no text is kept, only taps and errors.
   - When something breaks, a message says once: *Something went wrong. Profile → Report a problem sends the details.*
-  - **Report a problem**: write what went wrong, then **Save report file** or **Share report**. The file has the note, today's numbers, the log and the data. It isn't password-locked, so the page says to send it only to the developer. Nothing is ever sent by itself.
+  - **Report a problem**: write what went wrong, then **Save report file** or **Share report**. Nothing is ever sent by itself. **See exactly what's inside** shows the file before it's made.
+    - **Always in it:** the errors the app hit (their text cleaned of names, numbers and UPI ids), where in the app, the screens opened, the phone model and how many entries there are. Never amounts, payments, names, notes or SMS. The note you write keeps its words; names from your data in it become *…*.
+    - **Add my numbers, names hidden** (ticked only for a wrong amount or limit): the data and the log, so the developer's copy works out exactly the same limit, balance and spending. Every shop, person, account, card, loan, goal, note and your own name becomes a random code (*name2731*), new for each report, the same code wherever that name appears; card and account digits are other digits; SMS keys are replaced; dates stay, times of day go. Built-in category names stay; your own become codes.
   - **Clear the log** empties it; **Erase everything** removes it too.
-  - For the developer: `node scripts/replay-report.js HisabSe-report-….json` opens the report in the real app on its own date, goes through every page, and prints errors, odd values and the last 40 events.
+  - For the developer: `node scripts/replay-report.js HisabSe-report-….json` opens a report with numbers in the real app on its own date, goes through every page, and prints errors, odd values and the last 40 events; for an errors-only report it prints the errors and screens. Delete reports once the bug is fixed.
 - **Updates:** a new APK every **Sunday morning** (India time), only if something changed. It installs over the old one and keeps your data.
 
 ## 15. Design and behaviour principles

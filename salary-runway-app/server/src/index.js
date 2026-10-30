@@ -6,6 +6,12 @@
  * (Core.planFacts in core.js): totals, categories, the names the person gave
  * their loans, cards, budgets and goals, fraud-check counts, and loan options.
  * Never SMS text, shop names, notes or account numbers. Nothing is stored here.
+ *
+ * It also takes the app's automatic crash reports (only from people who said
+ * yes): the error, where in the code, the build, the phone model and the
+ * screens, never amounts, names or payments (Core.crashReport in core.js).
+ * They are checked again here, kept in Workers KV for 90 days and then
+ * deleted by Cloudflare. Nothing about the sender (no IP address) is kept.
  */
 import Anthropic from "@anthropic-ai/sdk";
 
@@ -120,13 +126,95 @@ export const PLAN_SCHEMA = {
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, X-Invite-Code",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type, X-Invite-Code, X-Admin-Key",
   "Access-Control-Max-Age": "86400",
 };
 
 function reply(status, body) {
   return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json", ...cors } });
+}
+
+// ---------- crash reports ----------
+
+const CRASH_MAX_BYTES = 16000;
+const CRASH_DAYS = 90;
+
+// Long numbers (phone, account), UPI ids and e-mails, rupee amounts: taken out again, whatever the app sent.
+function scrub(text, max) {
+  return String(text == null ? "" : text)
+    .replace(/[\w.+-]+@[\w.-]+/g, "<id>")
+    .replace(/(?:₹|rs\.?|inr)\s*[\d,]+(?:\.\d+)?/gi, "₹#")
+    .replace(/\d[\d\s-]{4,}\d/g, (m) => (m.replace(/\D/g, "").length >= 6 ? "#" : m))
+    .slice(0, max);
+}
+const word = (v, max) => (typeof v === "string" && /^[\w .:/-]*$/.test(v) ? v.slice(0, max) : null);
+
+/*
+ * A crash report as the app sends it, cut down to the fields it may have.
+ * Anything else in the request is dropped. Exported for tests.
+ */
+export function cleanCrash(body) {
+  if (!body || typeof body !== "object" || body.v !== 1) return null;
+  const message = scrub(body.message, 300);
+  if (!message && !body.stack) return null;
+  const counts = {};
+  Object.entries(body.counts && typeof body.counts === "object" ? body.counts : {}).slice(0, 20).forEach(([k, n]) => {
+    if (/^[a-zA-Z]{1,20}$/.test(k) && Number.isInteger(n) && n >= 0 && n < 1e6) counts[k] = n;
+  });
+  return {
+    v: 1,
+    build: word(body.build, 20) || "?",
+    day: /^\d{4}-\d{2}-\d{2}$/.test(body.day || "") ? body.day : null,
+    android: word(body.android, 10),
+    model: word(body.model, 40),
+    lang: word(body.lang, 5),
+    screen: word(body.screen, 12),
+    message,
+    where: scrub(body.where, 120),
+    stack: scrub(body.stack, 1500),
+    screens: (Array.isArray(body.screens) ? body.screens : []).slice(-15).map((e) => ({
+      kind: word(e && e.kind, 20), tab: word(e && e.tab, 20), page: word(e && e.page, 30), action: word(e && e.action, 30),
+    })),
+    counts,
+  };
+}
+
+async function sha(text) {
+  const d = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+  return [...new Uint8Array(d)].slice(0, 8).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+// One record per error and build: the first report, and how often and when it happened since.
+export async function saveCrash(kv, report, todayIso) {
+  const key = "crash:" + report.build + ":" + (await sha(report.where + "|" + report.message));
+  const old = await kv.get(key, "json");
+  const rec = old ? { ...old, count: old.count + 1, last: todayIso } : { first: todayIso, last: todayIso, count: 1, report };
+  await kv.put(key, JSON.stringify(rec), { expirationTtl: CRASH_DAYS * 86400 });
+  return rec;
+}
+
+async function crashRoute(request, env) {
+  if (!env.CRASHES) return reply(503, { error: "not set up" });
+  const text = await request.text();
+  if (text.length > CRASH_MAX_BYTES) return reply(413, { error: "too big" });
+  let body;
+  try { body = JSON.parse(text); } catch (e) { return reply(400, { error: "Bad request" }); }
+  const report = cleanCrash(body);
+  if (!report) return reply(400, { error: "Bad request" });
+  await saveCrash(env.CRASHES, report, new Date().toISOString().slice(0, 10));
+  return new Response(null, { status: 204, headers: cors });
+}
+
+// For the developer only: the latest crash records (needs the CRASH_READ_KEY secret).
+async function crashList(request, env) {
+  const key = request.headers.get("X-Admin-Key") || "";
+  if (!env.CRASH_READ_KEY || key !== env.CRASH_READ_KEY) return reply(401, { error: "key" });
+  if (!env.CRASHES) return reply(503, { error: "not set up" });
+  const list = await env.CRASHES.list({ prefix: "crash:", limit: 200 });
+  const recs = (await Promise.all(list.keys.map((k) => env.CRASHES.get(k.name, "json")))).filter(Boolean);
+  recs.sort((a, b) => (a.last < b.last ? 1 : a.last > b.last ? -1 : b.count - a.count));
+  return reply(200, { crashes: recs });
 }
 
 // Checks the request and turns it into Messages API input. Exported for tests.
@@ -261,6 +349,9 @@ export default {
   async fetch(request, env) {
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
     const url = new URL(request.url);
+    // Crash reports carry nothing about the person, so they need no invite code.
+    if (request.method === "POST" && url.pathname === "/crash") return crashRoute(request, env);
+    if (request.method === "GET" && url.pathname === "/crashes") return crashList(request, env);
     if (request.method !== "POST" || (url.pathname !== "/plan" && url.pathname !== "/rates")) return reply(404, { error: "Not found" });
 
     const codes = String(env.INVITE_CODES || "").split(",").map((c) => c.trim()).filter(Boolean);

@@ -136,7 +136,13 @@ English, Marathi (मराठी) and Hindi (हिंदी), switched at the 
 
 ## Problem reports (testing phase)
 
-Testers tap **Profile → Report a problem**, describe the bug and save or share the report file. It holds their note, the day's numbers, the app's on-phone log (taps, messages, errors with file and line, daily limits, unread bank SMS with digits hidden) and their data, unencrypted. Nothing is sent by itself.
+Testers tap **Profile → Report a problem**, describe the bug and save or share the report file. Nothing is sent by itself. By default it holds only the errors (cleaned of names and numbers), the screens, the phone model and entry counts. Ticking **Add my numbers, names hidden** adds their data and log with every name a random code (`Core.pseudonymize`), so the replay works out the same numbers; there are no SMS texts, account digits or times of day.
+
+**Crash reports** come by themselves from people who said yes (`Core.crashReport`: error, code line, screens, phone, build, counts; no money data). They're kept on the AI server in Workers KV for 90 days. To read them, set the `CRASH_READ_KEY` secret (see `server/SETUP_CHECKLIST.md`), then:
+
+```
+curl -H "X-Admin-Key: <your CRASH_READ_KEY>" https://<your server>/crashes
+```
 
 To see what their app saw:
 
@@ -145,7 +151,7 @@ npm run build
 node scripts/replay-report.js HisabSe-report-2026-10-26.json
 ```
 
-It opens the report in the real app on the report's date, visits every page, and prints errors, odd values (NaN, undefined, ₹-) and the last 40 events; page text, the log and screenshots go to `reports/replay/`. Reports hold real money data: `.gitignore` keeps `reports/` and report or backup files out of the repo.
+It opens the report in the real app on the report's date, visits every page, and prints errors, odd values (NaN, undefined, ₹-) and the last 40 events; page text, the log and screenshots go to `reports/replay/`. A report with numbers still holds someone's amounts: `.gitignore` keeps `reports/` and report or backup files out of the repo, and they should be deleted once the bug is fixed (see `PRIVACY.md`).
 
 ## Money rules
 
@@ -153,6 +159,7 @@ Everything in the app affects something else, so the relationships are checked a
 
 - `tests/money-rules.test.js` (runs with `npm test`): net worth changes by exactly what was earned or spent, and moving your own money changes nothing; only spending shows as spending; what isn't income or spending (passed on, borrowed and lent together, kept for a purchase, a card bill) doesn't move today's limit; a covered purchase uses the kept money, not the budgets.
 - **The money map** (`tests/money-map.js`): every kind of entry the app records (32: spending from the account, a card or cash, refunds, money in and each place it can go, savings and each place, bills, card bills and EMIs, People, passed on, kept money, a lower salary, a balance check) against every number it shows (balance, today's limit, spending, budgets, income, net worth, emergency fund, Grow, goals, loans, People, the card, kept money, cash, days of freedom, payday). `tests/money-map.test.js` (with `npm test`) holds what each entry does to each number; anything else moving is a bug or a change to explain. `scripts/money-map-app.js` (`npm run build` first) runs it in the real app: each entry deleted from Payments puts every number back, and doubling its amount in the edit screen doubles what it did.
+- `scripts/privacy-app.js` (`npm run build` first; Playwright): crash reports are asked for once and sent only after a yes, without names, amounts or account digits; a problem report holds errors only, or with numbers every name is a code and the copy works out the same numbers; no times of day.
 - `scripts/connections-app.js` (`npm run build` first; Playwright): each kind of payment (rent, an EMI, a bill, a card bill, lent, borrowed, money moved to your own account or to cash, a trip payment, a refund, groceries) recorded by hand and by its bank SMS, in both orders, must be one entry with the balance, spending and People right.
 - `scripts/money-rules-app.js` (`npm run build` first; Playwright): in the real app, each entry added through the screens and deleted again leaves every number as it was (funds, goals, loans, People, kept money, net worth, limit, balance), and editing an amount keeps every link right. A category picked in the notification pop-up (a stand-in for the phone's store, `window.HisabTestSms`) must land in the same place as in the app: a budget, a saving place, a card, People, or *not a payment*.
 

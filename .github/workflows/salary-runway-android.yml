@@ -73,6 +73,9 @@ jobs:
 
       - name: Copy the web app into the Android project
         if: steps.changes.outputs.build == 'true'
+        env:
+          # The server address for automatic crash reports (Settings → Secrets and variables → Actions → Variables).
+          HISAB_CRASH_URL: ${{ vars.HISAB_CRASH_URL }}
         run: npm run android:sync
 
       - name: Build APK

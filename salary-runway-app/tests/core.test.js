@@ -1372,13 +1372,21 @@ test('AI facts: numbers and categories only, never shop names, notes or account 
   s.transactions.filter((x) => x.note && x.note.length > 4 && !Core.isFixedPayment(x)).forEach((x) => assert.ok(!f.includes(x.note), x.note));
 });
 
-test('the app connects to the internet only for the AI weekly plan, and only when it is turned on', () => {
+test('the app connects to the internet only for the AI weekly plan and crash reports, each only when turned on', () => {
   const fs = require('fs');
   const path = require('path');
   const src = fs.readFileSync(path.join(__dirname, '..', 'app.js'), 'utf8');
   const calls = src.match(/\bfetch\(|XMLHttpRequest|WebSocket|sendBeacon|EventSource/g) || [];
-  // Two requests, both to the person's own AI server: official rates (once a month) and the plan.
-  assert.deepEqual(calls, ['fetch(', 'fetch(']);
+  // Three requests: crash reports, then official rates (once a month) and the plan to the person's own AI server.
+  assert.deepEqual(calls, ['fetch(', 'fetch(', 'fetch(']);
+  // Crash reports: only after a yes (asked, never on by default), and only what Core.crashReport made.
+  const crash = src.slice(src.indexOf('function crashCfg('), src.indexOf('function toast('));
+  assert.equal((crash.match(/\bfetch\(/g) || []).length, 1);
+  assert.match(crash, /const none = \{ on: null/);
+  assert.match(crash.slice(crash.indexOf('function flushCrashes(')), /if \(c\.on !== true/);
+  assert.match(crash.slice(crash.indexOf('function queueCrash(')), /if \(c\.on !== true\) return;\s+const r = crashOf\(/);
+  assert.match(crash, /body: JSON\.stringify\(c\.queue\[0\]\)/);
+  assert.match(crash, /Core\.crashReport\(/);
   const fn = src.slice(src.indexOf('function fetchRates('), src.indexOf('// ---------- privacy and backup ----------'));
   assert.equal((fn.match(/\bfetch\(/g) || []).length, 2);
   assert.match(fn.slice(fn.indexOf('function requestPlan(')), /if \(!cfg\.on/);

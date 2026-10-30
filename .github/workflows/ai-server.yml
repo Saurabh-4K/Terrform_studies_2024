@@ -7,6 +7,9 @@ name: AI weekly plan server (deploy)
 #   CLOUDFLARE_ACCOUNT_ID  your Cloudflare account ID
 #   ANTHROPIC_API_KEY      key from the Claude Console (platform.claude.com)
 #   INVITE_CODES           comma-separated codes for your testers, e.g. asha-71k2,ravi-9pq4
+#   CRASH_READ_KEY         (optional) a long random password; with it you can read crash
+#                          reports at <server>/crashes. Without it nobody can read them.
+# Crash reports are kept in a Workers KV store this workflow makes the first time.
 on:
   workflow_dispatch:
 
@@ -26,6 +29,21 @@ jobs:
           node-version: 22
       - run: npm ci
       - run: npm test
+      # Where crash reports are kept (90 days each). Made once; later runs find it by its name.
+      - name: Crash reports storage
+        continue-on-error: true
+        env:
+          CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CF_ACCOUNT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          api="https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT/storage/kv/namespaces"
+          find() { curl -fsS -H "Authorization: Bearer $CF_TOKEN" "$api?per_page=100" | node -e "const r=JSON.parse(require('fs').readFileSync(0,'utf8'));const n=(r.result||[]).find((x)=>x.title==='salary-runway-crashes');process.stdout.write(n?n.id:'')"; }
+          id=$(find)
+          if [ -z "$id" ]; then
+            curl -fsS -X POST -H "Authorization: Bearer $CF_TOKEN" -H "Content-Type: application/json" --data '{"title":"salary-runway-crashes"}' "$api" > /dev/null
+            id=$(find)
+          fi
+          if [ -n "$id" ]; then printf '\n[[kv_namespaces]]\nbinding = "CRASHES"\nid = "%s"\n' "$id" >> wrangler.toml; echo "Crash reports storage ready."; else echo "::warning::Couldn't make the crash reports storage; the token may need Workers KV Storage: Edit."; fi
       - name: Deploy to Cloudflare
         uses: cloudflare/wrangler-action@v3
         with:
@@ -39,3 +57,11 @@ jobs:
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           INVITE_CODES: ${{ secrets.INVITE_CODES }}
+      - name: Key for reading crash reports
+        continue-on-error: true
+        env:
+          CRASH_READ_KEY: ${{ secrets.CRASH_READ_KEY }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [ -n "$CRASH_READ_KEY" ]; then printf '%s' "$CRASH_READ_KEY" | npx wrangler secret put CRASH_READ_KEY; else echo "No CRASH_READ_KEY secret: crash reports are kept but nobody can read them."; fi

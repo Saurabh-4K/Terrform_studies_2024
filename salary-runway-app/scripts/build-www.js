@@ -24,7 +24,10 @@ const faces = fonts.map(([family, pkg, file, weight]) => {
 fs.writeFileSync(path.join(out, 'fonts.css'), faces.join('\n') + '\n');
 
 // The build number for Profile → About (the CI run number; "dev" when built by hand).
-fs.writeFileSync(path.join(out, 'build-info.js'), 'window.HISAB_BUILD = ' + JSON.stringify(process.env.GITHUB_RUN_NUMBER || 'dev') + ';\n');
+// Where automatic crash reports go (the app's server, https only); empty: they wait until there is one.
+const crashUrl = /^https:\/\/[^\s"'<>]+$/.test(process.env.HISAB_CRASH_URL || '') ? process.env.HISAB_CRASH_URL : '';
+fs.writeFileSync(path.join(out, 'build-info.js'), 'window.HISAB_BUILD = ' + JSON.stringify(process.env.GITHUB_RUN_NUMBER || 'dev') + ';\n' +
+  'window.HISAB_CRASH_URL = ' + JSON.stringify(crashUrl) + ';\n');
 
 let html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 html = html

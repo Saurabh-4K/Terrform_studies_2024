@@ -1147,3 +1147,7 @@ button.tx-title { display: flex; align-items: center; gap: 6px; background: none
 .pick2 { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .pick2 select[hidden] { display: none; }
 td .pick2 select { max-width: 132px; }
+/* Report a problem: the "add my numbers" choice wraps; the preview is the file itself. */
+.callout .check-row { align-items: flex-start; }
+.callout .check-row input { flex: none; margin-top: 3px; }
+.report-preview { font-family: ui-monospace, monospace; font-size: 0.72rem; white-space: pre; overflow-x: auto; }

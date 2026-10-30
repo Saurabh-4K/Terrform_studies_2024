@@ -3,8 +3,11 @@
 //   node scripts/replay-report.js HisabSe-report-2026-10-26.json [out-dir]
 // Prints the note, the app's numbers, recent errors and the log, and writes
 // every page's text and a screenshot of each tab to out-dir (default reports/replay).
-// Needs `npm run build` first and Playwright. Reports hold real money data:
-// keep them and the output out of the repo (.gitignore covers reports/).
+// Needs `npm run build` first and Playwright. Reports from build 76 on hold no
+// names (a report "with numbers" has random stand-ins), but still a person's
+// amounts: keep them and the output out of the repo (.gitignore covers reports/)
+// and delete them once the bug is fixed. A report with errors only has no data
+// to open: its errors and screens are printed.
 const fs = require('fs');
 const path = require('path');
 const http = require('http');
@@ -16,7 +19,17 @@ try { playwright = require('playwright'); } catch (e) {
 const file = process.argv[2];
 if (!file) { console.error('Usage: node scripts/replay-report.js <report.json> [out-dir]'); process.exit(1); }
 const report = JSON.parse(fs.readFileSync(file, 'utf8'));
-if (report.kind !== 'hisab-problem-report' || !report.state) { console.error('Not a Hisab Se problem report.'); process.exit(1); }
+if (report.kind !== 'hisab-problem-report') { console.error('Not a Hisab Se problem report.'); process.exit(1); }
+if (!report.state) {
+  // Errors only: what went wrong and where, nothing to open in the app.
+  console.log('Report made ' + report.made + ' · build ' + report.build + ' · Android ' + report.android + ' · ' + report.model + ' · ' + report.lang);
+  console.log('Note: ' + (report.note || '(none)'));
+  console.log('Entries: ' + JSON.stringify(report.counts || {}));
+  (report.errors || []).forEach((x) => console.log('  ERROR ' + x.day + ' [' + x.tab + '/' + (x.page || '') + '] ' + x.message + ' @ ' + x.where + (x.stack ? '\n    ' + x.stack.split('\n').slice(0, 5).join('\n    ') : '')));
+  console.log('Last screens: ' + (report.screens || []).map((x) => [x.tab, x.page, x.action].filter(Boolean).join('/')).join(' → '));
+  console.log('\nNo data in this report. For a wrong number, ask for one with "Add my numbers, names hidden".');
+  process.exit(0);
+}
 const out = process.argv[3] || path.join(__dirname, '..', 'reports', 'replay');
 fs.mkdirSync(out, { recursive: true });
 const www = path.join(__dirname, '..', 'www');
@@ -37,7 +50,7 @@ const line = (s) => console.log(s);
   await new Promise((ok) => server.listen(0, ok));
   const base = 'http://localhost:' + server.address().port + '/index.html';
   line('Report made ' + report.made + ' · build ' + report.build + ' · ' + report.lang + ' · lock ' + (report.lock ? 'on' : 'off') + ' · AI ' + (report.ai ? 'on' : 'off'));
-  line('Device: ' + report.device + ' · ' + report.screen);
+  line('Device: ' + (report.device || ('Android ' + report.android + ' · ' + report.model)) + ' · ' + report.screen);
   line('Note: ' + (report.note || '(none)'));
   line('On the phone: ' + JSON.stringify(report.numbers && { limit: report.numbers.limit, balance: report.numbers.balance, zone: report.numbers.zone, parts: report.numbers.parts }));
   const log = report.log || [];
@@ -45,7 +58,7 @@ const line = (s) => console.log(s);
   line('\nLog: ' + log.length + ' events, ' + errs.length + ' errors');
   errs.slice(-10).forEach((x) => line('  ERROR ' + x.at + ' [' + x.tab + '/' + (x.page || '') + '] ' + x.message + ' @ ' + x.where + (x.stack ? '\n    ' + x.stack.split('\n').slice(0, 4).join('\n    ') : '')));
   line('Last 40 events:');
-  log.slice(-40).forEach((x) => line('  ' + x.at.slice(5, 19) + ' ' + x.kind.padEnd(5) + ' ' + JSON.stringify(Object.fromEntries(Object.entries(x).filter(([k]) => ['at', 'kind'].indexOf(k) === -1)))));
+  log.slice(-40).forEach((x) => line('  ' + String(x.at || '').slice(5, 19) + ' ' + String(x.kind || '').padEnd(5) + ' ' + JSON.stringify(Object.fromEntries(Object.entries(x).filter(([k]) => ['at', 'kind'].indexOf(k) === -1)))));
   fs.writeFileSync(path.join(out, 'log.json'), JSON.stringify(log, null, 1));
 
   const browser = await playwright.chromium.launch();
@@ -53,7 +66,8 @@ const line = (s) => console.log(s);
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push('console: ' + m.text()); });
-  await page.clock.setFixedTime(new Date(report.made));
+  // The report's day, at midday in India (reports from build 76 on carry the date only).
+  await page.clock.setFixedTime(new Date(String(report.made).length > 10 ? report.made : report.today + 'T12:00:00+05:30'));
   await page.goto(base + '#home');
   await page.evaluate((st) => {
     localStorage.clear();
