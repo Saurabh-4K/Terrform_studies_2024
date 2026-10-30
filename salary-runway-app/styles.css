@@ -1142,3 +1142,8 @@ button.tx-title { display: flex; align-items: center; gap: 6px; background: none
 .check-row input { width: 18px; height: 18px; }
 .iou-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
 .iou-item + .row, .iou-item + .form-grid { margin: 2px 0 10px; }
+
+/* Category, then what's in it: the second dropdown opens from the first. */
+.pick2 { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.pick2 select[hidden] { display: none; }
+td .pick2 select { max-width: 132px; }

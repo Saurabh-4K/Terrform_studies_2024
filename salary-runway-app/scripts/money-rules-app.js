@@ -17,6 +17,23 @@ const server = http.createServer((req, res) => {
   fs.readFile(f, (err, d) => { if (err) { res.writeHead(404); res.end(); return; } res.writeHead(200, { 'Content-Type': types[path.extname(f)] || 'application/octet-stream' }); res.end(d); });
 });
 
+/*
+ * Picks a value the way a person does: the first dropdown (its group), then
+ * the second (the item). sub: a CSS selector for the second dropdowns; the
+ * first one holding the value is used.
+ */
+async function pick(page, sub, value) {
+  await page.evaluate(([sel, v]) => {
+    const e = [...document.querySelectorAll(sel)].find((x) => JSON.parse(x.parentNode.querySelector('.pick-main').dataset.groups).some((g) => g.i.some((i) => i[0] === v)));
+    const main = e.parentNode.querySelector('.pick-main');
+    main.value = String(JSON.parse(main.dataset.groups).findIndex((g) => g.i.some((i) => i[0] === v)));
+    main.dispatchEvent(new Event('change', { bubbles: true }));
+    window.__pickSub = e;
+  }, [sub, value]);
+  await page.waitForTimeout(150);
+  await page.evaluate((v) => { const e = window.__pickSub; e.value = v; e.dispatchEvent(new Event('change', { bubbles: true })); }, value);
+}
+
 function household() {
   return {
     version: 1, isDemo: false,
@@ -221,7 +238,7 @@ async function notifications(browser, B) {
       (s) => s.iou.some((i) => i.name === 'AMIT' && i.dir === 'lent' && i.amount === 3000) && s.transactions.some((t) => t.note === 'AMIT' && t.iouId && !t.needsReview),
       async (page) => {
         await page.evaluate(() => document.querySelector('[data-action=tab][data-tab=spend]').click()); await page.waitForTimeout(200);
-        await page.evaluate(() => { const e = document.querySelector('.check-card select[data-tx-cat]'); e.value = '@lent'; e.dispatchEvent(new Event('change', { bubbles: true })); });
+        await pick(page, '.check-card select[data-tx-cat]', '@lent');
         await page.waitForTimeout(200);
       }],
     'money in, then "Rahul paying back" in Payments': [alert({ type: 'credit', amount: 1000, merchant: 'RAHUL K', category: 'Money received', status: 'new' }),
@@ -229,7 +246,7 @@ async function notifications(browser, B) {
       async (page) => {
         await page.evaluate(() => document.querySelector('[data-action=tab][data-tab=spend]').click()); await page.waitForTimeout(200);
         await page.evaluate(() => document.querySelector('[data-action=page-open][data-key=payments]').click()); await page.waitForTimeout(200);
-        await page.evaluate(() => { const e = [...document.querySelectorAll('select[data-tx-cat]')].find((x) => [...x.options].some((o) => o.value === '@iou:iou1')); e.value = '@iou:iou1'; e.dispatchEvent(new Event('change', { bubbles: true })); });
+        await pick(page, 'select[data-tx-cat]', '@iou:iou1');
         await page.waitForTimeout(200);
       }],
     'card refund → the purchase gets smaller': [alert({ type: 'credit', amount: 500, merchant: 'CROMA', category: 'Refund', cardId: 'c1' }),
@@ -266,8 +283,8 @@ async function notifications(browser, B) {
     const ok = !!lists && lists.categories.indexOf('@lent') !== -1 && lists.categories.indexOf('Family') !== -1 && lists.categories.indexOf('Savings') !== -1 &&
       lists.incomeCategories.indexOf('@borrowed') !== -1 && lists.incomeCategories.indexOf('@iou:iou1') !== -1 &&
       lists.incomeCategoryLabels[lists.incomeCategories.indexOf('@iou:iou1')] === 'People › Rahul paying back (₹5,000 left)' &&
-      // Subcategories and the choices that do something are in the pop-up too
-      lists.categories.indexOf('Bills|Electricity') !== -1 && lists.categories.indexOf('@loan:pl') !== -1 && lists.incomeCategories.indexOf('@refund') !== -1 &&
+      // A short list: categories without their subcategories (the shop's comes by itself), and the choices that do something
+      lists.categories.indexOf('Bills') !== -1 && !lists.categories.some((c) => c.indexOf('|') !== -1) && lists.categories.indexOf('@loan:pl') !== -1 && lists.incomeCategories.indexOf('@refund') !== -1 &&
       lists.categories.length === lists.categoryLabels.length && lists.incomeCategories.length === lists.incomeCategoryLabels.length;
     if (!ok) bad++;
     console.log((ok ? 'OK   ' : 'FAIL ') + 'pop-up lists include People' + (ok ? '' : '\n   ' + JSON.stringify(lists)));

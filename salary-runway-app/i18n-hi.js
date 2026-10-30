@@ -2442,4 +2442,7 @@
   "Sale of goods": "सामान बेचा",
   "Insurance": "बीमा",
   "Taxes": "कर",
+  "Choose…": "चुनें…",
+  "Detail": "ब्योरा",
+  "Choose what it was.": "यह किसके लिए था, चुनें.",
 };

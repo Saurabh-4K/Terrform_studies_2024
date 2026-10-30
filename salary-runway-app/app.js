@@ -2141,7 +2141,7 @@
       '<div class="list">' + list.map((x) => Core.isMove(x) ? savedCheckItem(x) :
         '<div class="check-item"><div class="check-top"><div class="grow"><div class="title">' + esc(tr(x.note || 'Bank payment')) + '</div>' +
         '<div class="meta">' + fmtDate(x.date) + '</div></div><div class="amt">' + inr(x.amount) + '</div></div>' +
-        '<div class="row"><select data-tx-cat="' + esc(x.id) + '" aria-label="' + tr('Category') + '">' + pickerHtml(Core.isIncome(x), x) + '</select>' +
+        '<div class="row">' + pickerPair(Core.isIncome(x), x, null, 'data-tx-cat="' + esc(x.id) + '"') +
         ((state.cards || []).length || x.paidFrom
           ? '<select data-tx-from="' + esc(x.id) + '" aria-label="' + tr('Paid from') + '">' + paidFromOptions(x.paidFrom) +
             (x.paidFrom && x.paidFrom.indexOf('card:') === 0 ? '<option value="' + esc(x.paidFrom) + '" selected>' + tr('Card ending {last4} (not added)', { last4: esc(x.paidFrom.slice(5)) }) + '</option>' : '') + '</select>'
@@ -2853,7 +2853,7 @@
       '<form id="add-tx" class="form-grid" autocomplete="off">' +
       '<label class="field">' + tr('Amount (₹)') + '<input id="tx-amount" type="number" inputmode="decimal" min="1" max="1000000000" step="any" required placeholder="' + (moneyIn ? '2000' : '250') + '"></label>' +
       (moneyIn ? '' : '<p id="tx-big-warn" class="borrow-warn wide" hidden></p>') +
-      '<label class="field">' + tr('Category') + '<select id="tx-category">' + pickerHtml(moneyIn, null, moneyIn ? 'Money received' : 'Food & dining') + '</select></label>' +
+      '<div class="field wide"><span>' + tr('Category') + '</span>' + pickerPair(moneyIn, null, moneyIn ? 'Money received' : 'Food & dining', 'id="tx-category"') + '</div>' +
       '<label class="field">' + tr('Date') + '<input id="tx-date" type="date" value="' + t + '" max="' + t + '" required></label>' +
       '<label class="field">' + tr(moneyIn ? 'From' : 'Where / what') + '<input id="tx-note" type="text" placeholder="' + (moneyIn ? 'Rahul' : 'Swiggy') + '"></label>' +
       (!moneyIn && ((state.cards || []).length || (state.wallets || []).length)
@@ -2952,7 +2952,7 @@
         return '<tr' + (r.duplicate || (isIn && Core.looksLikeSalary(state, p)) ? ' class="muted"' : '') + '>' + check +
           '<td><div class="cell-title">' + esc(tr(p.merchant)) + '</div><div class="cell-sub">' + fmtDate(p.date) + (note ? ' · ' + note : '') +
           ' · <button class="link" data-action="sms-skip-like" data-i="' + i + '">' + tr('Skip SMS like this') + '</button></div></td>' +
-          '<td><select data-sms-cat="' + i + '" aria-label="' + tr('Category') + '">' + pickerHtml(isIn, null, p.sub && !personPick(p.category) && !isSmart(p.category) ? p.category + '|' + p.sub : p.category) + '</select></td>' +
+          '<td>' + pickerPair(isIn, null, p.sub && !personPick(p.category) && !isSmart(p.category) ? p.category + '|' + p.sub : p.category, 'data-sms-cat="' + i + '"') + '</td>' +
           '<td class="amt' + (isIn ? ' good' : '') + '">' + (isIn ? '+' : '') + inr(p.amount) + '</td></tr>';
       }).join('') +
       '</tbody></table></div>' +
@@ -3256,8 +3256,8 @@
     if (!isIn) {
       categories().forEach((c) => {
         const subs = Core.subcategories(state, c);
-        if (!subs.length) { groups.push({ label: null, items: [[c, label(c)]] }); return; }
-        groups.push({ label: label(c), items: [[c, tr('{name}: anything', { name: label(c) })]].concat(subs.map((s) => [c + '|' + s, tr(s)])) });
+        if (!subs.length) { groups.push({ label: null, cat: c, items: [[c, label(c)]] }); return; }
+        groups.push({ label: label(c), cat: c, items: [[c, tr('{name}: anything', { name: label(c) })]].concat(subs.map((s) => [c + '|' + s, tr(s)])) });
       });
       if (!linked) {
         const smart = []
@@ -3289,16 +3289,49 @@
     if (!linked) groups.push({ label: tr('People'), items: personChoices(isIn, x) });
     return groups;
   }
-  function pickerHtml(isIn, x, value) {
-    const v = value != null ? value : x ? (x.sub ? x.category + '|' + x.sub : x.category) : isIn ? 'Money received' : 'Food & dining';
-    const all = [].concat(...pickerGroups(isIn, x).map((g) => g.items.map((i) => i[0])));
-    const opt = ([val, lab]) => '<option value="' + esc(val) + '"' + (val === v ? ' selected' : '') + '>' + esc(lab) + '</option>';
-    return (all.indexOf(v) === -1 && v ? opt([v, label(Core.splitCat(v).category) + (Core.splitCat(v).sub ? ' › ' + Core.splitCat(v).sub : '')]) : '') +
-      pickerGroups(isIn, x).map((g) => (g.label ? '<optgroup label="' + esc(g.label) + '">' + g.items.map(opt).join('') + '</optgroup>' : g.items.map(opt).join(''))).join('');
+  /*
+   * Two dropdowns, the second opening from the first: first the category or
+   * group (Food & dining, Bills, cards and EMIs, People…), then what's in it.
+   * A category applies as soon as it's picked (its subcategory is a detail you
+   * can add); a group of things that act (a loan, a person) waits for the
+   * second pick, so nothing is applied by mistake. The second dropdown keeps
+   * the attributes the saving code reads (attrs), so it holds the value.
+   */
+  function pickerPair(isIn, x, value, attrs) {
+    const groups = pickerGroups(isIn, x);
+    const v = value != null ? value : x ? (x.sub ? x.category + '|' + x.sub : x.category) : '';
+    let gi = groups.findIndex((g) => g.items.some((i) => i[0] === v));
+    if (gi === -1 && v) {
+      const c = Core.splitCat(v);
+      groups.unshift({ label: null, cat: c.category, items: [[v, label(c.category) + (c.sub ? ' › ' + tr(c.sub) : '')]] });
+      gi = 0;
+    }
+    const data = groups.map((g) => ({ l: g.label || g.items[0][1], c: g.cat ? 1 : 0, i: g.items }));
+    const opt = (val, lab, on) => '<option value="' + esc(val) + '"' + (on ? ' selected' : '') + '>' + esc(lab) + '</option>';
+    const items = gi === -1 ? [] : data[gi].i;
+    return '<span class="pick2"><select class="pick-main" aria-label="' + esc(tr('Category')) + '" data-groups="' + esc(JSON.stringify(data)) + '">' +
+      (gi === -1 ? opt('', tr('Choose…'), true) : '') + data.map((g, k) => opt(k, g.l, k === gi)).join('') + '</select>' +
+      '<select ' + attrs + ' class="pick-sub" aria-label="' + esc(tr('Detail')) + '"' + (items.length <= 1 ? ' hidden' : '') + '>' +
+      (gi === -1 ? opt('', '', true) : items.map(([val, lab]) => opt(val, lab, val === v)).join('')) + '</select></span>';
   }
-  // The same, as one flat list for the bank-SMS pop-up: [value, "Group › item"].
+  // The first dropdown chose a group: the second shows what's in it.
+  function pickerMainChanged(m) {
+    const g = JSON.parse(m.dataset.groups || '[]')[Number(m.value)];
+    const sub = m.parentNode && m.parentNode.querySelector('.pick-sub');
+    if (!g || !sub) return;
+    const auto = g.c || g.i.length === 1;
+    sub.innerHTML = (auto ? '' : '<option value="" selected>' + esc(tr('Choose…')) + '</option>') +
+      g.i.map(([v, l], k) => '<option value="' + esc(v) + '"' + (auto && k === 0 ? ' selected' : '') + '>' + esc(l) + '</option>').join('');
+    sub.hidden = g.i.length === 1;
+    if (auto) sub.dispatchEvent(new Event('change', { bubbles: true }));
+    else sub.focus();
+  }
+
+  // For the bank-SMS pop-up: one short list, the categories without their subcategories (the shop's own comes by itself),
+  // then the choices that act: [value, "Group › item"].
   function pickerFlat(isIn) {
-    return [].concat(...pickerGroups(isIn, null).map((g) => g.items.map(([v, l]) => [v, g.label && l.indexOf(g.label) === -1 ? g.label + ' › ' + l : l])));
+    return [].concat(...pickerGroups(isIn, null).map((g) => (g.cat ? [[g.cat, label(g.cat)]]
+      : g.items.map(([v, l]) => [v, g.label && l.indexOf(g.label) === -1 ? g.label + ' › ' + l : l]))));
   }
 
   // Sets a plain choice ('Bills|Electricity' or 'Bills') on an entry, and learns it for the shop.
@@ -4422,7 +4455,7 @@
       (locked ? '' : field('edit-amount', 'Amount (₹)', '<input id="edit-amount" type="number" inputmode="decimal" min="1" max="1000000000" step="any" value="' + esc(x.amount) + '">') +
         field('edit-date', 'Date', '<input id="edit-date" type="date" max="' + t + '" value="' + esc(x.date) + '">')) +
       field('edit-note', isIn ? 'From' : 'Where / what', '<input id="edit-note" type="text" value="' + esc(x.note || '') + '">') +
-      (flex || isIn ? field('edit-cat', 'Category', '<select id="edit-cat">' + pickerHtml(isIn, x) + '</select>') : '') +
+      (flex || isIn ? '<div class="field wide"><span>' + tr('Category') + '</span>' + pickerPair(isIn, x, null, 'id="edit-cat"') + '</div>' : '') +
       (flex && ((state.cards || []).length || (state.wallets || []).length) ? '<label class="field wide" for="edit-from"><span>' + tr('Paid from') + '</span><select id="edit-from">' + fromOptions(x) + '</select></label>' : '') +
       ((isIn || saved) && (state.wallets || []).length ? '<label class="field wide" for="edit-from"><span>' + tr(isIn ? 'Into' : 'From') + '</span><select id="edit-from">' + intoOptions(x) + '</select></label>' : '') +
       '</div>' +
@@ -4645,7 +4678,7 @@
     const cat = Core.isTransfer(x) ? esc(walletName(x.from)) + ' → ' + esc(walletName(x.to))
       : x.emiFor ? esc(tr('Loan EMI')) : x.fixedId ? esc(tr('Fixed payment'))
       : edit && !saved && !Core.isBillPayment(x) && !Core.isCardTransfer(x)
-      ? '<select data-tx-cat="' + esc(x.id) + '" aria-label="' + tr('Category') + '">' + pickerHtml(isIn, x) + '</select>'
+      ? pickerPair(isIn, x, null, 'data-tx-cat="' + esc(x.id) + '"')
       : saved ? esc(x.useFor ? tr('Saved → {place}', { place: savedWhere(x) }) : tr('Saved: choose where it goes'))
         : esc(label(Core.isCardTransfer(x) ? 'Card' : Core.isBillPayment(x) ? 'Bills' : x.category || ''));
     const sub = cat + ' · ' + fmtDate(x.date) +
@@ -7981,9 +8014,10 @@
       return;
     }
     if (el.dataset.reimbDefault) { state.reimbRouting = el.value === 'vault' ? 'vault' : 'daily'; save(); return; }
+    if (el.classList && el.classList.contains('pick-main')) { pickerMainChanged(el); return; }
     if (el.dataset.txCat) {
       const tx = state.transactions.find((x) => x.id === el.dataset.txCat);
-      if (!tx) return;
+      if (!tx || !el.value) return;
       const pick = personPick(el.value);
       if (pick) {
         const before = JSON.stringify(state);
@@ -8021,7 +8055,7 @@
       save(); toast(key ? tr('Saved. Future payments to {shop} will go to {category}.', { shop: tx.note, category: label(tx.category) + (tx.sub ? ' › ' + tr(tx.sub) : '') }) : tr('Saved')); return;
     }
     if (el.dataset.smsCheck !== undefined) { ui.smsRows[Number(el.dataset.smsCheck)].checked = el.checked; rerenderKeepScroll(); return; }
-    if (el.dataset.smsCat !== undefined) { ui.smsRows[Number(el.dataset.smsCat)].parsed.category = el.value; return; }
+    if (el.dataset.smsCat !== undefined) { if (el.value) ui.smsRows[Number(el.dataset.smsCat)].parsed.category = el.value; return; }
     if (el.dataset.em === 'type') { ui.emergency.type = el.value; }
   }
 
@@ -8134,6 +8168,7 @@
     if (amount <= 0) return;
     const note = document.getElementById('tx-note').value.trim();
     const choice = document.getElementById('tx-category').value;
+    if (!choice) { toast(tr('Choose what it was.')); return; }
     const special = isSmart(choice) || personPick(choice) ? choice : null;
     const category = special ? (ui.txKind === 'in' ? 'Money received' : 'Misc') : Core.splitCat(choice).category;
     const tx = { id: uid(), date: document.getElementById('tx-date').value || today(), amount, category, note, source: 'manual' };

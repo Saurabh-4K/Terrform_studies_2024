@@ -2442,4 +2442,7 @@
   "Sale of goods": "वस्तू विकल्या",
   "Insurance": "विमा",
   "Taxes": "कर",
+  "Choose…": "निवडा…",
+  "Detail": "तपशील",
+  "Choose what it was.": "हे कशासाठी होते ते निवडा.",
 };
