@@ -1155,3 +1155,55 @@ td .pick2 select { max-width: 132px; }
 .red-box { background: var(--bad-soft); border-radius: 12px; padding: 12px 14px 0; }
 .red-box .red-due { margin: 0; }
 .red-box .red-options { background: none; padding-left: 20px; padding-right: 0; }
+
+/* ---------- Road to payday ---------- */
+.road { display: grid; gap: 14px; }
+.road-head h2 { margin: 0; font-family: var(--font-display); font-size: 1.6rem; }
+.road-head .hint { margin: 2px 0 0; }
+/* The warning: full width, in the zone's colour, the first thing under the title. */
+.road-status { display: flex; gap: 12px; align-items: flex-start; padding: 14px 16px; border-radius: 16px; border: 2px solid transparent; }
+.road-status .sign { width: 30px; height: 30px; flex: none; }
+.road-status b { display: block; font-size: 1.08rem; line-height: 1.3; }
+.road-status span { display: block; margin-top: 3px; font-size: 0.92rem; line-height: 1.4; }
+.road-status.zone-red { background: var(--bad); color: #fff; }
+.road-status.zone-amber { background: var(--caution); color: #3a2600; }
+.road-status.zone-green { background: var(--good-soft); color: var(--good); border-color: var(--good); }
+.road-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.road-stat { background: var(--surface); border-radius: 14px; padding: 12px; box-shadow: var(--shadow); display: grid; gap: 2px; min-width: 0; }
+.road-stat-label { font-size: 0.8rem; color: var(--muted); }
+.road-stat b { font-family: var(--font-display); font-size: 1.3rem; }
+.road-stat .hint { font-size: 0.78rem; margin: 0; }
+.road-tabs { display: grid; grid-template-columns: repeat(3, 1fr); background: var(--surface); border-radius: 14px; padding: 4px; box-shadow: var(--shadow); }
+.road-tabs button { border: 0; background: none; padding: 10px 4px; border-radius: 10px; font-weight: 600; color: var(--muted); min-height: 44px; }
+.road-tabs button.on { background: var(--teal); color: var(--cream); }
+.road .card h3 { margin: 0 0 2px; font-family: var(--font-display); }
+.road-chart { margin-top: 8px; }
+.road-svg { width: 100%; height: auto; display: block; }
+.road-line { fill: none; stroke: var(--teal); stroke-width: 2.4; stroke-linejoin: round; }
+.road-area { fill: var(--accent-soft); }
+.road-danger { fill: var(--bad-soft); }
+.road-payday { fill: none; stroke: var(--good); stroke-width: 2; stroke-dasharray: 5 4; }
+.road-dot { fill: var(--teal); stroke: var(--surface); stroke-width: 1.5; }
+.road-dot.good { fill: var(--good); }
+.road-dot.bad { fill: var(--bad); }
+.road-dot.low { fill: var(--marigold); }
+.road-tag { font-size: 9.5px; fill: var(--ink); font-weight: 600; paint-order: stroke; stroke: var(--surface); stroke-width: 3px; }
+.road-row { display: flex; gap: 10px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.road-row .grow { display: grid; min-width: 0; }
+.road-row .grow b { overflow-wrap: anywhere; }
+.road-row.short { background: var(--bad-soft); border-radius: 10px; padding-inline: 8px; }
+.road-icon { width: 34px; height: 34px; border-radius: 50%; background: var(--surface-2); display: grid; place-items: center; flex: none; font-size: 1rem; }
+.road-amt { text-align: right; display: grid; flex: none; }
+.road-rates { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 10px 0; }
+.road-rate { border: 1.5px solid var(--line); background: var(--surface); border-radius: 12px; padding: 10px 6px; display: grid; gap: 2px; text-align: center; min-height: 64px; color: var(--ink); }
+.road-rate span { font-size: 0.82rem; color: var(--muted); }
+.road-rate.on { border-color: var(--teal); background: var(--accent-soft); }
+.afford-res { margin-top: 10px; border-radius: 12px; padding: 12px; display: grid; gap: 4px; }
+.afford-res.good { background: var(--good-soft); }
+.afford-res.warn { background: var(--warn-soft); }
+.afford-res.bad { background: var(--bad-soft); }
+.road-link { width: 100%; text-align: left; display: grid; gap: 2px; padding: 12px 16px; border-radius: 14px; border: 1.5px solid var(--line); background: var(--surface); color: var(--ink); font-weight: 700; }
+.road-link span::after { content: ' ›'; }
+.road-link small { font-weight: 400; color: var(--muted); }
+.good-text { color: var(--good); }
+.legend i.road-sal { border-top: 2px dashed var(--good); }

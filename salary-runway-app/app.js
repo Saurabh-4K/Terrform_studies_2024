@@ -1018,6 +1018,7 @@
       '<p class="coach-line">' + coachLine(z, r, streak, daysToPay) + '</p>' +
       limitCard(r, z, headline, sub) +
       (z.zone === 'red' ? redOptions(z, r) : '') +
+      '<button class="road-link" data-action="page-open" data-tab="home" data-key="road"><span>' + tr('See the road to payday') + '</span><small>' + tr('Every payment until {date}, and can you afford something', { date: fmtDate(cyc.next) }) + '</small></button>' +
       freedomCard() +
       '</section>' +
       cardHomeNotes(cyc) +
@@ -1071,6 +1072,7 @@
       { key: 'big', group: 'Check & plan', icon: 'big', label: 'Big expense?', tone: 'amber', badge: null, html: () => bigExpenseCard() },
       { key: 'maybe', group: 'Check & plan', icon: 'scale', label: 'Maybe expenses', tone: 'amber',
         badge: (() => { const due = Core.maybeDue(state, t).length; return due ? { text: tr('{n} to answer', { n: due }), tone: 'bad' } : r.held ? { text: shortInr(r.held) } : null; })(), html: () => maybePage() },
+      { key: 'road', group: 'Check & plan', icon: 'graph', label: 'Road to payday', tone: z.zone === 'red' ? 'coral' : z.zone === 'amber' ? 'amber' : 'mint', badge: (() => { const rd = Core.roadToPayday(state, t); return rd.short && rd.short.name ? { text: tr('{amount} short', { amount: shortInr(rd.short.amount) }), tone: 'bad' } : null; })(), html: () => roadPage() },
       { key: 'graph', group: 'Check & plan', icon: 'graph', label: 'Runway graph', tone: 'amber', badge: null, html: () => chartCard() },
       { key: 'budgets', group: 'Check & plan', icon: 'budgets', label: 'Budgets', tone: 'amber', badge: overBudgets ? { text: tr('{n} over', { n: overBudgets }), tone: 'bad' } : null,
         html: () => '<section class="card"><div class="card-head"><h2>' + tr(r.anchor && r.anchorIdx > 0 ? 'You can spend until payday' : 'You can spend this cycle') + '</h2><button class="ghost" data-action="tab" data-tab="plan">' + tr('Adjust') + '</button></div>' +
@@ -1605,6 +1607,149 @@
     return '<div class="reset-modal-overlay help-overlay" role="presentation"><div class="reset-modal-card help-card" role="dialog" aria-modal="true" aria-labelledby="explain-title" id="explain-card">' +
       '<h2 id="explain-title">' + title + '</h2>' + lines.map((x) => '<p>' + x + '</p>').join('') +
       '<div><button class="primary" data-action="explain-close">' + tr('Got it') + '</button></div></div></div>';
+  }
+
+
+  /*
+   * The road to payday: your money from today to payday. A warning across the
+   * top that can't be missed (the zone, and the first payment that falls
+   * short), four numbers (balance, still to pay, lowest point, the day before
+   * payday), then the graph, the timeline or "what if", and "can I afford it?".
+   */
+  const ROAD_ICON = { fixed: '🏠', debt: '🏦', bill: '🧾', iou: '🤝', kept: '🔒', extra: '🛍️', billpot: '🧾' };
+  function roadPage() {
+    const t = today();
+    const r = Core.projectRunway(state, t);
+    const z = Core.zoneStatus(state, t, r);
+    const road = Core.roadToPayday(state, t, { rate: ui.roadRate || 'usual' });
+    const view = ui.roadView || 'graph';
+    const rateWords = { usual: tr('at your usual {amount} a day', { amount: inr(road.rates.usual) }), essentials: tr('on essentials only, {amount} a day', { amount: inr(road.rates.essentials) }),
+      limit: tr('at today’s limit, {amount} a day', { amount: inr(road.rates.limit) }) }[road.rateKind];
+    const firstNeg = road.days.find((d) => d.balance < 0);
+    let title; let text;
+    if (road.short && road.short.name) {
+      title = tr('{name} on {date} would be {amount} short', { name: esc(road.short.name), date: fmtDate(road.short.date), amount: inr(road.short.amount) });
+      text = tr('The payments still due before payday are more than your money, {rate}. See the ways to close the gap on Runway.', { rate: rateWords });
+    } else if (firstNeg) {
+      title = tr('Money runs out on {date}', { date: fmtDate(firstNeg.date) });
+      text = tr('Your payments are covered, but {rate} the money ends {days} before payday.', { rate: rateWords, days: plural(Core.daysBetween(firstNeg.date, road.payday), 'day') });
+    } else if (z.zone !== 'green') {
+      title = tr('Tight until payday');
+      text = tr('{rate}, you reach payday with {amount}. Little room for surprises.', { rate: rateWords.charAt(0).toUpperCase() + rateWords.slice(1), amount: inr(road.end) });
+    } else {
+      title = tr('On track to payday');
+      text = tr('{rate}, you reach payday with {amount}.', { rate: rateWords.charAt(0).toUpperCase() + rateWords.slice(1), amount: inr(road.end) });
+    }
+    const zone = road.short || firstNeg ? 'red' : z.zone;
+    const status = '<div class="road-status zone-' + zone + '" role="status">' + SIGNS[zone] + '<div><b>' + title + '</b><span>' + text + '</span></div></div>';
+    const stat = (label, value, hint, tone) => '<div class="road-stat"><span class="road-stat-label">' + label + '</span><b class="' + (tone || '') + '">' + value + '</b><span class="hint">' + hint + '</span></div>';
+    const stats = '<div class="road-stats">' +
+      stat(tr('Balance now'), inr(road.start), road.kept ? tr('{amount} of it kept aside', { amount: inr(road.kept) }) : tr('In your accounts')) +
+      stat(tr('Still to pay'), inr(road.payments + road.spending), tr('Payments {p} + spending {s}', { p: inr(road.payments), s: inr(road.spending) })) +
+      stat(tr('Lowest point'), signedInr(road.lowest.amount), tr('On {date}', { date: fmtDate(road.lowest.date) }), road.lowest.amount < 0 ? 'bad-text' : '') +
+      stat(tr('Day before payday'), signedInr(road.end), rateWords, road.end < 0 ? 'bad-text' : '') + '</div>';
+    const tabs = '<div class="road-tabs" role="tablist">' + [['graph', 'Balance graph'], ['timeline', 'Timeline'], ['whatif', 'What if?']].map(([k, l]) =>
+      '<button role="tab" aria-selected="' + (view === k) + '" class="' + (view === k ? 'on' : '') + '" data-action="road-view" data-view="' + k + '">' + tr(l) + '</button>').join('') + '</div>';
+    let body;
+    if (view === 'timeline') body = roadTimeline(road);
+    else if (view === 'whatif') body = roadWhatIf(road);
+    else body = '<section class="card road-graph"><h3>' + tr('Your balance to payday') + '</h3><p class="hint">' + tr('Day by day, {rate}, with each payment on its day.', { rate: rateWords }) + '</p>' + roadGraph(road) + '</section>';
+    return '<section class="road">' +
+      '<div class="road-head"><h2>' + tr('Road to payday') + '</h2><p class="hint">' + fmtDate(road.cycle.start) + ' – ' + fmtDate(road.payday) + ' · ' + tr('{n} days left', { n: road.daysLeft }) + '</p></div>' +
+      status + stats + tabs + body + affordCard() + '</section>';
+  }
+
+  function signedInr(v) { return (v < 0 ? '−' : '') + inr(Math.abs(v)); }
+
+  function roadGraph(road) {
+    const W = 340; const H = 210; const L = 44; const R = 12; const T = 16; const B = 28;
+    const pts = road.days.map((d) => ({ date: d.date, v: d.balance }));
+    pts.unshift({ date: road.today, v: road.start });
+    const all = pts.map((p) => p.v).concat([0, road.afterPayday]);
+    const lo = Math.min.apply(null, all); const hi = Math.max.apply(null, all);
+    const step = niceStep(hi - lo || 1, 4);
+    const yMin = Math.floor(lo / step) * step; const yMax = Math.ceil(hi / step) * step;
+    const n = road.days.length + 1;
+    const x = (i) => L + (i * (W - L - R)) / Math.max(1, n);
+    const y = (v) => T + ((yMax - v) * (H - T - B)) / (yMax - yMin || 1);
+    let svg = '<svg class="road-svg" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="' + esc(tr('Balance to payday: lowest {amount} on {date}', { amount: signedInr(road.lowest.amount), date: fmtDate(road.lowest.date) })) + '">';
+    for (let v = yMin; v <= yMax + 0.5; v += step) {
+      svg += '<line class="' + (v === 0 ? 'c-zero' : 'c-grid') + '" x1="' + L + '" x2="' + (W - R) + '" y1="' + y(v).toFixed(1) + '" y2="' + y(v).toFixed(1) + '"/>' +
+        '<text class="c-label" x="' + (L - 5) + '" y="' + (y(v) + 4).toFixed(1) + '" text-anchor="end">' + shortInr(v) + '</text>';
+    }
+    // Below ₹0: payments and basics can't be paid there.
+    if (yMin < 0) svg += '<rect class="road-danger" x="' + L + '" y="' + y(0).toFixed(1) + '" width="' + (W - L - R) + '" height="' + (y(yMin) - y(0)).toFixed(1) + '"/>';
+    let line = ''; let area = '';
+    pts.forEach((p, i) => { line += (i ? 'L' : 'M') + x(i).toFixed(1) + ' ' + y(p.v).toFixed(1); });
+    area = line + 'L' + x(pts.length - 1).toFixed(1) + ' ' + y(Math.max(0, yMin)).toFixed(1) + 'L' + x(0).toFixed(1) + ' ' + y(Math.max(0, yMin)).toFixed(1) + 'Z';
+    svg += '<path class="road-area" d="' + area + '"/><path class="road-line" d="' + line + '"/>';
+    // Payday: the salary comes in.
+    const last = pts.length - 1;
+    svg += '<path class="road-payday" d="M' + x(last).toFixed(1) + ' ' + y(pts[last].v).toFixed(1) + 'L' + x(n).toFixed(1) + ' ' + y(road.afterPayday).toFixed(1) + '"/>' +
+      '<circle class="road-dot good" cx="' + x(n).toFixed(1) + '" cy="' + y(road.afterPayday).toFixed(1) + '" r="4"/>';
+    // The three biggest payments, marked on their day.
+    road.moves.filter((m) => m.kind !== 'kept').slice().sort((a, b) => b.amount - a.amount).slice(0, 3).forEach((m) => {
+      const i = Core.daysBetween(road.today, m.date) + 1;
+      const v = (road.days[i - 1] || { balance: m.after }).balance;
+      svg += '<circle class="road-dot" cx="' + x(i).toFixed(1) + '" cy="' + y(v).toFixed(1) + '" r="3.5"><title>' + esc(m.name) + ' −' + inr(m.amount) + ' · ' + fmtDate(m.date) + '</title></circle>' +
+        '<text class="road-tag" x="' + Math.min(W - R - 2, x(i) + 5).toFixed(1) + '" y="' + Math.max(T + 8, y(v) - 7).toFixed(1) + '" text-anchor="' + (x(i) > W - 90 ? 'end' : 'start') + '">' + esc(String(m.name).length > 16 ? String(m.name).slice(0, 15) + '…' : String(m.name)) + ' −' + shortInr(m.amount) + '</text>';
+    });
+    const li = Core.daysBetween(road.today, road.lowest.date) + 1;
+    svg += '<circle class="road-dot ' + (road.lowest.amount < 0 ? 'bad' : 'low') + '" cx="' + x(li).toFixed(1) + '" cy="' + y(road.lowest.amount).toFixed(1) + '" r="5"/>';
+    svg += '<text class="c-label" x="' + L + '" y="' + (H - 8) + '">' + esc(tr('Today')) + '</text><text class="c-label" x="' + (W - R) + '" y="' + (H - 8) + '" text-anchor="end">' + esc(tr('Payday {date}', { date: fmtDate(road.payday) })) + '</text>';
+    svg += '</svg>';
+    return '<div class="road-chart">' + svg + '</div><div class="legend"><span><i></i>' + tr('Your balance') + '</span><span><i class="road-sal"></i>' + tr('Salary on payday') + '</span>' +
+      (yMin < 0 ? '<span><i class="red-band"></i>' + tr('Below ₹0: payments can’t be paid') + '</span>' : '') + '</div>';
+  }
+
+  function roadTimeline(road) {
+    const row = (icon, date, name, sub, amount, after, tone) => '<div class="road-row' + (tone ? ' ' + tone : '') + '"><span class="road-icon" aria-hidden="true">' + icon + '</span>' +
+      '<div class="grow"><span class="hint">' + date + '</span><b>' + name + '</b>' + (sub ? '<span class="hint">' + sub + '</span>' : '') + '</div>' +
+      '<div class="road-amt"><b class="' + (amount < 0 ? 'bad-text' : 'good-text') + '">' + (amount < 0 ? '−' : '+') + inr(Math.abs(amount)) + '</b>' + (after != null ? '<span class="hint">' + tr('After: {amount}', { amount: signedInr(after) }) + '</span>' : '') + '</div></div>';
+    const kinds = { fixed: 'Fixed payment', debt: 'EMI', bill: 'Bill · estimate', iou: 'Money you owe', kept: 'Not to spend', extra: 'This purchase' };
+    // The balance after each payment counts everyday spending up to that day.
+    const rows = road.moves.map((m) => {
+      const isShort = road.short && road.short.name === m.name && road.short.date === m.date;
+      const sub = (m.due ? tr('Due, not paid yet') : tr(kinds[m.kind] || 'Payment')) + (isShort ? ' · ' + tr('{amount} short', { amount: inr(road.short.amount) }) : '');
+      return row(ROAD_ICON[m.kind] || '💸', m.date === road.today ? tr('Today') : fmtDate(m.date), m.kind === 'kept' || m.kind === 'extra' ? tr(m.name) : esc(m.name), sub, -m.amount, m.after, isShort ? 'short' : '');
+    });
+    return '<section class="card road-timeline"><h3>' + tr('Money in and out until payday') + '</h3>' +
+      row('👛', tr('Today'), tr('Balance now'), tr('In your accounts'), road.start, null, '') + rows.join('') +
+      row('🛒', fmtDate(road.today) + ' – ' + fmtDate(Core.addDays(road.payday, -1)), tr('Everyday spending'), tr('{amount} a day: groceries, travel, food and the rest', { amount: inr(road.daily) }), -road.spending, road.end, road.end < 0 ? 'short' : '') +
+      row('💰', fmtDate(road.payday), tr('Salary'), tr('A new round starts'), road.salary, road.afterPayday, '') +
+      '<p class="hint">' + tr('“After” counts everyday spending up to that day too.') + '</p></section>';
+  }
+
+  function roadWhatIf(road) {
+    const opt = (k, label) => '<button class="road-rate' + (road.rateKind === k ? ' on' : '') + '" data-action="road-rate" data-rate="' + k + '" aria-pressed="' + (road.rateKind === k) + '"><b>' + label + '</b><span>' +
+      tr('{amount} a day', { amount: inr(road.rates[k]) }) + '</span></button>';
+    return '<section class="card road-whatif"><h3>' + tr('If you spend…') + '</h3><p class="hint">' + tr('Pick a daily amount: the numbers above and the graph change with it.') + '</p>' +
+      '<div class="road-rates">' + opt('essentials', tr('Only essentials')) + opt('usual', tr('Your usual')) + opt('limit', tr('Today’s limit')) + '</div>' +
+      '<div class="row"><button class="ghost small" data-action="page-open" data-tab="plan" data-key="fixed">' + tr('Change payment dates or amounts') + '</button>' +
+      '<button class="ghost small" data-action="page-open" data-tab="plan" data-key="budgets">' + tr('Change budgets') + '</button></div></section>';
+  }
+
+  function affordCard() {
+    const a = ui.afford;
+    let res = '';
+    if (a) {
+      if (a.verdict === 'yes') {
+        res = '<div class="afford-res good"><b>' + tr('Yes, you can afford {amount}.', { amount: inr(a.amount) }) + '</b><span>' +
+          tr('At your usual {daily} a day you’d still have {end} the day before payday. Your lowest point drops by {drop}.', { daily: inr(a.usual.daily), end: inr(a.endAfter), drop: inr(a.lowestDrop) }) + '</span></div>';
+      } else if (a.verdict === 'tight') {
+        res = '<div class="afford-res warn"><b>' + tr('Only if you spend on essentials until payday.', {}) + '</b><span>' +
+          tr('With {amount} today, keep to about {ess} a day (groceries, medicine, travel) and you reach payday with {end}. At your usual {daily} a day, money runs short.', { amount: inr(a.amount), ess: inr(a.essentials.daily), end: inr(a.endEssentials), daily: inr(a.usual.daily) }) + '</span></div>';
+      } else {
+        const sh = a.essentials.short;
+        res = '<div class="afford-res bad"><b>' + tr('Not now: {amount} doesn’t fit before payday.', { amount: inr(a.amount) }) + '</b><span>' +
+          (sh && sh.name ? tr('Even on essentials only, {name} on {date} would be {short} short.', { name: esc(sh.name), date: fmtDate(sh.date), short: inr(sh.amount) })
+            : sh ? tr('Even on essentials only, the money runs out on {date}.', { date: fmtDate(sh.date) }) : '') + ' ' +
+          tr('After payday on {date} it fits better: check again then.', { date: fmtDate(a.usual.payday) }) + '</span></div>';
+      }
+    }
+    return '<section class="card afford"><h3>' + tr('Can I afford something?') + '</h3><p class="hint">' + tr('Type what it costs: the app checks it against every payment until payday.') + '</p>' +
+      '<form id="afford-form" class="row" autocomplete="off"><label class="field grow-field" for="afford-amt"><span>' + tr('Amount (₹)') + '</span><input id="afford-amt" type="number" inputmode="numeric" min="1" value="' + (a ? a.amount : '') + '"></label>' +
+      '<button class="primary" type="submit">' + tr('Check') + '</button></form>' + res + '</section>';
   }
 
   // The runway graph.
@@ -7495,6 +7640,8 @@
       case 'crash-yes': { const c = crashCfg(); c.on = true; saveCrashCfg(c); toast(tr('Crash reports on. Nothing about your money is in them.')); break; }
       case 'crash-no': { const c = crashCfg(); c.on = false; c.queue = []; saveCrashCfg(c); toast(tr('Crash reports off.')); break; }
       case 'crash-sample': ui.crashSample = !ui.crashSample; break;
+      case 'road-view': ui.roadView = btn.dataset.view; break;
+      case 'road-rate': ui.roadRate = btn.dataset.rate; ui.afford = null; break;
       case 'report-preview': {
         const note = ((document.getElementById('report-note') || {}).value || '').trim();
         const withData = !!(document.getElementById('report-data') || {}).checked;
@@ -8394,6 +8541,14 @@
       ev.preventDefault();
       const amount = Math.round(Number(document.getElementById('borrow-amount').value) || 0);
       if (amount > 0) { ui.borrow = { amount, urgent: true, months: 12, focus: true }; rerenderKeepScroll(); }
+      return;
+    }
+    if (ev.target.id === 'afford-form') {
+      ev.preventDefault();
+      const amount = Math.round(Number(document.getElementById('afford-amt').value) || 0);
+      ui.afford = amount > 0 ? Core.affordCheck(state, today(), amount) : null;
+      logEvent('afford', { verdict: ui.afford ? ui.afford.verdict : null });
+      rerenderKeepScroll();
       return;
     }
     if (ev.target.id !== 'add-tx') return;

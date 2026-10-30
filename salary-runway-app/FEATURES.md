@@ -416,6 +416,16 @@ A zone label on the Runway card, **Green · Careful · Red**, with a headline th
 
 **The pace** is your average flexible spending a day over **finished days** only; today counts as at least a usual day until it's over. So the zone doesn't change at midnight by itself: it gets better when a day ends under your usual spending, money comes in, or you move money to savings. (Emergency spending isn't part of the pace.)
 
+### Road to payday
+Runway → **See the road to payday** (under today's limit; also *Check & plan → Road to payday*, with a *₹6.7k short* badge when a payment falls short): your money from today to payday, day by day.
+- **The warning first, across the whole width, in the zone's colour** (never a small tag in a corner): *Personal loan on 7 Nov would be ₹6,700 short · The payments still due before payday are more than your money, at your usual ₹435 a day*; or *Money runs out on 22 Nov*, *Tight until payday*, *On track to payday*.
+- **Four numbers:** balance now (and how much of it is kept aside), still to pay (payments + everyday spending), the lowest point and its day, and the day before payday.
+- **Balance graph:** the balance each day with the three biggest payments marked, the area below ₹0 shaded, and the salary on payday as a dashed line.
+- **Timeline:** every payment on its day (unpaid ones today) with the balance after it, the one that falls short in red, everyday spending (₹ a day × days) and the salary.
+- **What if?:** spend *only essentials* (groceries, medicine, day-to-day travel), *your usual* (the last 28 days, once two weeks are recorded) or *today's limit*: the numbers and the graph change with it. Links to change payment dates or budgets.
+- **Can I afford something?** Type an amount: *Yes* (with what's left the day before payday and how far the lowest point drops), *Only if you spend on essentials until payday*, or *Not now* with the payment it would put short (*Car loan on 5 Nov would be ₹4,800 short*). It's checked against every payment until payday, never just today's limit.
+- Worked out by `Core.roadToPayday` and `Core.affordCheck` (`tests/road.test.js`); with no spending at all, the road's shortfall equals the red zone's payments shortfall. `scripts/road-app.js` checks the page in the real app.
+
 **Paying a planned payment never changes the zone.** Rent, an EMI or a bill that was still due was already counted: paying it lowers the money and the payments still due by the same amount, so today's limit and the zone stay as they were (`tests/red-cause.test.js`). Red after paying rent means either it was already red before (the table above says why), or the payment was counted twice, which the *Rent counted twice?* card repairs.
 
 **Ways out of the red**, only the ones that apply, with amounts:

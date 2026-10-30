@@ -4988,6 +4988,95 @@
     return withAmount.length > 1 && withAmount.length === lines.length ? lines : blocks;
   }
 
+  // ---------- the road to payday ----------
+
+  /*
+   * What you usually spend a day on everyday things: flexible spending over
+   * the last 28 finished days (your share only), once two weeks are
+   * recorded; before that, this round's pace. Steadier than the pace early
+   * in a round, when one big payment can look like a habit.
+   */
+  function usualDaily(state, todayIso, r) {
+    r = r || projectRunway(state, todayIso);
+    const first = state.transactions.reduce((m, t) => (!m || t.date < m ? t.date : m), null);
+    if (!first || daysBetween(first, todayIso) < 14) return Math.round(r.paceRate);
+    const from = addDays(todayIso, -28);
+    const spent = sum(state.transactions.filter((t) => isFlexible(t) && t.date >= from && t.date < todayIso && t.category !== 'Emergency'), ownPart);
+    return Math.round(spent / Math.min(28, daysBetween(first, todayIso)));
+  }
+
+  /*
+   * Your money from today to payday, day by day: what's in the account, the
+   * money kept aside, each payment on the day it's due (unpaid ones today),
+   * and everyday spending at a daily rate. o.rate: 'usual' (default),
+   * 'essentials' (groceries, medicine, travel only) or 'limit' (today's
+   * limit); o.daily: your own amount a day; o.extra: a purchase today (for
+   * "can I afford it?").
+   * Returns the days, the movements (each with the balance after it), the
+   * lowest point and its day, the balance the day before payday, the first
+   * payment that can't be paid in full, and the salary on payday.
+   */
+  function roadToPayday(state, todayIso, o) {
+    o = o || {};
+    const r = projectRunway(state, todayIso);
+    const ess = Math.round(essentialsDaily(state, todayIso).daily);
+    const usual = usualDaily(state, todayIso, r);
+    const rates = { usual, essentials: ess, limit: Math.round(r.dailyAllowance) };
+    const rateKind = o.daily != null ? 'own' : rates[o.rate] != null ? o.rate : 'usual';
+    const daily = Math.max(0, Math.round(o.daily != null ? Number(o.daily) || 0 : rates[rateKind]));
+    const extra = Math.max(0, Math.round(Number(o.extra) || 0));
+    const payday = r.cycle.next;
+    const lastDay = addDays(payday, -1);
+    const payments = r.dueNow.map((e) => Object.assign({}, e, { due: true, date: todayIso }))
+      .concat(r.events.filter((e) => e.date > todayIso && e.amount > 0))
+      .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : b.amount - a.amount));
+    let bal = r.balanceToday;
+    const moves = [];
+    const days = [];
+    let lowest = { amount: bal, date: todayIso };
+    let short = null;
+    const note = (m) => { bal -= m.amount; m.after = bal; moves.push(m); };
+    if (r.kept > 0) note({ kind: 'kept', name: 'Kept aside', amount: Math.round(r.kept), date: todayIso });
+    if (extra) note({ kind: 'extra', name: 'This purchase', amount: extra, date: todayIso });
+    // Today's spending so far is already out of the balance; the rest of today's rate is still to come.
+    let spendTotal = 0;
+    for (let d = todayIso; d <= lastDay; d = addDays(d, 1)) {
+      payments.filter((e) => e.date === d).forEach((e) => {
+        note({ kind: e.kind, name: e.name, amount: Math.round(e.amount), date: d, due: !!e.due, ref: e.fixedId || e.debtId || e.billId || e.iouId || null });
+        if (bal < 0 && !short) short = { name: e.name, date: d, amount: Math.round(Math.min(e.amount, -bal)) };
+      });
+      const spend = d === todayIso ? Math.max(0, daily - r.spentToday) : daily;
+      bal -= spend;
+      spendTotal += spend;
+      if (bal < 0 && !short) short = { name: null, date: d, amount: Math.round(-bal) };
+      days.push({ date: d, balance: Math.round(bal) });
+      if (bal < lowest.amount) lowest = { amount: Math.round(bal), date: d };
+    }
+    const salary = Math.round(Number(state.settings.salary) || 0);
+    return {
+      today: todayIso, payday, daysLeft: daysBetween(todayIso, payday), cycle: r.cycle,
+      start: r.balanceToday, kept: Math.round(r.kept || 0), daily, rateKind, rates,
+      payments: Math.round(sum(payments, (e) => e.amount)), spending: Math.round(spendTotal),
+      days, moves, lowest, end: Math.round(bal), short, salary, afterPayday: Math.round(bal) + salary,
+    };
+  }
+
+  /*
+   * Can I afford it? A purchase today, checked against the road: with only
+   * essentials until payday, and at your usual spending. 'no': a payment or
+   * the basics fall short even on essentials only; 'tight': fine on
+   * essentials only, not at your usual spending; 'yes': fine either way.
+   */
+  function affordCheck(state, todayIso, amount) {
+    const a = Math.max(0, Math.round(Number(amount) || 0));
+    const now = roadToPayday(state, todayIso);
+    const tight = roadToPayday(state, todayIso, { rate: 'essentials', extra: a });
+    const usual = roadToPayday(state, todayIso, { rate: 'usual', extra: a });
+    const verdict = tight.short || tight.lowest.amount < 0 ? 'no' : usual.short || usual.lowest.amount < 0 ? 'tight' : 'yes';
+    return { amount: a, verdict, essentials: tight, usual, before: now,
+      lowestDrop: now.lowest.amount - usual.lowest.amount, endAfter: usual.end, endEssentials: tight.end };
+  }
+
   // ---------- privacy: reports without personal data ----------
 
   /*
@@ -5134,7 +5223,7 @@
     insights, simulateDebts, compareDebtPlans, debtFreeDates, emergencyPlan, parseSms,
     splitSmsBatch, smsKey, categorize, normalizeMerchant, sinkingMonthly, inCycle,
     spendInRange, incomeInRange, incomeKept, isIncome, isMove, isBillPayment, isFixedPayment, isCashAdvance, emiLoans,
-    fixedCandidate, fixedTwins, mergeFixedTwin, bankTwin, joinBankTwin, iouTwin, scrubText, pseudonymize, crashReport, privateWords, personalAmt, SUBCATS, subcategories, splitCat, guessSub, subOf, subSuggestions, subBreakdown,
+    fixedCandidate, fixedTwins, mergeFixedTwin, bankTwin, joinBankTwin, iouTwin, scrubText, pseudonymize, crashReport, privateWords, usualDaily, roadToPayday, affordCheck, personalAmt, SUBCATS, subcategories, splitCat, guessSub, subOf, subSuggestions, subBreakdown,
     addEvent, editEvent, splitShares, addEventExpense, removeEventExpense, eventForgetTx, deleteEvent, eventBalances, settleEvent, settleCandidates, tripHeld, eventView, eventStatement,
     cutOptions, weekTarget, fitWeekGoal, rupeeAmounts, checkAdviceNumbers,
     linkRefund, unlinkRefund, forgetRefunds, refundMatches, isEarned, earnedIn, fixedPaidFor, fixedDueFor, payFixed, unpayFixed, fixedMatches, isFlexible, incomeOptions,
