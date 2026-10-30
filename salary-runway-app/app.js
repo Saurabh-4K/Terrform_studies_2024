@@ -22,7 +22,8 @@
     'Medical', 'Vehicle repair', 'Family function', 'Death in family', 'Tax payment',
     'Penalty or fine', 'Home repair', 'Job loss', 'Other',
   ];
-  const INCOME_CATEGORIES = ['Money received', 'Money returned', 'From family', 'Refund', 'Cashback', 'Side income', 'Gift', 'Loan or Pay Later'];
+  const INCOME_CATEGORIES = ['Money received', 'Money returned', 'From family', 'Refund', 'Cashback', 'Side income', 'Gift', 'Loan or Pay Later',
+    'Bonus', 'Incentive', 'Overtime', 'Arrears', 'Leave encashment', 'Interest', 'Dividend', 'Rental income', 'Pension', 'Insurance claim', 'Scholarship', 'Rewards', 'Sale of goods'];
   // Money in that has to be paid back: counted as borrowed, never as income to save or invest.
   const LOAN_CATEGORY = 'Loan or Pay Later';
   const INCOME_USE_LABELS = {
@@ -369,7 +370,7 @@
 
   // Category names the app ships with: stored in English, shown translated.
   // Family: money for a spouse, parents or children to spend. Gifts: presents, shagun.
-  const EXTRA_CATEGORIES = ['Family', 'Gifts', 'Bills', 'Savings', 'Misc', 'Emergency', 'Cash'];
+  const EXTRA_CATEGORIES = ['Family', 'Gifts', 'Bills', 'Insurance', 'Taxes', 'Donations', 'Savings', 'Misc', 'Emergency', 'Cash'];
   const BUILT_IN_CATEGORIES = Core.DEFAULT_SPLIT.map(([name]) => name).concat(EXTRA_CATEGORIES);
 
   function categories() {
@@ -3210,10 +3211,29 @@
    * People choices next to the categories (notification pop-up, SMS list):
    * paying back someone with an open IOU, or a new lend / borrow.
    */
-  function personChoices(isIn) {
-    return Core.openIous(state, isIn ? 'lent' : 'owe').slice(0, 3).map((i) => ['@iou:' + i.id,
-      tr(isIn ? '{name} paying back ({left} left)' : 'Paying {name} back ({left} left)', { name: i.name, left: inr(Core.iouLeft(i)) })])
-      .concat([[isIn ? '@borrowed' : '@lent', tr(isIn ? 'Borrowed from someone' : 'Lent to someone')]]);
+  /*
+   * People on a payment's list: everyone with money open that way (not a
+   * guess from the SMS name, which may be a number or a UPI short form).
+   * The person picked before for the same payee comes first; the rest by
+   * name. Trip and event balances settle through the event; deposits and
+   * advances are money you get back, like lending.
+   */
+  function personChoices(isIn, x) {
+    const key = x && Core.normalizeMerchant(x.note);
+    const known = key && (state.payeeLinks || {})[key];
+    const first = (name) => (known && String(name).toLowerCase() === known ? 0 : 1);
+    const open = Core.openIous(state, isIn ? 'lent' : 'owe').filter((i) => !i.eventId)
+      .sort((a, b) => first(a.name) - first(b.name) || String(a.name).localeCompare(String(b.name)));
+    const trips = [];
+    (state.events || []).forEach((ev) => Core.eventBalances(state, ev).forEach((b) => {
+      if (isIn ? b.net > 0 : b.net < 0) trips.push(['@ev:' + ev.id + ':' + b.name, tr(isIn ? '{event}: {name} paying back ({left} left)' : '{event}: paying {name} ({left} left)', { event: ev.name, name: b.name, left: inr(Math.abs(b.net)) }), first(b.name)]);
+    }));
+    trips.sort((a, b) => a[2] - b[2]);
+    return open.map((i) => ['@iou:' + i.id, tr(i.deposit ? (isIn ? 'Deposit back: {name} ({left} left)' : 'Deposit: {name} ({left} left)')
+      : isIn ? '{name} paying back ({left} left)' : 'Paying {name} back ({left} left)', { name: i.name, left: inr(Core.iouLeft(i)) })])
+      .concat(trips.map((t) => [t[0], t[1]]))
+      .concat([[isIn ? '@borrowed' : '@lent', tr(isIn ? 'Borrowed from someone' : 'Lent to someone')]])
+      .concat(isIn ? [] : [['@deposit', tr('Deposit or advance given (you get it back)')]]);
   }
 
   // ---------- categories with subcategories, and choices that do something ----------
@@ -3226,7 +3246,9 @@
    * your own money, work, People). The same list goes to the bank-SMS pop-up.
    * Returns groups: { label, items: [[value, label]] } (label null: no group).
    */
-  const EARNED_PICK = ['Bonus', 'Overtime', 'Side income', 'Interest'];
+  const EARNED_PICK = ['Bonus', 'Incentive', 'Overtime', 'Arrears', 'Leave encashment', 'Side income', 'Interest', 'Dividend', 'Rental income', 'Pension'];
+  // Money in that isn't earned (a claim paid, a scholarship, rewards, selling something you owned).
+  const OTHER_IN_PICK = ['Insurance claim', 'Scholarship', 'Rewards', 'Sale of goods'];
   function pickerGroups(isIn, x) {
     const linked = x && (x.iouId || x.iouPay || x.passedOn || x.covered || x.eventId || x.claimId || x.maybeId || x.refundOf || x.payoutId ||
       (Core.isIncome(x) && x.useFor && x.useFor !== 'spend'));
@@ -3242,8 +3264,12 @@
           .concat((state.bills || []).filter((b) => (Number(b.estimate) || 0) > 0).map((b) => ['@bill:' + b.id, tr('{name} bill (it learns the amount)', { name: b.name })]))
           .concat((state.cards || []).map((c) => ['@card:' + c.id, tr('Credit card bill: {name}', { name: c.name })]))
           .concat(Core.emiLoans(state).map((d) => ['@loan:' + d.id, tr('EMI: {name}', { name: d.name })]))
-          .concat((state.fixed || []).map((f) => ['@fixed:' + f.id, tr('Fixed payment: {name}', { name: f.name })]));
+          .concat((state.fixed || []).map((f) => ['@fixed:' + f.id, tr('Fixed payment: {name}', { name: f.name })]))
+          .concat([['@newloan', tr('EMI of a loan not in the app yet (add it)')]]);
         if (smart.length) groups.push({ label: tr('Bills, cards and EMIs'), items: smart });
+        const own = (state.wallets || []).filter((w) => w.kind !== 'cash').map((w) => ['@own:' + w.id, tr('To your {name}', { name: w.name })])
+          .concat(cashWallet() ? [['@cash', tr('Cash taken out (to your Cash)')]] : []);
+        if (own.length) groups.push({ label: tr('Your own money'), items: own });
         groups.push({ label: tr('Saved, not spent'), items: [['@save:emergency', tr('Emergency fund')], ['@save:grow', tr('SIP, RD, FD or gold')]]
           .concat((state.goals || []).filter((g) => !Core.goalStatus(state, g, today()).done).map((g) => ['@save:goal:' + g.id, tr('Goal: {name}', { name: g.name })])) });
       }
@@ -3252,12 +3278,15 @@
       groups.push({ label: tr('Friends and family'), items: ['Gift', 'From family', 'Money received', 'Money returned'].map((c) => [c, tr(c)]) });
       groups.push({ label: tr('Refunds and cashback'), items: (linked ? [] : [['@refund', tr('Refund or reversal of a payment')]]).concat([['Refund', tr('Refund')], ['Cashback', tr('Cashback')]]) });
       groups.push({ label: tr('Loans'), items: [[LOAN_CATEGORY, tr(LOAN_CATEGORY)]] });
+      groups.push({ label: tr('Other money in'), items: OTHER_IN_PICK.map((c) => [c, tr(c)]) });
       if (!linked) {
-        groups.push({ label: tr('Your own money'), items: [['@fromfund', tr('From your emergency fund')], ['@fromgrow', tr('From your savings, FD or investments')]] });
+        groups.push({ label: tr('Your own money'), items: [['@fromfund', tr('From your emergency fund')], ['@fromgrow', tr('From your savings, FD or investments')]]
+          .concat((state.wallets || []).filter((w) => w.kind !== 'cash').map((w) => ['@own:' + w.id, tr('From your {name}', { name: w.name })]))
+          .concat(cashWallet() ? [['@cashdep', tr('Cash deposited (from your Cash)')]] : []) });
         if (Core.reimbView(state).claims.some((c) => !c.closed)) groups.push({ label: tr('Work'), items: [['@reimb', tr('Reimbursement from work')]] });
       }
     }
-    if (!linked) groups.push({ label: tr('People'), items: personChoices(isIn) });
+    if (!linked) groups.push({ label: tr('People'), items: personChoices(isIn, x) });
     return groups;
   }
   function pickerHtml(isIn, x, value) {
@@ -3289,7 +3318,7 @@
    * Returns what it did, for the Undo message, or null when it couldn't (the
    * entry is left as it was).
    */
-  function isSmart(value) { return /^@(bill|card|loan|fixed|save|refund|fromfund|fromgrow|reimb)\b/.test(String(value || '')); }
+  function isSmart(value) { return /^@(bill|card|loan|fixed|save|refund|fromfund|fromgrow|reimb|newloan|own|cash|cashdep)\b/.test(String(value || '')); }
   function applySmart(tx, value) {
     const [kind, id, more] = String(value).slice(1).split(':');
     if (kind === 'bill') {
@@ -3311,6 +3340,28 @@
       if (!p) return null;
       return p.emiFor ? tr('EMI recorded: {interest} interest, {principal} off the loan.', { interest: inr(p.emiInterest), principal: inr(p.emiPrincipal) })
         : tr('Recorded as paid. It won’t be counted again on its due date.');
+    }
+    if (kind === 'newloan') {
+      // A loan the app didn't know: added from this EMI (amount and day), this payment as its EMI. Its balance and rate come next, in Debts.
+      if (!Core.isFlexible(tx) || (tx.paidFrom && tx.paidFrom !== 'account')) return null;
+      const name = tx.note && tx.note !== 'Bank payment' ? String(tx.note).slice(0, 40) : tr('Loan');
+      const d = Object.assign(listDefaults('debts'), { name, minPayment: tx.amount, dueDay: Core.parseISO(tx.date).getDate(), fromEmi: tx.date });
+      state.debts.push(d);
+      tx.emiFor = d.id; tx.forDue = tx.date; tx.category = 'Bills'; delete tx.sub;
+      return tr('{name} added from this EMI. Add what’s left to pay and its rate in Debts.', { name });
+    }
+    if (kind === 'own' || kind === 'cash' || kind === 'cashdep') {
+      // Money between your own accounts or cash: moved, never income or spending.
+      const other = kind === 'own' ? (state.wallets || []).find((w) => w.id === id) : cashWallet();
+      const fits = kind === 'own' || (kind === 'cashdep' ? Core.isIncome(tx) : !Core.isIncome(tx));
+      if (!other || !fits || (tx.paidFrom && tx.paidFrom !== 'account')) return null;
+      const mine = tx.wallet || 'main';
+      const into = Core.isIncome(tx);
+      ['category', 'sub', 'useFor', 'paidFrom', 'wallet', 'borrowed'].forEach((k) => { delete tx[k]; });
+      tx.kind = 'transfer';
+      tx.from = into ? other.id : mine;
+      tx.to = into ? mine : other.id;
+      return tr('Moved between your own money: not income, not spending.');
     }
     if (kind === 'save') {
       if (!Core.isFlexible(tx)) return null;
@@ -3340,8 +3391,10 @@
   }
 
   function personPick(category) {
-    if (!category || !/^@(iou:|lent$|borrowed$)/.test(String(category))) return null;
-    return { iou: category.indexOf('@iou:') === 0 ? category.slice(5) : null };
+    const v = String(category || '');
+    if (!/^@(iou:|ev:|lent$|borrowed$|deposit$)/.test(v)) return null;
+    if (v.indexOf('@ev:') === 0) { const rest = v.slice(4); const k = rest.indexOf(':'); return { ev: rest.slice(0, k), name: rest.slice(k + 1) }; }
+    return { iou: v.indexOf('@iou:') === 0 ? v.slice(5) : null, deposit: v === '@deposit' };
   }
 
   // What a People choice did, said once the SMS are in.
@@ -3351,15 +3404,28 @@
   function linkPerson(tx, pick) {
     if (tx.iouId || tx.iouPay || tx.passedOn) return;
     const isIn = Core.isIncome(tx);
+    const key = Core.normalizeMerchant(tx.note);
+    const remember = (name) => { if (key) state.payeeLinks = Object.assign({}, state.payeeLinks, { [key]: String(name).toLowerCase() }); };
+    if (pick.ev) {
+      const res = Core.settleEvent(state, pick.ev, pick.name, { amount: tx.amount, txId: tx.id, date: tx.date });
+      if (!res || !res.paid) { tx.needsReview = true; smsNews.push(tr('That doesn’t fit this entry.')); return; }
+      remember(pick.name);
+      smsNews.push(tr('{amount} settled with {name}. Not income or spending: money passed on.', { amount: inr(res.paid), name: pick.name }));
+      if (isIn) tx.useFor = tx.useFor || 'spend';
+      return;
+    }
     if (pick.iou) {
       const i = Core.openIous(state).find((x) => x.id === pick.iou);
       // Settled meanwhile: left for the person to check.
       if (!i) { tx.needsReview = true; return; }
       Core.payIou(state, i.id, Math.min(tx.amount, Core.iouLeft(i)), tx.date, tx.id);
+      remember(i.name);
       smsNews.push(Core.iouLeft(i) ? tr('{left} still to go with {name}', { left: inr(Core.iouLeft(i)), name: i.name }) : tr('Settled with {name}', { name: i.name }));
     } else {
       const i = Core.addIou(state, { name: tx.note, dir: isIn ? 'owe' : 'lent', amount: tx.amount, txId: tx.id }, today());
       if (!i) return;
+      // A deposit or advance (rent deposit, booking advance): yours, coming back; not spending.
+      if (pick.deposit) { i.deposit = true; tx.category = 'Misc'; }
       smsNews.push(tr(i.dir === 'owe' ? 'In People: you owe {name} {amount}' : 'In People: {name} owes you {amount}', { name: i.name, amount: inr(i.amount) }));
     }
     if (isIn) tx.useFor = tx.useFor || 'spend';
@@ -6221,8 +6287,12 @@
       }).join('') + '</div>' : '') +
       '</section>';
     const noDebts = !state.debts.some((d) => Number(d.balance) > 0) && !(state.cards || []).length;
+    // Loans added from an EMI payment: what's left to pay and the rate are still needed.
+    const fromEmi = (state.debts || []).filter((d) => d.fromEmi && !(Number(d.balance) > 0));
     return hub('debts',
       rolloverCard() +
+      fromEmi.map((d) => '<div class="callout warn"><b>' + tr('{name}: add what’s left to pay and its rate', { name: esc(d.name) }) + '</b><span class="hint">' +
+        tr('Added from its {amount} EMI on {date}. Until then it isn’t in your debt-free date. Edit it under Loans below.', { amount: inr(d.minPayment), date: fmtDate(d.fromEmi) }) + '</span></div>').join('') +
       (noDebts
         ? '<section class="card debt-picture"><h2>' + tr('Your debt picture') + '</h2>' +
           '<p class="good"><b>' + tr('No loans or credit cards added. Debt-free ✓') + '</b></p>' +

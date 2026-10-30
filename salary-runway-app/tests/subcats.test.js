@@ -16,7 +16,8 @@ test('the list: defaults, your own added, hidden ones gone', () => {
   assert.deepEqual(Core.subcategories(s, 'Food & dining'), ['Eating out', 'Food delivery', 'Tea & snacks']);
   s.subcats = { add: { Bills: ['Maid'] }, hide: { Bills: ['Bank charges', 'Rent'] } };
   assert.deepEqual(Core.subcategories(s, 'Bills'), ['Electricity', 'Water', 'Gas', 'Mobile recharge', 'Internet & DTH', 'Society maintenance', 'Maid']);
-  assert.deepEqual(Core.subcategories(s, 'Misc'), []);
+  assert.deepEqual(Core.subcategories(s, 'Misc'), ['Penalties & fines']);
+  assert.deepEqual(Core.subcategories(s, 'Cash'), []);
   assert.deepEqual(Core.splitCat('Bills|Electricity'), { category: 'Bills', sub: 'Electricity' });
   assert.deepEqual(Core.splitCat('Bills'), { category: 'Bills', sub: null });
 });
@@ -69,4 +70,13 @@ test('reports split a category by subcategory; budgets and spending don\'t chang
   s.subcats = { add: { Bills: ['Maid'] } };
   assert.deepEqual(Core.cleanState(JSON.parse(JSON.stringify(s))).subcats, { add: { Bills: ['Maid'] } });
   assert.equal(Core.cleanState(Object.assign(base(), { subcats: 'x' })).subcats, undefined);
+});
+
+test('money in: earned or not, by the bank rule; bank charges get their subcategory', () => {
+  const t = (category) => ({ kind: 'in', amount: 1000, category, date: T });
+  ['Pension', 'Dividend', 'Rental income', 'Incentive', 'Arrears', 'Leave encashment', 'Interest', 'Bonus'].forEach((c) => assert.equal(Core.isEarned(t(c)), true, c));
+  ['Sale of goods', 'Insurance claim', 'Scholarship', 'Rewards', 'Cashback', 'Gift', 'Money received'].forEach((c) => assert.equal(Core.isEarned(t(c)), false, c));
+  const fee = Core.parseSms('Rs.590 debited from a/c **1234 on 18-10-26 towards annual fee. Avl bal Rs 1000', {}, T);
+  assert.deepEqual([fee.category, fee.sub], ['Bills', 'Bank charges']);
+  assert.deepEqual(Core.subcategories(base(), 'Taxes'), ['Income tax', 'Property tax', 'Vehicle tax', 'Professional tax']);
 });

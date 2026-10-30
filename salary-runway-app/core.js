@@ -1069,7 +1069,8 @@
    * own accounts or savings, gifts, and money of unknown kind are money in,
    * never earned (bank rule: cash in isn't income by itself).
    */
-  const EARNED = ['Side income', 'Overtime', 'Salary', 'Bonus', 'Interest'];
+  // Pay and what you earn: wages and their extras, side income, interest and dividends, rent you get, a pension.
+  const EARNED = ['Side income', 'Overtime', 'Salary', 'Bonus', 'Interest', 'Incentive', 'Arrears', 'Leave encashment', 'Dividend', 'Rental income', 'Pension'];
   function isEarned(t) {
     return isIncome(t) && EARNED.indexOf(t.category) !== -1 && !t.borrowed && !t.refundOf && !t.payoutId && !t.iouId && !t.iouPay && !t.passedOn &&
       t.useFor !== 'fromfund' && t.useFor !== 'fromgrow' && t.note !== 'Own account';
@@ -4474,15 +4475,19 @@
    * A choice or a learned shop rule is stored as 'Category|Sub'.
    */
   const SUBCATS = {
-    Groceries: ['Vegetables & fruit', 'Milk & dairy', 'Kirana', 'Supermarket & apps'],
+    Groceries: ['Vegetables & fruit', 'Milk & dairy', 'Meat & fish', 'Bakery & sweets', 'Kirana', 'Supermarket & apps'],
     'Food & dining': ['Eating out', 'Food delivery', 'Tea & snacks'],
-    Travel: ['Fuel', 'Auto & cab', 'Metro & bus', 'Train & flight', 'Parking & toll'],
+    Travel: ['Fuel', 'Auto & cab', 'Metro & bus', 'Train & flight', 'Hotel & stay', 'Parking & toll'],
     Shopping: ['Clothes & shoes', 'Electronics', 'Home items'],
     Entertainment: ['Movies & outings', 'Streaming & apps', 'Hobbies'],
-    Health: ['Doctor', 'Medicines', 'Tests', 'Health insurance'],
-    'Personal care': ['Salon & grooming', 'Products'],
+    Health: ['Doctor', 'Medicines', 'Tests', 'Dental', 'Eye care', 'Gym & fitness', 'Health insurance'],
+    'Personal care': ['Salon & grooming', 'Products', 'Laundry'],
     Family: ['Given to family', 'Kids', 'Parents', 'Domestic help'],
-    Gifts: ['Gift given', 'Wedding & functions', 'Donations'],
+    Gifts: ['Gift given', 'Wedding & functions'],
+    Insurance: ['Life insurance', 'Term insurance', 'Vehicle insurance', 'Home insurance'],
+    Taxes: ['Income tax', 'Property tax', 'Vehicle tax', 'Professional tax'],
+    Donations: ['Religious', 'Charity & NGO', 'Community'],
+    Misc: ['Penalties & fines'],
     Bills: ['Electricity', 'Water', 'Gas', 'Mobile recharge', 'Internet & DTH', 'Rent', 'Society maintenance', 'Bank charges'],
     Education: ['School & college fees', 'Courses', 'Books'],
   };
@@ -4516,6 +4521,20 @@
     ['Bills', 'Society maintenance', ['maintenance', 'society']],
     ['Education', 'School & college fees', ['school', 'college', 'university', 'fees']],
     ['Education', 'Courses', ['udemy', 'coursera', 'byju', 'unacademy', 'course', 'class']],
+    ['Groceries', 'Meat & fish', ['chicken', 'mutton', 'meat', '=fish', 'licious', 'fresh to home']],
+    ['Groceries', 'Bakery & sweets', ['bakery', 'sweets', 'mithai', 'cake']],
+    ['Travel', 'Hotel & stay', ['oyo', 'hotel', 'booking.com', 'airbnb', 'treebo', 'fabhotel', 'resort', 'lodge']],
+    ['Health', 'Dental', ['dental', 'dentist']],
+    ['Health', 'Eye care', ['optical', 'lenskart', 'eye ', 'opticians']],
+    ['Health', 'Gym & fitness', ['=gym', 'cult.fit', 'cultfit', 'fitness']],
+    ['Personal care', 'Laundry', ['laundry', 'dry clean', 'dhobi']],
+    ['Insurance', 'Life insurance', ['=lic', 'life insurance']],
+    ['Insurance', 'Vehicle insurance', ['motor insurance', 'car insurance', 'bike insurance', 'two wheeler insurance']],
+    ['Taxes', 'Income tax', ['income tax', 'incometax', 'tin-nsdl', 'itns']],
+    ['Taxes', 'Property tax', ['property tax']],
+    ['Donations', 'Religious', ['temple', 'mandir', 'gurudwara', 'church', 'masjid', 'devasthan']],
+    ['Donations', 'Charity & NGO', ['donation', 'charity', '=ngo', 'foundation']],
+    ['Misc', 'Penalties & fines', ['penalty', 'challan', '=fine']],
   ];
   function subcategories(state, category) {
     const sc = (state && state.subcats) || {};
@@ -4776,7 +4795,7 @@
     }
     if (BANK_FEE.test(t) && !/\b(?:reversed|reversal|refund(?:ed)?|credited)\b/i.test(t)) {
       const onCardFee = CARD_HINT.test(t) && !DEBIT_CARD.test(t);
-      return { type: 'debit', amount, merchant: 'Bank charges', date: dateOf(t), category: 'Bills', paidFrom: onCardFee ? 'card' : 'account', last4: onCardFee ? cardLast4(t) : null, acct: null, atm: false, raw: t };
+      return { type: 'debit', amount, merchant: 'Bank charges', date: dateOf(t), category: 'Bills', sub: 'Bank charges', paidFrom: onCardFee ? 'card' : 'account', last4: onCardFee ? cardLast4(t) : null, acct: null, atm: false, raw: t };
     }
     const isCredit = /\b(credited|received|deposited|refund(?:ed)?|disbursed|reversed)\b/i.test(t);
     // A reversal is money coming back, even when the SMS also says "debited".
