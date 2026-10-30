@@ -3663,7 +3663,9 @@
     }
     const prevChecks = (state.reviewChecks || {});
     if (prevChecks.round && prevChecks.round < rv.round && (prevChecks.checks || []).length) L.push("Last month's checks to follow up: " + prevChecks.checks.join('; ') + '.');
-    const monthly = !state.reviewDone || state.reviewDone < rv.round;
+    // Once a round: until it's written, and asked at most twice (the app counts the asks in reviewAsked).
+    const asked = state.reviewAsked && state.reviewAsked.round === rv.round ? state.reviewAsked.n : 0;
+    const monthly = (!state.reviewDone || state.reviewDone < rv.round) && asked <= 2;
     L.push('Monthly review this time: ' + (monthly ? 'yes (write the diagnosis and the advisor section)' : 'no (diagnosis null)') + '.');
     const tr4 = weekTrend(state, todayIso, 4);
     if (tr4.weeks.some((w) => !w.quiet)) {

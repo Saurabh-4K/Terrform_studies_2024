@@ -5598,12 +5598,16 @@
     const L = rv.ladder;
     const line = (name, val) => '<div class="line"><span>' + name + '</span><span>' + val + '</span></div>';
     const monthYear = (iso) => monthName(Core.parseISO(iso).getMonth()) + ' ' + Core.parseISO(iso).getFullYear();
+    // The month's AI review, kept from the plan that wrote it (older apps kept it only in the weekly plan).
     const wp = state.weeklyPlan;
-    const fresh = wp && wp.plan && wp.made >= rv.round;
-    const dg = fresh ? wp.plan.diagnosis : null;
-    const dir = fresh ? (wp.plan.sections || []).find((s) => s.kind === 'direction') : null;
-    const adv = fresh ? (wp.plan.sections || []).find((s) => s.kind === 'advisor') : null;
-    let html = '<section class="card review"><div class="card-head">' + titled('Monthly review', 'review') + '<span class="hint">' + tr('Since payday, {date}', { date: fmtDate(rv.round) }) + '</span></div>';
+    const ar = state.aiReview && state.aiReview.round === rv.round ? state.aiReview
+      : wp && wp.plan && wp.made >= rv.round && wp.plan.diagnosis ? { made: wp.made, diagnosis: wp.plan.diagnosis, sections: wp.plan.sections || [] } : null;
+    const dg = ar ? ar.diagnosis : null;
+    const dir = ar ? (ar.sections || []).find((s) => s.kind === 'direction') : null;
+    const adv = ar ? (ar.sections || []).find((s) => s.kind === 'advisor') : null;
+    let html = '<section class="card review"><div class="card-head">' + titled('Monthly review', 'review') + '<span class="hint">' + tr('Since payday, {date}', { date: fmtDate(rv.round) }) + '</span></div>' +
+      '<p class="hint">' + (ar ? tr('Your numbers below update every day. The AI review was written once for this month, on {date}.', { date: fmtDate(ar.made) })
+        : tr('Your numbers below update every day. The AI review is written once a month, with the first plan after payday.')) + '</p>';
     if (dg && dg.verdict) html += '<p class="plan-headline">' + esc(dg.verdict) + '</p>';
     html += '<h3>' + tr('Health check') + '</h3>' + healthRows(Core.healthCheck(state, t));
     if (dg && dg.causes.length) html += '<h3>' + tr('What’s behind it') + '</h3>' + dg.causes.map((c) => '<div class="cause"><b>' + esc(c.title) + '</b><p>' + esc(c.text) + '</p></div>').join('');
@@ -5827,6 +5831,9 @@
     ui.planBusy = true;
     ui.planTried = true;
     ui.planError = '';
+    // The monthly review is asked for at most twice a round (a server that doesn't write it isn't asked every time).
+    const round = Core.cycleFor(t, Number(state.settings.payday) || 1).start;
+    if (!(state.reviewDone >= round)) state.reviewAsked = { round, n: (state.reviewAsked && state.reviewAsked.round === round ? state.reviewAsked.n : 0) + 1 };
     rerenderKeepScroll();
     const ctl = typeof AbortController === 'function' ? new AbortController() : null;
     const timer = setTimeout(() => { if (ctl) ctl.abort(); }, 120000);
@@ -5850,7 +5857,11 @@
         if (prev && prev.goal && prev.week < week) state.goalHistory = (state.goalHistory || []).filter((g) => g.week !== prev.goal.week).concat(prev.goal).slice(-8);
         // The round's diagnosis: the review is done, and its checks are followed up next month.
         const round = Core.cycleFor(t, Number(state.settings.payday) || 1).start;
-        if (plan.diagnosis || (plan.sections || []).some((s) => s.kind === 'direction')) state.reviewDone = round;
+        if (plan.diagnosis || (plan.sections || []).some((s) => s.kind === 'direction')) {
+          state.reviewDone = round;
+          // The month's review is kept on its own until next payday: next week's plan doesn't replace it.
+          state.aiReview = { round, made: t, diagnosis: plan.diagnosis || null, sections: (plan.sections || []).filter((x) => x.kind === 'advisor' || x.kind === 'direction') };
+        }
         if (plan.diagnosis && (plan.diagnosis.checks || []).length) state.reviewChecks = { round, checks: plan.diagnosis.checks };
         state.weeklyPlan = { week, made: t, plan, goal: Object.assign({}, plan.week_goal, { week }), lastGoal: lastGoal || null,
           lastResult: lastGoal ? Core.goalResult(state, lastGoal) : null, seen: false };

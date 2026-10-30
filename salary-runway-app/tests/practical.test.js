@@ -161,3 +161,21 @@ test('extra on loans only when the app\'s plan puts money there: other loan step
   const only = { sections: [{ kind: 'loans', title: 'Loans', steps: [plan.sections[0].steps[2]] }] };
   assert.equal(Core.guardExtraLoans(only, s, T).plan.sections.length, 0);
 });
+
+test('the monthly review is asked for once a round: until written, and at most twice', () => {
+  const s = household(30000);
+  const round = Core.cycleFor(T, 1).start;
+  assert.match(Core.planFacts(s, T, null), /Monthly review this time: yes/);
+  // Written this round: no more
+  s.reviewDone = round;
+  assert.match(Core.planFacts(s, T, null), /Monthly review this time: no/);
+  // Not written, but already asked twice this round (a server that doesn't write it): not asked a third time
+  delete s.reviewDone;
+  s.reviewAsked = { round, n: 2 };
+  assert.match(Core.planFacts(s, T, null), /Monthly review this time: yes/);
+  s.reviewAsked = { round, n: 3 };
+  assert.match(Core.planFacts(s, T, null), /Monthly review this time: no/);
+  // A new round starts over
+  s.reviewAsked = { round: Core.addDays(round, -30), n: 3 };
+  assert.match(Core.planFacts(s, T, null), /Monthly review this time: yes/);
+});
