@@ -275,6 +275,81 @@
     });
     return out;
   }
+  /*
+   * The bank's own entry (from an SMS or a statement import) for something
+   * just recorded by hand: the same amount, within 3 days, money in for money
+   * in, from the same account, and not tied to anything yet. The same place:
+   * the closest one. Otherwise only when there is just one, and, for an
+   * everyday amount typed in, not under ₹200 (two ₹100 teas are two payments).
+   * o: { amount, date, dir: 'out' | 'in', wallet ('main' or a wallet id),
+   * paidFrom (a card), note, any (a bill, transfer or person: any amount),
+   * transfer: { from, to } (an ATM SMS already moved to cash is the same move) }.
+   */
+  function bankTwin(state, o) {
+    const amount = Math.round(Number(o.amount) || 0);
+    const fromBank = (t) => (t.smsKey || t.source === 'sms' || t.source === 'import') && !t.matched && !t.matchedIn;
+    const sameAcct = (t) => (o.paidFrom ? t.paidFrom === o.paidFrom : !(t.paidFrom && t.paidFrom !== 'account') && (o.wallet == null || (t.wallet || 'main') === o.wallet));
+    const plainOut = (t) => isFlexible(t) && !t.cashAdvance && !t.claimId && !t.maybeId && !t.covered && !t.eventId && !t.lentShare &&
+      !t.splitOf && !t.refunded && !t.notFixed && !t.notTwin;
+    const plainIn = (t) => isIncome(t) && !isPassedOn(t) && !t.eventId && !t.fromFund && !t.claimId && !t.payoutId && !t.refundOf &&
+      !t.maybeId && !t.borrowed && !t.salary && (!t.useFor || t.useFor === 'spend');
+    const sameMove = (t) => o.transfer && isTransfer(t) && t.from === o.transfer.from && t.to === o.transfer.to;
+    const hits = state.transactions.filter((t) => fromBank(t) && Math.round(Number(t.amount)) === amount && Math.abs(daysBetween(t.date, o.date)) <= 3 &&
+      (sameMove(t) || (sameAcct(t) && (o.dir === 'in' ? plainIn(t) : plainOut(t)))));
+    if (!hits.length) return null;
+    const shop = normalizeMerchant(o.note);
+    const named = hits.filter((t) => shop && normalizeMerchant(t.note) === shop);
+    const pool = named.length ? named : hits.length === 1 && (o.any || amount >= 200) ? hits : [];
+    return pool.sort((a, b) => Math.abs(daysBetween(a.date, o.date)) - Math.abs(daysBetween(b.date, o.date)))[0] || null;
+  }
+
+  /*
+   * Something recorded by hand (a bill paid, a card bill, money moved, a
+   * payment typed in, a trip payment) whose bank SMS is already in: the SMS
+   * joins it instead of counting a second time. What the bank said is kept on
+   * the entry, so "Not the same payment" can put it back as its own.
+   * Returns the bank's entry that joined, or null.
+   */
+  function joinBankTwin(state, tx, any) {
+    if (!tx || tx.smsKey || tx.matched) return null;
+    const isIn = isIncome(tx);
+    const said = (x) => ({ date: x.date, merchant: x.note, category: x.category, type: isIncome(x) ? 'credit' : 'debit', paidFrom: x.paidFrom || null, wallet: x.wallet || null, source: x.source });
+    if (isTransfer(tx)) {
+      // Money between your own accounts can show on both banks' SMS: the debit from one and the credit into the other.
+      const out = bankTwin(state, { amount: tx.amount, date: tx.date, dir: 'out', wallet: tx.from, transfer: { from: tx.from, to: tx.to }, any: true });
+      const inn = tx.smsKeyIn ? null : bankTwin(state, { amount: tx.amount, date: tx.date, dir: 'in', wallet: tx.to, any: true });
+      if (out) {
+        tx.smsKey = out.smsKey;
+        tx.matched = said(out);
+        if (isTransfer(out)) tx.matched.transfer = { from: out.from, to: out.to };
+      }
+      if (inn) { tx.smsKeyIn = inn.smsKey; tx.matchedIn = said(inn); }
+      state.transactions = state.transactions.filter((t) => t !== out && t !== inn);
+      return out || inn;
+    }
+    const card = tx.paidFrom && tx.paidFrom !== 'account' ? tx.paidFrom : null;
+    const x = bankTwin(state, { amount: tx.amount, date: tx.date, dir: isIn ? 'in' : 'out', wallet: card ? null : tx.wallet || 'main', paidFrom: card, note: tx.note, any: !!any });
+    if (!x) return null;
+    tx.smsKey = x.smsKey;
+    tx.matched = said(x);
+    state.transactions = state.transactions.filter((t) => t !== x);
+    return x;
+  }
+
+  /*
+   * Money lent or borrowed noted under People (no payment tied to it), then
+   * the bank SMS for it: the same amount, within 3 days of noting it, lent
+   * for money out (a deposit too), borrowed for money in. Only when there is
+   * just one such IOU: names in SMS are often a number or a UPI short form.
+   */
+  function iouTwin(state, o) {
+    const amount = Math.round(Number(o.amount) || 0);
+    const tied = new Set(state.transactions.map((t) => t.iouId).filter(Boolean));
+    const hits = (state.iou || []).filter((i) => !i.eventId && !tied.has(i.id) && !(Number(i.paid) > 0) && Math.round(Number(i.amount)) === amount &&
+      i.dir === (o.dir === 'in' ? 'owe' : 'lent') && i.created && Math.abs(daysBetween(i.created, o.date)) <= 3);
+    return hits.length === 1 ? hits[0] : null;
+  }
+
   // Keep one: the bank's entry becomes the payment (amount and date as the bank says); the hand-made one goes.
   function mergeFixedTwin(state, paidId, extraId) {
     const p = state.transactions.find((t) => t.id === paidId);
@@ -4901,7 +4976,7 @@
     insights, simulateDebts, compareDebtPlans, debtFreeDates, emergencyPlan, parseSms,
     splitSmsBatch, smsKey, categorize, normalizeMerchant, sinkingMonthly, inCycle,
     spendInRange, incomeInRange, incomeKept, isIncome, isMove, isBillPayment, isFixedPayment, isCashAdvance, emiLoans,
-    fixedCandidate, fixedTwins, mergeFixedTwin, personalAmt, SUBCATS, subcategories, splitCat, guessSub, subOf, subSuggestions, subBreakdown,
+    fixedCandidate, fixedTwins, mergeFixedTwin, bankTwin, joinBankTwin, iouTwin, personalAmt, SUBCATS, subcategories, splitCat, guessSub, subOf, subSuggestions, subBreakdown,
     addEvent, editEvent, splitShares, addEventExpense, removeEventExpense, eventForgetTx, deleteEvent, eventBalances, settleEvent, settleCandidates, tripHeld, eventView, eventStatement,
     cutOptions, weekTarget, fitWeekGoal, rupeeAmounts, checkAdviceNumbers,
     linkRefund, unlinkRefund, forgetRefunds, refundMatches, isEarned, earnedIn, fixedPaidFor, fixedDueFor, payFixed, unpayFixed, fixedMatches, isFlexible, incomeOptions,

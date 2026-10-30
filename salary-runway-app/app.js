@@ -3006,13 +3006,23 @@
   function manualTwin(p) {
     if (!p || (p.type !== 'debit' && p.type !== 'credit')) return null;
     const shop = Core.normalizeMerchant(p.merchant);
-    const hits = state.transactions.filter((x) => !x.smsKey && x.source !== 'sms' && x.source !== 'import' && x.source !== 'reconcile' &&
-      Number(x.amount) === p.amount && Math.abs(Core.daysBetween(x.date, p.date)) <= 3 &&
-      (p.type === 'credit' ? Core.isIncome(x) : Core.isFlexible(x) || ((x.iouId || x.iouPay) && !Core.isIncome(x))));
+    // The account the SMS is about: money moved by hand from (or into) it is the same money.
+    const acct = (walletForAcct(p.acct) || {}).id || 'main';
+    const cash = cashWallet();
+    const onCard = p.paidFrom === 'card';
+    // Recorded by hand as a bill, card bill, fixed payment or EMI, or money moved: the SMS is that one, whatever the amount.
+    const kept = (x) => !!x.billId || x.kind === 'cardpay' || (x.fixedNew && Core.isFixedPayment(x)) || Core.isTransfer(x);
+    // Money moved between your own accounts has two sides: the debit SMS from one and the credit SMS into the other.
+    const side = (x) => (Core.isTransfer(x) && p.type === 'credit' ? !x.smsKeyIn : !x.smsKey);
+    const hits = state.transactions.filter((x) => side(x) && x.source !== 'sms' && x.source !== 'import' && x.source !== 'reconcile' && x.source !== 'event' &&
+      Number(x.amount) === p.amount && Math.abs(Core.daysBetween(x.date, p.date)) <= 3 && !(cash && x.wallet === cash.id) &&
+      (p.type === 'credit' ? (Core.isIncome(x) && !x.fromFund) || (Core.isTransfer(x) && x.to === acct && !onCard)
+        : Core.isTransfer(x) ? x.from === acct && !onCard
+          : Core.isFlexible(x) || ((x.iouId || x.iouPay) && !Core.isIncome(x)) || (kept(x) && !onCard && !(x.paidFrom && x.paidFrom !== 'account'))));
     if (!hits.length) return null;
     // Same place: the closest one. Otherwise only one clear candidate, and not a small everyday amount (two ₹100 teas are two payments).
     const named = hits.filter((x) => shop && Core.normalizeMerchant(x.note) === shop);
-    const pool = named.length ? named : hits.length === 1 && p.amount >= 200 ? hits : [];
+    const pool = named.length ? named : hits.length === 1 && (p.amount >= 200 || kept(hits[0])) ? hits : [];
     return pool.sort((a, b) => Math.abs(Core.daysBetween(a.date, p.date)) - Math.abs(Core.daysBetween(b.date, p.date)))[0] || null;
   }
 
@@ -3077,7 +3087,7 @@
 
   // SMS keys already recorded: transactions and card statements.
   function knownSmsKeys() {
-    return new Set(state.transactions.map((x) => x.smsKey)
+    return new Set(state.transactions.map((x) => x.smsKey).concat(state.transactions.map((x) => x.smsKeyIn))
       .concat((state.cards || []).map((c) => c.statement && c.statement.smsKey))
       .concat(state.smsIgnored || []).concat(...(state.emiOffers || []).map((x) => [x.key].concat(x.keys || []))).filter(Boolean));
   }
@@ -3135,21 +3145,26 @@
     if (o.cardId) paidFrom = o.cardId;
     else if (p.paidFrom === 'card') paidFrom = card ? card.id : 'card:' + (p.last4 || '');
     const fromWallet = paidFrom === 'account' ? walletForAcct(p.acct) : null;
-    // With a Cash wallet, cash from an ATM is moved, not spent: what's spent in cash is noted from the wallet.
-    if (p.type === 'debit' && p.atm && paidFrom === 'account' && cashWallet() && cat === 'Cash') {
-      state.transactions.push({ id: uid(), kind: 'transfer', date: p.date, amount: p.amount, from: fromWallet ? fromWallet.id : 'main', to: cashWallet().id,
-        note: tr('ATM withdrawal'), source: o.source || 'sms', smsKey: o.key });
-      return true;
-    }
     // Already typed in by hand? Link the SMS to that entry; the person's category and note stay.
     const mine = manualTwin(p);
+    if (mine && Core.isTransfer(mine) && p.type === 'credit') {
+      mine.smsKeyIn = o.key;
+      mine.matchedIn = { date: p.date, merchant: p.merchant, category: cat, type: p.type, paidFrom: null, wallet: fromWallet ? fromWallet.id : null };
+      return true;
+    }
     if (mine) {
       mine.smsKey = o.key;
       // Kept so "Not the same payment" can add the SMS as its own entry.
       mine.matched = { date: p.date, merchant: p.merchant, category: cat, type: p.type, paidFrom: paidFrom === 'account' ? null : paidFrom, wallet: fromWallet ? fromWallet.id : null };
       if (paidFrom !== 'account' && paidFrom.indexOf('card:') !== 0 && !mine.paidFrom && !mine.wallet) mine.paidFrom = paidFrom;
-      else if (fromWallet && !mine.paidFrom && !mine.wallet) mine.wallet = fromWallet.id;
-      if (person && (!Core.isIncome(mine) || !mine.useFor || mine.useFor === 'spend')) linkPerson(mine, person);
+      else if (fromWallet && !mine.paidFrom && !mine.wallet && !Core.isTransfer(mine)) mine.wallet = fromWallet.id;
+      if (person && (Core.isFlexible(mine) || Core.isIncome(mine)) && (!Core.isIncome(mine) || !mine.useFor || mine.useFor === 'spend')) linkPerson(mine, person);
+      return true;
+    }
+    // With a Cash wallet, cash from an ATM is moved, not spent: what's spent in cash is noted from the wallet.
+    if (p.type === 'debit' && p.atm && paidFrom === 'account' && cashWallet() && cat === 'Cash') {
+      state.transactions.push({ id: uid(), kind: 'transfer', date: p.date, amount: p.amount, from: fromWallet ? fromWallet.id : 'main', to: cashWallet().id,
+        note: tr('ATM withdrawal'), source: o.source || 'sms', smsKey: o.key });
       return true;
     }
     const tx = { id: uid(), date: p.date, amount: p.amount, category: cat, note: o.note || p.merchant, source: 'sms', smsKey: o.key };
@@ -3201,7 +3216,14 @@
       if (shop && tx.note !== 'Bank payment' && !smart) state.merchantRules[shop] = tx.category + (tx.sub ? '|' + tx.sub : '');
     }
     if (o.source) tx.source = o.source;
+    // Lent or borrowed, noted under People in the last few days without the payment: this SMS is that money.
+    const owed = !person && !smart && paidFrom === 'account' ? Core.iouTwin(state, { amount: p.amount, date: p.date, dir: p.type === 'credit' ? 'in' : 'out' }) : null;
     state.transactions.push(tx);
+    if (owed) {
+      tx.iouId = owed.id; tx.needsReview = false;
+      if (tx.kind === 'in') tx.useFor = 'spend';
+      smsNews.push(tr(owed.dir === 'lent' ? '{amount} lent to {name}: this SMS is that money, not spending.' : '{amount} borrowed from {name}: this SMS is that money, not income.', { amount: inr(p.amount), name: owed.name }));
+    }
     if (person) linkPerson(tx, person);
     if (smart) { const msg = applySmart(tx, smart); if (msg) smsNews.push(msg); else tx.needsReview = true; }
     return true;
@@ -3370,6 +3392,7 @@
       state.transactions = state.transactions.filter((y) => y !== tx);
       const paid = Core.payBill(state, b.id, tx.amount, b.everyMonths, tx.date);
       Object.assign(paid, { note: tx.note || b.name, source: tx.source, smsKey: tx.smsKey });
+      if (tx.matched) paid.matched = tx.matched;
       if (tx.wallet) paid.wallet = tx.wallet;
       return tr('Paid {name} bill: next one expected around {amount}.', { name: b.name, amount: inr(b.estimate) });
     }
@@ -3438,6 +3461,16 @@
     if (!/^@(iou:|ev:|lent$|borrowed$|deposit$)/.test(v)) return null;
     if (v.indexOf('@ev:') === 0) { const rest = v.slice(4); const k = rest.indexOf(':'); return { ev: rest.slice(0, k), name: rest.slice(k + 1) }; }
     return { iou: v.indexOf('@iou:') === 0 ? v.slice(5) : null, deposit: v === '@deposit' };
+  }
+
+  /*
+   * After something is recorded by hand: its bank SMS, already in, joins it
+   * (counted once). Returns the words to say, or ''. `any`: a bill, card
+   * bill, move or trip payment, where any amount is that one payment.
+   */
+  function joinBankSms(tx, any) {
+    const x = Core.joinBankTwin(state, tx, any);
+    return x ? tr('Linked to the bank SMS of {date} ({merchant}): counted once.', { date: fmtDate(x.date), merchant: x.note || '' }) : '';
   }
 
   // What a People choice did, said once the SMS are in.
@@ -3864,11 +3897,13 @@
     if (!(amount > 0)) { ui.moveForm = { error: tr('Enter an amount above ₹0.') }; render(); return; }
     const id = (v) => (v === 'account' ? 'main' : v.slice(2));
     const before = JSON.stringify(state);
-    state.transactions.push({ id: uid(), kind: 'transfer', date, amount, from: id(from), to: id(to), note: tr('Moved money'), source: 'manual' });
+    const moved = { id: uid(), kind: 'transfer', date, amount, from: id(from), to: id(to), note: tr('Moved money'), source: 'manual' };
+    state.transactions.push(moved);
+    const linked = joinBankSms(moved, true);
     ui.moveForm = null;
     save();
     rerenderKeepScroll();
-    offerUndo(tr('{amount} moved', { amount: inr(amount) }), before);
+    offerUndo(tr('{amount} moved', { amount: inr(amount) }) + (linked ? ' ' + linked : ''), before);
   }
 
   // Balances this morning for every wallet; together they are the total the runway starts from.
@@ -4466,7 +4501,7 @@
     return '<div class="reset-modal-overlay edit-overlay" role="presentation"><div class="reset-modal-card edit-card" role="dialog" aria-modal="true" aria-labelledby="edit-title" id="edit-card" tabindex="-1">' +
       '<div class="edit-head">' + catIcon(x) + '<h2 id="edit-title">' + tr(isIn ? 'Edit money received' : saved ? 'Edit money saved' : Core.isTransfer(x) ? 'Edit money moved' : 'Edit payment') + '</h2></div>' +
       (Core.isTransfer(x) ? '<p class="hint">' + esc(walletName(x.from)) + ' → ' + esc(walletName(x.to)) + '</p>' : '') +
-      (x.matched ? '<div class="callout"><span class="hint">' + tr('Linked to a bank SMS: {merchant}, {date}.', { merchant: esc(x.matched.merchant || ''), date: fmtDate(x.matched.date) }) + '</span>' +
+      (x.matched || x.matchedIn ? '<div class="callout"><span class="hint">' + tr('Linked to a bank SMS: {merchant}, {date}.', { merchant: esc((x.matched || x.matchedIn).merchant || ''), date: fmtDate((x.matched || x.matchedIn).date) }) + '</span>' +
         '<div><button class="ghost small" data-action="tx-unlink">' + tr('Not the same payment') + '</button></div></div>' : '') +
       (state.reconciledTo && x.date <= state.reconciledTo ? '<p class="hint">' + tr('Checked against your bank on {date}. Changing it makes the app’s count differ from your bank’s.', { date: fmtDate(Core.addDays(state.reconciledTo, 1)) }) + '</p>' : '') +
       (locked ? '<p class="hint">' + tr(x.kind === 'cardpay'
@@ -4715,7 +4750,7 @@
       (x.claimId ? ' · <span class="chip">' + tr('Reimbursable') + '</span>' : '') +
       (x.maybeId ? ' · <span class="chip">' + tr('Expected cost') + '</span>' : '') +
       (x.payoutId ? ' · <span class="chip">' + tr('Reimbursement') + '</span>' : '') +
-      (x.matched ? ' · <span class="chip">' + tr('Bank SMS ✓') + '</span>' : '') +
+      (x.matched || x.matchedIn ? ' · <span class="chip">' + tr('Bank SMS ✓') + '</span>' : '') +
       ((x.refunds || []).length ? ' · <span class="chip">' + tr('{amount} refunded', { amount: inr(x.refunds.reduce((a, r) => a + r.amount, 0)) }) + '</span>' : '') +
       (x.refunded ? ' · <span class="chip">' + tr('{amount} refunded', { amount: inr(x.refunded) }) + '</span>' : '') +
       (x.refundOf ? ' · <span class="chip">' + tr('Refund') + '</span>' : '') +
@@ -6693,11 +6728,19 @@
       case 'fraud-ok': state.fraudOk = (state.fraudOk || []).concat(btn.dataset.id).slice(-300); save(); toast(tr('Marked as yours')); break;
       case 'tx-unlink': {
         const x = state.transactions.find((t) => t.id === ui.editTx);
-        if (!x || !x.matched) return;
+        if (!x || !(x.matched || x.matchedIn)) return;
         const before = JSON.stringify(state);
+        // A move joined to both banks' SMS: both go back as their own entries.
+        if (x.matchedIn) {
+          const m = x.matchedIn;
+          state.transactions.push({ id: uid(), kind: 'in', date: m.date, amount: x.amount, category: 'Money received', note: m.merchant, source: m.source || 'sms', smsKey: x.smsKeyIn, wallet: m.wallet || undefined, useFor: null });
+          delete x.smsKeyIn; delete x.matchedIn;
+        }
         const m = x.matched;
-        const tx = { id: uid(), date: m.date, amount: x.amount, note: m.merchant, source: 'sms', smsKey: x.smsKey };
-        if (m.type === 'credit') Object.assign(tx, { kind: 'in', category: 'Money received', useFor: null });
+        if (!m) { ui.editTx = null; save(); rerenderKeepScroll(); offerUndo(tr('Added the SMS as its own payment'), before); return; }
+        const tx = { id: uid(), date: m.date, amount: x.amount, note: m.merchant, source: m.source || 'sms', smsKey: x.smsKey };
+        if (m.transfer) Object.assign(tx, { kind: 'transfer', from: m.transfer.from, to: m.transfer.to });
+        else if (m.type === 'credit') Object.assign(tx, { kind: 'in', category: 'Money received', useFor: null });
         else { tx.category = m.category || 'Misc'; tx.needsReview = true; if (m.paidFrom) tx.paidFrom = m.paidFrom; else if (m.wallet) tx.wallet = m.wallet; }
         delete x.smsKey; delete x.matched;
         state.transactions.push(tx);
@@ -7076,10 +7119,12 @@
         const before = JSON.stringify(state);
         const it = Core.addEventExpense(state, ev.id, { date: val('ea-date') || t, total: f.total, paidBy: f.paidBy, shares: f.shares, place: val('ea-place'), category: val('ea-cat') || 'Travel', txId: ui.evAdd && ui.evAdd.txId });
         if (!it) { ui.evError = tr('That payment can’t be split here.'); break; }
+        // Paid by you and its bank SMS already in: that one is this payment.
+        const linked = f.paidBy === 'me' ? joinBankSms(state.transactions.find((x) => x.id === it.txIds[0] && x.eventNew), true) : '';
         ui.evAdd = null; ui.evError = '';
         save(); rerenderKeepScroll();
-        offerUndo(f.paidBy === 'me' ? tr('Your share {mine} counts as spending; {others} is owed to you.', { mine: inr(f.shares.me || 0), others: inr(f.total - (f.shares.me || 0)) })
-          : tr('Your share {mine} counts as spending; you owe {who}.', { mine: inr(f.shares.me || 0), who: f.paidBy }), before);
+        offerUndo((f.paidBy === 'me' ? tr('Your share {mine} counts as spending; {others} is owed to you.', { mine: inr(f.shares.me || 0), others: inr(f.total - (f.shares.me || 0)) })
+          : tr('Your share {mine} counts as spending; you owe {who}.', { mine: inr(f.shares.me || 0), who: f.paidBy })) + (linked ? ' ' + linked : ''), before);
         return;
       }
       case 'ev-item-remove': {
@@ -7302,9 +7347,14 @@
         const v = (id) => (document.getElementById(id) || {}).value || '';
         const name = v('ia-name').trim();
         if (!name) { ui.iouError = tr('Who is it with?'); break; }
-        const i = Core.addIou(state, { name, dir: v('ia-dir'), amount: v('ia-amt'), promised: v('ia-date') || null }, t);
+        // The money already in from its bank SMS (in the last 3 days)? That payment is this one.
+        const dir = v('ia-dir') === 'lent' ? 'lent' : 'owe';
+        const bank = Core.bankTwin(state, { amount: v('ia-amt'), date: t, dir: dir === 'lent' ? 'out' : 'in', wallet: null, any: true });
+        const i = Core.addIou(state, { name, dir, amount: v('ia-amt'), promised: v('ia-date') || null, txId: bank && bank.id }, t);
         if (!i) { ui.iouError = tr('Enter an amount above ₹0.'); break; }
-        ui.iouAdd = false; save(); toast(tr('{name} added', { name })); break;
+        if (bank && bank.kind === 'in') bank.useFor = 'spend';
+        ui.iouAdd = false; save();
+        toast(tr('{name} added', { name }) + (bank ? ' ' + tr('Linked to the bank SMS of {date} ({merchant}): counted once.', { date: fmtDate(bank.date), merchant: bank.note || '' }) : '')); break;
       }
       case 'report-save': makeReport('save'); return;
       case 'report-share': makeReport('share'); return;
@@ -7624,10 +7674,14 @@
         const id = btn.dataset.id;
         const amount = a === 'card-pay' ? Number(btn.dataset.amount) : Number(document.getElementById('card-part-' + id).value);
         if (!(amount > 0)) { toast('Enter the amount you paid'); return; }
-        Core.recordCardPayment(state, id, amount, t);
+        // Already in from the bank's or the card's SMS: that's this payment, not a second one.
+        const fromSms = state.transactions.find((x) => x.kind === 'cardpay' && x.cardId === id && x.amount === Math.round(amount) && x.source !== 'manual' &&
+          Math.abs(Core.daysBetween(x.date, t)) <= 3);
+        const linked = fromSms ? tr('Linked to the bank SMS of {date} ({merchant}): counted once.', { date: fmtDate(fromSms.date), merchant: fromSms.note || '' })
+          : joinBankSms(Core.recordCardPayment(state, id, amount, t), true);
         const st = Core.cardStatus(state, state.cards.find((c) => c.id === id), t);
         ui.cardPlan = null; save();
-        toast(st.remaining ? tr('{amount} paid. {left} still to pay by {date}.', { amount: inr(amount), left: inr(st.remaining), date: fmtDate(st.due) }) : tr('Bill paid in full. No interest this month.'));
+        toast((st.remaining ? tr('{amount} paid. {left} still to pay by {date}.', { amount: inr(amount), left: inr(st.remaining), date: fmtDate(st.due) }) : tr('Bill paid in full. No interest this month.')) + (linked ? ' ' + linked : ''));
         break;
       }
       case 'card-emi': {
@@ -7682,11 +7736,13 @@
         const amount = Number(document.getElementById('bill-amt-' + id).value) || 0;
         const months = Number(document.getElementById('bill-months-' + id).value) || 1;
         if (amount <= 0) { toast('Enter the amount you paid'); return; }
-        if (!Core.payBill(state, id, amount, months, t)) return;
+        const billTx = Core.payBill(state, id, amount, months, t);
+        if (!billTx) return;
+        const linked = joinBankSms(billTx, true);
         ui.payBill = null; save();
         const paidBill = state.bills.find((x) => x.id === id);
-        toast(Core.billEnded(paidBill, null) ? tr('{amount} paid. That was the last one.', { amount: inr(amount) })
-          : tr('{amount} paid. Next due {date}', { amount: inr(amount), date: fmtDate(paidBill.nextDue, true) }));
+        toast((Core.billEnded(paidBill, null) ? tr('{amount} paid. That was the last one.', { amount: inr(amount) })
+          : tr('{amount} paid. Next due {date}', { amount: inr(amount), date: fmtDate(paidBill.nextDue, true) })) + (linked ? ' ' + linked : ''));
         break;
       }
       case 'bill-link': {
@@ -8217,15 +8273,22 @@
     const wasOver = Core.projectRunway(state, today()).overToday > 0;
     const beforeAdd = JSON.stringify(state);
     state.transactions.push(tx);
+    // Its bank SMS already in? Then it's this one, not a second payment.
+    const linked = joinBankSms(tx, !!special);
     if (special) {
       if (personPick(special)) { if (tx.kind === 'in') tx.useFor = 'spend'; linkPerson(tx, personPick(special)); }
       const msg = personPick(special) ? smsNews.join(' · ') : applySmart(tx, special);
       smsNews = [];
       save(); rerenderKeepScroll();
-      if (msg) offerUndo(msg, beforeAdd); else toast(tr('{amount} added', { amount: inr(amount) }));
+      if (msg || linked) offerUndo([linked, msg].filter(Boolean).join(' '), beforeAdd); else toast(tr('{amount} added', { amount: inr(amount) }));
       return;
     }
     save();
+    if (linked) {
+      rerenderKeepScroll();
+      offerUndo(linked, beforeAdd);
+      return;
+    }
     sound(ui.txKind !== 'in' && !wasOver && tx.date === today() && Core.projectRunway(state, today()).overToday > 0 ? 'low' : 'tick');
     toast(ui.txKind === 'in' ? (tx.borrowed ? tr('{amount} added as borrowed money', { amount: inr(amount) }) : tr('{amount} received. Choose what it should do.', { amount: inr(amount) }))
       : tx.paidFrom ? cardSpendWarning(tx) : tr('{amount} added to {category}', { amount: inr(amount), category: label(category) }));

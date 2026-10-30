@@ -2453,4 +2453,7 @@
   "Same payment: keep one": "एक ही भुगतान: एक रखें",
   "I paid twice": "मैंने दो बार चुकाया",
   "Counted once now.": "अब एक ही बार गिना गया.",
+  "Linked to the bank SMS of {date} ({merchant}): counted once.": "{date} के बैंक SMS से जोड़ा ({merchant}): एक बार गिना.",
+  "{amount} lent to {name}: this SMS is that money, not spending.": "{name} को दिए {amount}: यह SMS वही पैसे हैं, खर्च नहीं.",
+  "{amount} borrowed from {name}: this SMS is that money, not income.": "{name} से लिए {amount}: यह SMS वही पैसे हैं, आमदनी नहीं.",
 };
