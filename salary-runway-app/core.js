@@ -4008,7 +4008,12 @@
         if (p) byProtect[p.id] = (byProtect[p.id] || 0) + ownPart(t);
         else byCat[t.category] = (byCat[t.category] || 0) + ownPart(t);
       });
-    const halve = (amount) => { const daily = amount / span; return { daily: ten(daily), keep: ten(daily / 2), toPayday: ten((daily / 2) * fe.days), perMonth: ten((daily / 2) * 30) }; };
+    // From the amounts shown (about ₹60 a day → ₹30), so what it saves is exactly what they multiply to.
+    const halve = (amount) => {
+      const daily = ten(amount / span);
+      const keep = Math.round(daily / 2);
+      return { daily, keep, toPayday: ten((daily - keep) * fe.days), perMonth: ten((daily - keep) * 30) };
+    };
     out.cuts = Object.keys(byCat).map((c) => Object.assign({ category: c }, halve(byCat[c])))
       .filter((c) => c.perMonth >= 300 && c.toPayday > 0).sort((a, b) => b.perMonth - a.perMonth).slice(0, 4);
     out.total = sum(out.cuts, (c) => c.toPayday);
@@ -4126,9 +4131,10 @@
     const spent = Math.round(sum(state.transactions.filter((t) => isFlexible(t) && !t.gap && t.date >= from && t.date < todayIso), personalAmt));
     const lastDay = addDays(r.cycle.next, -1);
     const days = daysBetween(todayIso, to < lastDay ? to : lastDay) + 1;
-    const daily = Math.max(r.dailyAllowance, fe.essentialsDaily);
+    // Whole rupees, as the facts write them, so the cap is exactly what they add up to.
+    const daily = Math.round(Math.max(r.dailyAllowance, fe.essentialsDaily));
     const daysAfter = to >= r.cycle.next ? daysBetween(r.cycle.next, to) + 1 : 0;
-    const nextDaily = daysAfter ? monthlyPlan(Object.assign({}, state, { adjustment: null }), r.cycle.next).flexTotal / cycleFor(r.cycle.next, payday).days : 0;
+    const nextDaily = daysAfter ? Math.round(monthlyPlan(Object.assign({}, state, { adjustment: null }), r.cycle.next).flexTotal / cycleFor(r.cycle.next, payday).days) : 0;
     const cap = Math.round((spent + daily * days + nextDaily * daysAfter) / 10) * 10;
     const wi = whatIf(state, todayIso);
     const weekly = fe.status === 'ok' && r.endPace >= 0 && wi.per > 0 ? Math.max(100, Math.round((wi.per * 7) / 30 / 10) * 10) : 0;
@@ -5161,11 +5167,13 @@
    */
   function usualDaily(state, todayIso, r) {
     r = r || projectRunway(state, todayIso);
+    // Never below a day of essentials: a few weeks barely recorded would otherwise say ₹30 a day.
+    const floor = essentialsDaily(state, todayIso).daily;
     const first = state.transactions.reduce((m, t) => (!m || t.date < m ? t.date : m), null);
-    if (!first || daysBetween(first, todayIso) < 14) return Math.round(r.paceRate);
+    if (!first || daysBetween(first, todayIso) < 14) return Math.round(Math.max(r.paceRate, floor));
     const from = addDays(todayIso, -28);
     const spent = sum(state.transactions.filter((t) => isFlexible(t) && t.date >= from && t.date < todayIso && t.category !== 'Emergency'), ownPart);
-    return Math.round(spent / Math.min(28, daysBetween(first, todayIso)));
+    return Math.round(Math.max(spent / Math.min(28, daysBetween(first, todayIso)), floor));
   }
 
   /*
