@@ -756,7 +756,7 @@
       '</div></nav>' +
       (tab !== 'spend' && state.settings.salary ? '<button class="fab" data-action="fab-add" aria-label="' + tr('Add an expense') + '"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></svg></button>' : '') +
       resetModal() + helpModal() + explainModal() + borrowModal() + reportModal() + onboardModal() + tourModal() + editModal();
-    if (tab === 'home') { drawRunway(); animateRunway(); }
+    if (tab === 'home') { drawRunway(); animateRunway(); rollNumbers(); }
     if (document.getElementById('onboard-card') && ui.onboardFocus) {
       ui.onboardFocus = false;
       const first = document.querySelector('#onboard-card input');
@@ -1017,10 +1017,12 @@
       '<p class="greeting">' + greeting() + '</p>' +
       '<p class="coach-line">' + coachLine(z, r, streak, daysToPay) + '</p>' +
       limitCard(r, z, headline, sub) +
+      setupCard(r) +
       (z.zone === 'red' ? redOptions(z, r) : '') +
       '<button class="road-link" data-action="page-open" data-tab="home" data-key="road"><span>' + tr('See the road to payday') + '</span><small>' + tr('Every payment until {date}, and can you afford something', { date: fmtDate(cyc.next) }) + '</small></button>' +
       freedomCard() +
       '</section>' +
+      setupChecklist() +
       cardHomeNotes(cyc) +
       savedCard() +
       alertsNudge() + iouDueCard() + fixedTwinCard() + dueAskCard() + maybeDueCard() + fixedMatchCard() + refundMatchCard() + passCard() + incomeCard() +
@@ -7255,20 +7257,44 @@
         ui.onboardHidden = false; ui.onboardFocus = true;
         save(); setTab('home'); return;
       case 'onboard-next': onboardNext(); break;
+      case 'setup-basics': state.onboarding = { step: state.settings.salary ? 2 : 1 }; ui.onboardHidden = false; ui.onboardFocus = true; save(); break;
+      case 'setup-fixed': {
+        const before = Core.projectRunway(state, t).dailyAllowance;
+        const rent = Math.round(Number(obValue('su-rent')) || 0);
+        const day = Math.min(31, Math.max(1, Math.round(Number(obValue('su-rent-day')) || 1)));
+        const other = Math.round(Number(obValue('su-other')) || 0);
+        if (!(rent > 0) && !(other > 0)) { toast(tr('Enter your rent or another fixed payment, or tap “I don’t pay rent or fixed payments”.')); return; }
+        if (rent > 0) state.fixed.push({ id: uid(), name: tr('Rent'), amount: rent, dueDay: day, fromSetup: true });
+        if (other > 0) state.fixed.push({ id: uid(), name: tr('Other fixed payments'), amount: other, dueDay: 1, fromSetup: true });
+        setupDone('fixed', before);
+        break;
+      }
+      case 'setup-loan': {
+        const before = Core.projectRunway(state, t).dailyAllowance;
+        const emi = Math.round(Number(obValue('su-emi')) || 0);
+        const left = Math.round(Number(obValue('su-left')) || 0);
+        if (!(emi > 0) || !(left > 0)) { toast(tr('Enter the EMI and roughly what’s left to pay, or tap “No loans or EMIs”.')); return; }
+        state.debts.push(Object.assign(listDefaults('debts'), { name: tr('Loan'), minPayment: emi, balance: left, rate: Number(obValue('su-rate')) || 14,
+          dueDay: Math.min(31, Math.max(1, Math.round(Number(obValue('su-emi-day')) || 5))), fromSetup: true }));
+        setupDone('loans', before);
+        break;
+      }
+      case 'setup-sms': ui.setupFocus = null; readNativeSms(false); return;
+      case 'setup-protect': ui.setupFocus = null; openPage('plan', 'protect'); return;
+      case 'setup-none': {
+        state.setup = Object.assign({}, state.setup, { none: Object.assign({}, (state.setup || {}).none, { [btn.dataset.key]: true }) });
+        setupDone(btn.dataset.key, null);
+        break;
+      }
+      case 'setup-later': state.setup = Object.assign({}, state.setup, { laterDay: t }); ui.setupFocus = null; save(); toast(tr('Okay! I’ll ask again tomorrow.')); break;
+      case 'setup-off': state.setup = Object.assign({}, state.setup, { off: true }); ui.setupFocus = null; save(); toast(tr('Okay! The checklist on Runway has everything when you want it.')); break;
+      case 'setup-win-next': ui.setupWin = null; break;
+      case 'setup-list': state.setup = Object.assign({}, state.setup, { listOpen: !(state.setup || {}).listOpen }); save(); break;
+      case 'setup-list-hide': state.setup = Object.assign({}, state.setup, { listHidden: true, listOpen: false }); save(); toast(tr('Hidden. Plan → What matters most and Debts have the rest.')); break;
+      case 'setup-step': ui.setupFocus = btn.dataset.key; ui.setupWin = null; rerenderKeepScroll(); window.scrollTo(0, 0); return;
       case 'onboard-back': if (state.onboarding && state.onboarding.step > 1) { state.onboarding.step--; ui.onboardError = ''; ui.onboardFocus = true; save(); } break;
       case 'onboard-later': ui.onboardHidden = true; toast('Your setup is saved. Finish it any time from the Plan tab.'); break;
       case 'onboard-resume': ui.onboardHidden = false; ui.onboardFocus = true; break;
-      case 'onboard-add-loan': {
-        onboardKeepLoans();
-        state.onboarding.loans = (state.onboarding.loans || []).concat({});
-        save(); break;
-      }
-      case 'onboard-no-debts': state.onboarding.step = 5; ui.onboardFocus = true; save(); break;
-      case 'onboard-sms': {
-        finishOnboarding();
-        readNativeSms(false);
-        return;
-      }
       case 'onboard-finish': finishOnboarding(); return;
       case 'load-demo':
         state = Demo.demoState(t); save(); setTab('home'); return;
@@ -8901,16 +8927,10 @@
    * permission) records payments. Everything is saved as it goes, and
    * "Finish later" keeps the place.
    */
-  const ONBOARD_STEPS = 5;
+  // Salary and payday, then today's balance: the rest comes as cards on Runway (setupCard).
+  const ONBOARD_STEPS = 2;
 
   function obValue(id) { return ((document.getElementById(id) || {}).value || '').trim(); }
-
-  function onboardKeepLoans() {
-    const ob = state.onboarding;
-    (ob.loans || []).forEach((l, i) => {
-      ['name', 'balance', 'emi', 'rate'].forEach((k) => { const v = obValue('ob-loan-' + i + '-' + k); if (v !== '') l[k] = v; });
-    });
-  }
 
   function onboardNext() {
     const ob = state.onboarding;
@@ -8928,22 +8948,8 @@
       const v = obValue('ob-balance');
       if (v === '' || Number(v) < 0) { ui.onboardError = tr('Enter what’s in your bank account now. ₹0 is fine.'); return; }
       state.balanceCheck = { date: t, amount: Math.round(Number(v)) };
-    } else if (ob.step === 3) {
-      const rent = Math.round(Number(obValue('ob-rent')) || 0);
-      const day = Math.min(31, Math.max(1, Math.round(Number(obValue('ob-rent-day')) || 1)));
-      const other = Math.round(Number(obValue('ob-other')) || 0);
-      state.fixed = state.fixed.filter((f) => !f.fromSetup);
-      if (rent > 0) state.fixed.push({ id: uid(), name: tr('Rent'), amount: rent, dueDay: day, fromSetup: true });
-      if (other > 0) state.fixed.push({ id: uid(), name: tr('Other fixed payments'), amount: other, dueDay: 1, fromSetup: true });
-      state.savings.emergencyBalance = Math.max(0, Math.round(Number(obValue('ob-savings')) || 0));
-    } else if (ob.step === 4) {
-      onboardKeepLoans();
-      state.debts = state.debts.filter((d) => !d.fromSetup);
-      (ob.loans || []).forEach((l) => {
-        const balance = Math.round(Number(l.balance) || 0);
-        if (balance > 0) state.debts.push({ id: uid(), name: l.name || tr('Loan'), balance, rate: Number(l.rate) || 14, minPayment: Math.round(Number(l.emi) || 0), dueDay: 5, fromSetup: true });
-      });
-      ob.cards = !!(document.getElementById('ob-cards') || {}).checked;
+      finishOnboarding();
+      return;
     }
     ob.step++;
     ui.onboardFocus = true;
@@ -8951,40 +8957,19 @@
   }
 
   function finishOnboarding() {
-    const cards = state.onboarding && state.onboarding.cards;
     delete state.onboarding;
     state.onboarded = true;
     ui.onboardHidden = false;
     save();
-    if (cards) { ui.cardForm = {}; setTab('debts'); toast('Now add your credit card: name, last 4 digits, statement and due day.'); return; }
     setTab('home');
-    celebrate(tr('You’re set. Your first round starts today.'));
-  }
-
-  // What the steps so far have unlocked, shown at the top of the next one.
-  function onboardUnlocked(step) {
-    const t = today();
-    if (step === 3 && state.settings.salary) {
-      const r = Core.projectRunway(state, t);
-      return '<div class="ob-unlock"><span>' + tr('Unlocked: today’s limit') + '</span><b>' + inr(r.dailyAllowance) + '</b><small>' +
-        tr('What you can spend today and still reach payday on {date}.', { date: fmtDate(r.cycle.next) }) + ' ' + tr('It gets more exact with the next steps.') + '</small></div>';
-    }
-    if (step === 4) {
-      const f = Core.freedomDays(state, t);
-      if (f) return '<div class="ob-unlock"><span>' + tr('Unlocked: Days of Freedom') + '</span><b>' + f.days + ' · ' + tr(f.badge) + '</b><small>' +
-        (f.next ? tr(f.next.days === 1 ? '1 more day ({amount}) turns it {level}.' : '{n} more days ({amount}) turns it {level}.', { n: f.next.days, amount: inr(f.next.amount), level: tr(f.next.level) }) : '') + '</small></div>';
-    }
-    if (step === 5) {
-      const d = Core.debtFreeDates(state, t);
-      if (d) return '<div class="ob-unlock"><span>' + tr('Unlocked: debt-free date') + '</span><b>' + (d.now.never ? tr('Never') : monthYear(d.now.date)) + '</b><small>' +
-        tr('Paying the minimums. Your plan can bring it closer.') + '</small></div>';
-    }
-    return '';
+    celebrate(tr('Today’s limit: {amount}. Now let’s make it exact.', { amount: inr(Core.projectRunway(state, today()).dailyAllowance) }));
   }
 
   function onboardModal() {
     const ob = state.onboarding;
     if (!ob || ui.onboardHidden || state.isDemo) return '';
+    // Set up with the longer form before: what's left comes as cards now.
+    if (ob.step > ONBOARD_STEPS) { setTimeout(finishOnboarding, 0); return ''; }
     const step = ob.step;
     const mins = Math.max(1, Math.ceil(((ONBOARD_STEPS - step + 1) * 40) / 60));
     const num = (id, label, value, extra) => '<label class="field" for="' + id + '"><span>' + label + '</span><input id="' + id + '" type="number" inputmode="numeric" min="0" value="' + esc(value == null ? '' : value) + '"' + (extra || '') + '></label>';
@@ -8998,44 +8983,144 @@
       body = '<h2 id="ob-title">' + tr('Money in your account now') + '</h2><p class="hint">' + tr('From your bank app. Today’s spending so far is already out of it.') + '</p>' +
         '<div class="form-grid">' + num('ob-balance', tr('Bank balance now (₹)'), state.balanceCheck ? state.balanceCheck.amount : '', ' placeholder="9000"') + '</div>';
       next = tr('Show today’s limit');
-    } else if (step === 3) {
-      const rent = state.fixed.find((f) => f.fromSetup && f.name === tr('Rent'));
-      const other = state.fixed.find((f) => f.fromSetup && f.name !== tr('Rent'));
-      body = onboardUnlocked(3) + '<h2 id="ob-title">' + tr('Fixed payments and savings') + '</h2><p class="hint">' + tr('Leave anything you don’t have at 0. Loans come next.') + '</p>' +
-        '<div class="form-grid">' + num('ob-rent', tr('Rent or home loan (₹ a month)'), rent ? rent.amount : '') + num('ob-rent-day', tr('Paid on day'), rent ? rent.dueDay : '', ' max="31" placeholder="5"') +
-        num('ob-other', tr('Other fixed payments (₹ a month)'), other ? other.amount : '', ' placeholder="' + tr('school fees, phone, subscriptions') + '"') +
-        num('ob-savings', tr('Savings you could use in an emergency (₹)'), state.savings.emergencyBalance || '') + '</div>';
-      next = tr('Show my Days of Freedom');
-    } else if (step === 4) {
-      if (!ob.loans) ob.loans = state.debts.filter((d) => d.fromSetup).map((d) => ({ name: d.name, balance: d.balance, emi: d.minPayment, rate: d.rate }));
-      if (!ob.loans.length) ob.loans = [{}];
-      body = onboardUnlocked(4) + '<h2 id="ob-title">' + tr('Loans and credit cards') + '</h2><p class="hint">' + tr('Personal loans, app loans, EMIs. Interest is in your loan app; about 14% if you’re not sure.') + '</p>' +
-        ob.loans.map((l, i) => '<div class="form-grid ob-loan">' +
-          '<label class="field" for="ob-loan-' + i + '-name"><span>' + tr('Loan') + '</span><input id="ob-loan-' + i + '-name" type="text" value="' + esc(l.name || '') + '" placeholder="' + tr('Personal loan') + '"></label>' +
-          num('ob-loan-' + i + '-balance', tr('Left to pay (₹)'), l.balance) + num('ob-loan-' + i + '-emi', tr('EMI a month (₹)'), l.emi) +
-          num('ob-loan-' + i + '-rate', tr('Interest % a year'), l.rate, ' placeholder="14"') + '</div>').join('') +
-        '<div><button class="ghost" data-action="onboard-add-loan">' + tr('Add another loan') + '</button></div>' +
-        '<label class="check"><input id="ob-cards" type="checkbox"' + (ob.cards ? ' checked' : '') + '> ' + tr('I have credit cards (add them right after this)') + '</label>' +
-        '<div><button data-action="onboard-no-debts">' + tr('No loans or cards') + '</button></div>';
-      next = tr('Save and continue');
-    } else {
-      body = onboardUnlocked(5) + '<h2 id="ob-title">' + tr('Bank SMS') + '</h2>' +
-        (SmsInbox
-          ? '<div class="ob-privacy"><p><b>' + tr('What we read:') + '</b> ' + tr('messages from banks and payment apps (senders like VM-HDFCBK), on this phone, from today on.') + '</p>' +
-            '<p><b>' + tr('Why:') + '</b> ' + tr('to record your payments for you, so you don’t have to type them.') + '</p>' +
-            '<p><b>' + tr('What we never do:') + '</b> ' + tr('read personal chats, keep messages that aren’t payments, or send your messages anywhere. They never leave this phone.') + '</p></div>' +
-            '<p class="hint">' + tr('Android will ask for SMS permission next. You can turn it off any time in Android settings.') + '</p>' +
-            '<div class="row"><button class="primary" data-action="onboard-sms">' + tr('Allow SMS reading') + '</button><button class="ghost" data-action="onboard-finish">' + tr('Not now') + '</button></div>'
-          : '<p class="hint">' + tr('In the Android app, Hisab Se can record payments from your bank SMS. Here, add them on the Spend tab.') + '</p>' +
-            '<div><button class="primary" data-action="onboard-finish">' + tr('Start my first round') + '</button></div>');
     }
     return '<div class="reset-modal-overlay onboard-overlay" role="presentation"><div class="reset-modal-card onboard-card" role="dialog" aria-modal="true" aria-labelledby="ob-title" id="onboard-card" tabindex="-1">' +
       '<div class="ob-progress"><span style="width:' + (((step - 1) / ONBOARD_STEPS) * 100).toFixed(0) + '%"></span></div>' +
       '<span class="eyebrow">' + tr('Step {step} of {total} · about {min} min', { step, total: ONBOARD_STEPS, min: mins }) + '</span>' +
       body + (ui.onboardError ? '<p class="bad" role="alert">' + esc(ui.onboardError) + '</p>' : '') +
-      (step < ONBOARD_STEPS ? '<div class="row"><button class="primary" data-action="onboard-next">' + next + '</button>' +
+      (step <= ONBOARD_STEPS ? '<div class="row"><button class="primary" data-action="onboard-next">' + next + '</button>' +
         (step > 1 ? '<button class="ghost" data-action="onboard-back">' + tr('Back') + '</button>' : '') + '</div>' : '') +
       '<div><button class="link" data-action="onboard-later">' + tr('Finish later') + '</button></div></div></div>';
+  }
+
+
+  // ---------- getting started: one card at a time, and a checklist ----------
+
+  /*
+   * After salary, payday and balance (the first-time screen), the rest of the
+   * setup comes as one card at a time on Runway: each one question, each
+   * showing what it changes in the person's own rupees. "Later" waits a day;
+   * "I'll explore myself" turns the cards off. The checklist stays on Runway
+   * until everything is done.
+   */
+  function setupSteps() {
+    const none = (state.setup && state.setup.none) || {};
+    return [
+      { key: 'salary', label: 'Salary and payday', done: !!state.settings.salary },
+      { key: 'balance', label: 'Today’s bank balance', done: !!state.balanceCheck },
+      { key: 'fixed', label: 'Rent and fixed payments', done: (state.fixed || []).length > 0 || !!none.fixed },
+      { key: 'loans', label: 'Loans and EMIs', done: (state.debts || []).length > 0 || (state.cards || []).length > 0 || !!none.loans },
+      { key: 'sms', label: 'Bank SMS read for you', done: !!state.smsAuto || !!state.smsReadUntil || state.transactions.some((t) => t.source === 'sms') || !!none.sms, hide: !SmsInbox },
+      { key: 'protect', label: 'What matters most', done: Core.protectList(state).length > 0 || !!none.protect },
+    ].filter((x) => !x.hide);
+  }
+  function setupOn() { return !state.isDemo && !!state.settings.salary && !state.onboarding; }
+
+  // The card for the next step, or the "there it is" moment after one.
+  function setupCard(r) {
+    if (!setupOn()) return '';
+    const st = state.setup || {};
+    const w = ui.setupWin;
+    if (w) {
+      const lower = w.to < w.from;
+      return '<section class="setup-card setup-win" aria-live="polite"><span class="setup-emoji">🎯</span>' +
+        '<b>' + (w.key === 'fixed'
+          ? tr(lower ? 'There it is: your real limit.' : 'Done. Your limit stays the same.')
+          : tr(lower ? 'With your EMIs in: your real limit.' : 'Done. I’ll warn you before an EMI is due.')) + '</b>' +
+        '<div class="setup-roll"><span class="setup-from">' + inr(w.from) + '</span><span aria-hidden="true">→</span>' +
+        '<span class="setup-to" data-roll-from="' + Math.round(w.from) + '" data-roll-to="' + Math.round(w.to) + '">' + inr(w.to) + '</span><small>' + tr('a day') + '</small></div>' +
+        '<div class="row"><button class="primary" data-action="setup-win-next">' + tr('Next') + '</button></div></section>';
+    }
+    if (st.off && !ui.setupFocus) return '';
+    if (st.laterDay === today() && !ui.setupFocus) return '';
+    const steps = setupSteps();
+    const step = steps.find((x) => x.key === ui.setupFocus && !x.done) || steps.find((x) => !x.done);
+    if (!step) return '';
+    const limit = inr(r.dailyAllowance);
+    const num = (id, label, ph, extra) => '<label class="field" for="' + id + '"><span>' + label + '</span><input id="' + id + '" type="number" inputmode="numeric" min="0" placeholder="' + esc(ph) + '"' + (extra || '') + '></label>';
+    const foot = (noneText) => '<div class="row setup-foot">' + (noneText ? '<button class="ghost small" data-action="setup-none" data-key="' + step.key + '">' + tr(noneText) + '</button>' : '') +
+      '<button class="ghost small" data-action="setup-later">' + tr('Later') + '</button></div>' +
+      '<button class="link setup-off" data-action="setup-off">' + tr('I’ll explore myself') + '</button>';
+    const card = (emoji, title, text, body, noneText) => '<section class="setup-card" aria-labelledby="setup-title"><span class="setup-emoji">' + emoji + '</span>' +
+      '<b id="setup-title">' + title + '</b><span class="setup-dots" aria-hidden="true"><i></i><i></i><i></i></span><p class="setup-text">' + text + '</p>' + body + foot(noneText) + '</section>';
+    if (step.key === 'salary' || step.key === 'balance') {
+      return card('👋', tr('Let’s finish the basics'), tr('Salary, payday and today’s balance: three numbers and your limit is real.'),
+        '<div class="row"><button class="primary" data-action="setup-basics">' + tr('Fill them in') + '</button></div>', '');
+    }
+    if (step.key === 'fixed') {
+      return card('🏠', tr('Rent bhi toh dena hai na?'), tr('Right now I think you can spend {limit} a day. Rent and fixed payments will change that, a lot.', { limit: '<b>' + limit + '</b>' }),
+        '<div class="form-grid">' + num('su-rent', tr('Rent or home loan (₹ a month)'), '12000') + num('su-rent-day', tr('Paid on day'), '5', ' max="31"') +
+        num('su-other', tr('Other fixed payments (₹ a month)'), tr('school fees, phone, subscriptions')) + '</div>' +
+        '<div class="row"><button class="primary" data-action="setup-fixed">' + tr('Add and show my real limit') + '</button></div>', 'I don’t pay rent or fixed payments');
+    }
+    if (step.key === 'loans') {
+      return card('🏦', tr('EMIs: the guests who visit every month 😄'), tr('Add yours and I’ll warn you before one is due, and plan the month around it.'),
+        '<div class="form-grid">' + num('su-emi', tr('EMI a month (₹)'), '6000') + num('su-emi-day', tr('Paid on day'), '5', ' max="31"') +
+        num('su-left', tr('Left to pay (₹), roughly'), '120000') + num('su-rate', tr('Interest % a year'), '14') + '</div>' +
+        '<p class="hint">' + tr('More loans or a credit card? Add them in Debts any time.') + '</p>' +
+        '<div class="row"><button class="primary" data-action="setup-loan">' + tr('Add my EMI') + '</button></div>', 'No loans or EMIs');
+    }
+    if (step.key === 'sms') {
+      return card('📩', tr('Shall I read your bank SMS?'), tr('No typing: every UPI and card payment gets added by itself. Messages from friends and family are never read, and nothing leaves your phone.'),
+        '<div class="row"><button class="primary" data-action="setup-sms">' + tr('Yes, read them') + '</button></div>', 'I’ll type them myself');
+    }
+    return card('🛡', tr('What can’t you live without?'), tr('Family, chai, your pet? Tell me, and I’ll never ask you to cut it.'),
+      '<div class="row"><button class="primary" data-action="setup-protect">' + tr('Choose') + '</button></div>', 'Skip this');
+  }
+
+  // The checklist on Runway: what's done, what's left, one tap to each.
+  function setupChecklist() {
+    if (!setupOn()) return '';
+    const st = state.setup || {};
+    const steps = setupSteps();
+    const done = steps.filter((x) => x.done).length;
+    const all = done === steps.length;
+    // Finished outside the cards (the last thing added on its own page): done today, celebrated once.
+    if (all && !st.doneAt) {
+      state.setup = Object.assign({}, state.setup, { doneAt: today() });
+      setTimeout(() => { save(); celebrate(tr('All set: your limit, payments and plan are yours now.')); }, 400);
+    }
+    if (all && st.doneAt && st.doneAt !== today()) return '';
+    if (st.listHidden && !all) return '';
+    const pct = Math.round((done / steps.length) * 100);
+    const tick = (on, fresh) => '<svg class="setup-tick' + (fresh ? ' fresh' : '') + '" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"/>' + (on ? '<path d="M7 12.5l3.2 3.2L17 9"/>' : '') + '</svg>';
+    const open = !!st.listOpen && !all;
+    return '<section class="card setup-list' + (all ? ' all' : '') + '">' +
+      '<button class="setup-list-head" data-action="setup-list" aria-expanded="' + open + '"><b>' + (all ? '🎉 ' + tr('You’re all set') : tr('Getting started · {done} of {n}', { done, n: steps.length })) + '</b>' +
+      '<span class="setup-bar"><span style="width:' + pct + '%"></span></span></button>' +
+      (open ? '<ul>' + steps.map((x) => '<li class="' + (x.done ? 'done' : '') + '">' + tick(x.done, ui.setupJustDone === x.key) +
+        (x.done ? '<span>' + tr(x.label) + '</span>' : '<button class="link" data-action="setup-step" data-key="' + x.key + '">' + tr(x.label) + '</button>') + '</li>').join('') + '</ul>' +
+        '<button class="link small" data-action="setup-list-hide">' + tr('Hide the checklist') + '</button>' : '') + '</section>';
+  }
+
+  // A number that rolls from the old amount to the new one (the "real limit" moment).
+  function rollNumbers() {
+    document.querySelectorAll('[data-roll-to]').forEach((el) => {
+      const from = Number(el.dataset.rollFrom); const to = Number(el.dataset.rollTo);
+      if (REDUCE_MOTION || el.dataset.rolled || from === to) return;
+      el.dataset.rolled = '1';
+      const t0 = performance.now();
+      const step = (now) => {
+        const k = Math.min(1, (now - t0) / 1100);
+        el.textContent = inr(from + (to - from) * (1 - Math.pow(1 - k, 3)));
+        if (k < 1) requestAnimationFrame(step);
+      };
+      requestAnimationFrame(step);
+    });
+  }
+
+  function setupDone(key, before) {
+    const after = Core.projectRunway(state, today()).dailyAllowance;
+    state.setup = Object.assign({}, state.setup);
+    ui.setupFocus = null;
+    ui.setupJustDone = key;
+    if (before != null) ui.setupWin = { key, from: Math.round(before), to: Math.round(after) };
+    const steps = setupSteps();
+    if (steps.every((x) => x.done) && !state.setup.doneAt) {
+      state.setup.doneAt = today();
+      setTimeout(() => celebrate(tr('All set: your limit, payments and plan are yours now.')), 400);
+    }
+    save();
   }
 
   // ---------- importing past bank SMS (optional) ----------

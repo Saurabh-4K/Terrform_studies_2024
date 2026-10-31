@@ -303,13 +303,20 @@ Plan → **Your privacy** lists what the app does and never does, and each line 
 - **Example data:** the app opens with example numbers (₹55,000 salary, rent, a bike EMI, a credit card and a personal loan, four months of spending), clearly marked. *Start with my numbers* clears them.
 - **Updates keep your data.** New versions install over the old one because the app ID and signing key never change. Uninstalling deletes the data, so make a backup file first.
 
-## 1b. First-time setup (about 3 minutes)
-*Start with my numbers* opens five short steps, each unlocking something real, with a progress bar (*Step 2 of 5 · about 3 min*). Everything is saved as you go; **Finish later** keeps your place (Plan tab: *Finish setting up · step 3 of 5*).
-1. **Your salary:** monthly salary in hand and payday.
-2. **Money in your account now** (₹0 is fine). → **Unlocked: today's limit** (*₹774: what you can spend today and still reach payday on 1 Nov. It gets more exact with the next steps.*)
-3. **Fixed payments and savings:** rent or home loan and its day, other fixed payments, savings you could use in an emergency. → **Unlocked: Days of Freedom** (*6 · At risk · 1 more day (₹174) turns it amber*)
-4. **Loans and credit cards:** each loan's name, amount left, EMI and interest (about 14% if unsure); *I have credit cards* opens the card form right after; or *No loans or cards*. → **Unlocked: debt-free date**
-5. **Bank SMS** (Android): first *What we read* (bank and payment-app messages, on this phone, from today), *Why* (to record payments for you) and *What we never do* (read personal chats, keep messages that aren't payments, send your messages anywhere; they never leave the phone), then *Allow SMS reading* (Android asks for permission) or *Not now*.
+## 1b. First-time setup: two questions, then one card at a time
+*Start with my numbers* asks only two things (*Step 1 of 2*): **your salary** (in hand, and payday), then **money in your account now** (₹0 is fine). *Show today's limit* and the app is ready: *Today's limit: ₹1,552. Now let's make it exact.*
+
+The rest comes as **setup cards on Runway**, right under today's limit, **one at a time**, each one question that shows what it changes in the person's own rupees:
+- 🏠 **Rent bhi toh dena hai na?** *Right now I think you can spend ₹1,552 a day. Rent and fixed payments will change that, a lot.* Rent and its day, other fixed payments. **Add and show my real limit** → 🎯 *There it is: your real limit*: the old limit struck through and the new one **rolling down** to it (₹1,552 → ₹931 a day).
+- 🏦 **EMIs: the guests who visit every month 😄** The EMI, its day, roughly what's left and the interest (14% if unsure). Same "real limit" moment.
+- 📩 **Shall I read your bank SMS?** (Android) *No typing… messages from friends and family are never read, and nothing leaves your phone.* Opens the SMS reading.
+- 🛡 **What can't you live without?** *Family, chai, your pet? Tell me, and I'll never ask you to cut it.* Opens What matters most.
+- Each card also has a "none" answer (*I don't pay rent or fixed payments*, *No loans or EMIs*, *I'll type them myself*, *Skip this*), **Later** (that card comes back tomorrow, not in ten seconds; no other card that day) and **I'll explore myself** (no more cards).
+- Someone set up before (salary but no balance) gets *Let's finish the basics* first.
+- **The checklist** on Runway: *Getting started · 4 of 5*, a progress bar, a tick drawn for each step done; each step left is a link that brings its card back, even after *I'll explore myself*. When everything is done: *🎉 You're all set*, confetti once, and the checklist is gone the next day. *Hide the checklist* hides it earlier.
+- **Animations** (off with Android's *Remove animations*): the card slides up and settles, its emoji pops in, three typing dots before the line, the new limit rolls down, ticks draw themselves, the progress bar fills.
+- The old five-step form is gone; anyone part-way through it is finished by itself and gets the cards.
+- `scripts/setup-app.js` walks it in the real app.
 
 ## 2. Plan tab: setting up your month
 

@@ -1226,3 +1226,47 @@ td .pick2 select { max-width: 132px; }
 .intro[hidden] { display: none; }
 .intro.out { opacity: 0; pointer-events: none; }
 .intro video { width: min(80vw, 380px); height: auto; display: block; -webkit-mask-image: radial-gradient(circle, #000 52%, transparent 70%); mask-image: radial-gradient(circle, #000 52%, transparent 70%); }
+
+/* ---------- Getting started: setup cards and the checklist ---------- */
+.setup-card { position: relative; margin-top: 14px; background: var(--surface); color: var(--ink); border-radius: 20px; padding: 18px 16px 12px 16px; box-shadow: 0 10px 30px rgba(12, 59, 61, 0.16); display: grid; gap: 8px; animation: setup-rise 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.25) both; }
+.setup-card > b { font-family: var(--font-display); font-size: 1.2rem; line-height: 1.25; padding-right: 44px; }
+.setup-emoji { position: absolute; top: -14px; right: 14px; font-size: 2.2rem; line-height: 1; animation: setup-pop 0.6s 0.25s cubic-bezier(0.2, 0.9, 0.3, 1.6) both; filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.15)); }
+.setup-text { margin: 0; color: var(--muted); animation: setup-fade 0.35s 0.75s both; }
+.setup-dots { display: inline-flex; gap: 4px; height: 0; overflow: visible; animation: setup-dots-out 0.01s 0.75s both; }
+.setup-dots i { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); animation: setup-blink 0.6s infinite alternate; }
+.setup-dots i:nth-child(2) { animation-delay: 0.2s; }
+.setup-dots i:nth-child(3) { animation-delay: 0.4s; }
+.setup-card .form-grid, .setup-card > .row, .setup-card > .hint { animation: setup-fade 0.35s 0.85s both; }
+.setup-foot { justify-content: flex-start; }
+.setup-off { justify-self: start; font-size: 0.85rem; }
+.setup-win { text-align: center; justify-items: center; }
+.setup-win > b { padding-right: 0; }
+.setup-roll { display: flex; align-items: baseline; gap: 10px; font-family: var(--font-display); }
+.setup-from { color: var(--muted); text-decoration: line-through; font-size: 1.1rem; }
+.setup-to { font-size: 2.4rem; font-weight: 800; color: var(--good); animation: setup-pop 0.5s 0.9s both; }
+.setup-roll small { color: var(--muted); }
+.setup-list { padding: 12px 16px; }
+.setup-list-head { width: 100%; background: none; border: 0; padding: 0; display: grid; gap: 8px; text-align: left; color: var(--ink); min-height: 44px; }
+.setup-list-head b::after { content: ' ›'; color: var(--muted); }
+.setup-list.all .setup-list-head b::after { content: ''; }
+.setup-bar { height: 8px; border-radius: 99px; background: var(--surface-2); overflow: hidden; }
+.setup-bar span { display: block; height: 100%; border-radius: 99px; background: var(--good); transition: width 0.8s cubic-bezier(0.2, 0.9, 0.3, 1); }
+.setup-list ul { list-style: none; margin: 10px 0 4px; padding: 0; display: grid; gap: 8px; }
+.setup-list li { display: flex; gap: 10px; align-items: center; min-height: 36px; }
+.setup-list li.done span { color: var(--muted); }
+.setup-tick { width: 24px; height: 24px; flex: none; fill: none; stroke-width: 2; }
+.setup-tick circle { stroke: var(--line); }
+.setup-list li.done .setup-tick circle { stroke: var(--good); fill: var(--good-soft); }
+.setup-tick path { stroke: var(--good); stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 16; }
+.setup-tick.fresh path { animation: setup-draw 0.6s 0.2s both; }
+@keyframes setup-rise { from { opacity: 0; transform: translateY(40px) scale(0.97); } to { opacity: 1; transform: none; } }
+@keyframes setup-pop { 0% { opacity: 0; transform: scale(0.3) rotate(-20deg); } 70% { transform: scale(1.15) rotate(6deg); } 100% { opacity: 1; transform: none; } }
+@keyframes setup-fade { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@keyframes setup-blink { from { opacity: 0.25; } to { opacity: 1; } }
+@keyframes setup-dots-out { to { opacity: 0; width: 0; } }
+@keyframes setup-draw { from { stroke-dashoffset: 16; } to { stroke-dashoffset: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .setup-card, .setup-emoji, .setup-text, .setup-to, .setup-card .form-grid, .setup-card > .row, .setup-card > .hint, .setup-tick.fresh path { animation: none; }
+  .setup-dots { display: none; }
+  .setup-bar span { transition: none; }
+}
