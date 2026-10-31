@@ -435,6 +435,22 @@ Plan → **What matters most**: up to five things the person won't compromise on
 - **Protected isn't unlimited:** today's limit, the zones, the road and *Can I afford something?* count every rupee as before. When a protected thing runs a quarter above usual (₹500 or more) while money is tight, its card says so, without suggesting a cut. *Can I afford something?* asks *What is it for?*: for a protected thing it says so, and still shows what it does before payday.
 - Kept in backups (`cleanState`); in a problem report with numbers its names become codes. `tests/protect.test.js`; `scripts/protect-app.js` in the real app.
 
+### Features when needed
+A new person sees a short app, about **25 pages instead of 54**: today's limit, Road to payday, payments, budgets, salary, fixed payments, loans, cards, What matters most and the other everyday pages always show. Pages only some people need wait until they're relevant:
+
+| Tab | Page | Shows once… |
+|---|---|---|
+| Runway | Bills to pay · Maybe expenses · Runway graph · Insights · Net worth · Big expense? | a bill varies · a maybe cost is kept · 7 days recorded · 14 days recorded · a loan, savings or a goal · only from More features |
+| Spend | Little leaks · Trips & events · Reimbursements · Calendar · Bills to pay | a leak is tagged or spotted · a trip · a work claim · 14 days recorded · a bill varies |
+| Plan | Wallets · Yearly costs · Categories | a wallet · a yearly cost · own subcategories or 30 days recorded |
+| Debts | People | someone owes or is owed |
+| Grow | Emergency plan · Grow | an emergency plan or cost · money set aside to invest |
+
+- **Nothing is out of reach:** each tab ends with **More features (+5)**, listing what's not shown yet with one line on what it does and **Open**; a page opened from there stays on the tab. A link straight to a page (from a card, a notification) still opens it.
+- **"New"**: a page that appears by itself carries a small *New* under its name until it's opened. Someone updating the app gets no *New* on pages they already had.
+- **Profile → Appearance → Show all features** shows every page on every tab (and *Show pages when I need them* goes back). The example data always shows everything.
+- `scripts/features-app.js` checks it in the real app.
+
 ### Opening animation
 The logo animation (the two pillars rise, the line climbs from red to mint, *Hisab Se* appears) plays when the app opens, **once a day at most**, so it never stands between someone and their limit. It's the 10-second video cut to its moving part, 2.2× faster: **2.5 seconds**, 36 KB (WebM, with an MP4 copy), cropped square and faded into the app's cream at the edges. A tap skips it; it's never on screen longer than 3.5 seconds; with Android's *Remove animations* the still logo shows for a moment instead. Files in `media/`.
 

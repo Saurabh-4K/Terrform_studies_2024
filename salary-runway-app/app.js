@@ -850,6 +850,70 @@
   };
   const BACK_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 
+
+  // ---------- features when needed ----------
+
+  /*
+   * A page that only some people need shows once it's relevant to this
+   * person (their data says so), or once they turn it on from "More
+   * features" at the end of the tab. Every other page always shows. Nothing
+   * is ever out of reach: "More features" lists what's not shown yet, and
+   * Profile → Appearance has "Show all features". A page that appears by
+   * itself carries "New" until it's opened.
+   */
+  const ALL_FEATURES_KEY = 'salary-runway-all-features';
+  function showAllFeatures() { try { return localStorage.getItem(ALL_FEATURES_KEY) === '1'; } catch (e) { return false; } }
+  const daysRecorded = () => { const first = state.transactions.reduce((m, x) => (!m || x.date < m ? x.date : m), null); return first ? Core.daysBetween(first, today()) : 0; };
+  // tab:key → [is it relevant now?, what it is, in one line]
+  const WHEN_NEEDED = {
+    'home:bills': [() => (state.bills || []).length > 0, 'Bills that vary (electricity, phone): what’s due before payday.'],
+    'home:big': [() => false, 'Check a big expense before you pay it: what it does to your month.'],
+    'home:maybe': [() => (state.maybe || []).length > 0, 'Costs that may come (a wedding gift, a repair): kept aside until you know.'],
+    'home:graph': [() => daysRecorded() >= 7, 'Your balance through the month, as a graph.'],
+    'home:insights': [() => daysRecorded() >= 14, 'What your spending says, from your own weeks.'],
+    'home:worth': [() => (state.debts || []).length > 0 || Number(state.savings.emergencyBalance) > 0 || Number(state.savings.investSaved) > 0 || (state.goals || []).length > 0, 'What you own minus what you owe, month by month.'],
+    'spend:leaks': [() => Object.keys(state.leakRules || {}).length > 0 || Core.leakSuggestions(state, today()).length > 0, 'Little leaks: small habits (snacks, cigarettes, delivery) that add up.'],
+    'spend:events': [() => (state.events || []).length > 0, 'Trips and events: split payments with friends, who owes whom.'],
+    'spend:reimb': [() => !!(state.reimb && ((state.reimb.claims || []).length || (state.reimb.payouts || []).length)), 'Work expenses your office pays back.'],
+    'spend:calendar': [() => daysRecorded() >= 14, 'Your spending day by day, on a calendar.'],
+    'spend:bills': [() => (state.bills || []).length > 0, 'Bills that vary (electricity, phone): what’s due before payday.'],
+    'plan:wallets': [() => (state.wallets || []).length > 0, 'Cash, a second bank or a UPI wallet, each with its own balance.'],
+    'plan:yearly': [() => (state.sinking || []).length > 0, 'Costs once a year (insurance, school fees): a little set aside each month.'],
+    'plan:categories': [() => !!state.subcats || daysRecorded() >= 30, 'Your own categories and subcategories.'],
+    'debts:people': [() => (state.iou || []).length > 0, 'Money you lent or borrowed from friends and family.'],
+    'grow:emergency': [() => !!state.adjustment || (state.emergencies || []).length > 0, 'A plan for a sudden big cost, so the month still works.'],
+    'grow:invest': [() => Number(state.savings.investSaved) > 0 || (Core.monthlyPlan(state, today()).invest || 0) > 0, 'Money set aside to invest, once the basics are safe.'],
+  };
+  function featuresState() {
+    if (!state.features) {
+      // First time: what's shown already isn't "new".
+      state.features = { on: {}, seen: Object.keys(WHEN_NEEDED).filter((k) => WHEN_NEEDED[k][0]()).map((k) => k) };
+      setTimeout(() => save(true), 0);
+    }
+    return state.features;
+  }
+  function featureShown(tabKey, key) {
+    const rule = WHEN_NEEDED[tabKey + ':' + key];
+    if (!rule || state.isDemo || showAllFeatures()) return true;
+    const f = featuresState();
+    return !!f.on[tabKey + ':' + key] || rule[0]();
+  }
+  // "New" once, on a page that appeared by itself.
+  function featureNew(tabKey, key) {
+    const k = tabKey + ':' + key;
+    if (!WHEN_NEEDED[k] || state.isDemo || showAllFeatures()) return false;
+    const f = featuresState();
+    return f.seen.indexOf(k) === -1 && !f.on[k];
+  }
+  function moreFeaturesPage(tabKey, hidden) {
+    return '<section class="card more-features"><h2>' + tr('More features') + '</h2>' +
+      '<p class="hint">' + tr('Not shown yet, to keep this tab simple. Each one appears by itself when you need it, or turn it on now.') + '</p>' +
+      hidden.map((x) => '<div class="more-item"><span class="hub-icon"><svg viewBox="0 0 24 24" fill-rule="evenodd" aria-hidden="true">' + (HUB_ICONS[x.icon] || '') + '</svg></span>' +
+        '<div class="grow"><b>' + tr(x.label) + '</b><span class="hint">' + tr(WHEN_NEEDED[tabKey + ':' + x.key][1]) + '</span></div>' +
+        '<button class="ghost small" data-action="feature-on" data-tab="' + tabKey + '" data-key="' + x.key + '">' + tr('Open') + '</button></div>').join('') +
+      '<p class="hint">' + tr('Want every page all the time? Profile → Appearance → Show all features.') + '</p></section>';
+  }
+
   /*
    * A tab: what always matters stays open on top (the limit, zones, warnings),
    * then the other cards as small icons in groups. Each icon can carry a live
@@ -858,8 +922,19 @@
    * sections: [{ key, group, icon, label, badge: { text, tone } | null, html: () => string, hide, tone, tab, viz }]
    */
   function hub(tabKey, top, sections) {
-    const list = sections.filter((x) => !x.hide);
-    const open = ui.page && ui.page.tab === tabKey ? list.find((x) => x.key === ui.page.key) : null;
+    const all = sections.filter((x) => !x.hide);
+    // Pages only some people need wait in "More features" until they're relevant (featureShown).
+    const list = all.filter((x) => featureShown(tabKey, x.key));
+    const hidden = all.filter((x) => list.indexOf(x) === -1);
+    if (hidden.length) {
+      const more = { key: 'more', group: list.length ? list[list.length - 1].group : 'More', icon: 'add', label: 'More features', tone: 'teal',
+        badge: { text: '+' + hidden.length }, html: () => moreFeaturesPage(tabKey, hidden) };
+      list.push(more);
+      all.push(more);
+    }
+    list.forEach((x) => { if (featureNew(tabKey, x.key)) x.isNew = true; });
+    // A link straight to a page not shown yet still opens it.
+    const open = ui.page && ui.page.tab === tabKey ? all.find((x) => x.key === ui.page.key) : null;
     if (open) {
       return '<div class="page-head"><button class="page-back" data-action="page-back">' + BACK_ICON + '<span>' + tr('Back') + '</span></button>' +
         '<span class="page-group">' + tr(open.group) + '</span></div>' +
@@ -895,7 +970,7 @@
       (x.tab ? ' data-tab="' + x.tab + '"' : '') + (x.viz ? ' data-viz="' + x.viz + '"' : '') + '>' +
       '<span class="hub-icon"><svg viewBox="0 0 24 24" fill-rule="evenodd" aria-hidden="true">' + (HUB_ICONS[x.icon] || '') + '</svg>' +
       (b && b.text ? '<span class="hub-badge' + (b.tone ? ' ' + b.tone : '') + '">' + b.text + '</span>' : '') + '</span>' +
-      '<span class="hub-label">' + tr(x.label) + '</span></button>';
+      '<span class="hub-label">' + tr(x.label) + '</span>' + (x.isNew ? '<span class="hub-new">' + tr('New') + '</span>' : '') + '</button>';
   }
 
   // Opens a card as its own page; the phone's back button comes back to the icons.
@@ -5180,7 +5255,11 @@
 
   function appearanceCard() {
     const cur = themeChoice();
-    return '<section class="card"><h2>' + tr('Appearance') + '</h2>' +
+    const all = showAllFeatures();
+    return '<section class="card"><h2>' + tr('Show all features') + '</h2>' +
+      '<p class="hint">' + tr(all ? 'Every page shows on every tab.' : 'Pages only some people need (trips, wallets, work expenses…) show once you need them; the rest wait under “More features” on each tab.') + '</p>' +
+      '<div><button data-action="features-all" aria-pressed="' + all + '">' + tr(all ? 'Show pages when I need them' : 'Show all features') + '</button></div></section>' +
+      '<section class="card"><h2>' + tr('Appearance') + '</h2>' +
       '<div class="choices">' + THEMES.map((x) =>
         '<button class="choice' + (cur === x[0] ? ' suggested' : '') + '" data-action="set-theme" data-theme="' + x[0] + '" aria-pressed="' + (cur === x[0]) + '">' +
         '<span class="choice-title">' + tr(x[1]) + (cur === x[0] ? ' ✓' : '') + '</span>' +
@@ -7084,7 +7163,24 @@
     logEvent('tap', { action: a, key: btn.dataset.key || undefined, to: btn.dataset.tab || undefined, id: btn.dataset.id || undefined });
     switch (a) {
       case 'tab': setTab(btn.dataset.tab); return;
+      case 'feature-on': {
+        const f = featuresState();
+        f.on[btn.dataset.tab + ':' + btn.dataset.key] = true;
+        save();
+        openPage(btn.dataset.tab, btn.dataset.key);
+        return;
+      }
+      case 'features-all': {
+        try { localStorage.setItem(ALL_FEATURES_KEY, showAllFeatures() ? '0' : '1'); } catch (e) { /* private mode */ }
+        toast(tr(showAllFeatures() ? 'Every page shows now.' : 'Pages show when you need them.'));
+        break;
+      }
       case 'page-open':
+        // Opened once: no longer "New".
+        if (state.features && WHEN_NEEDED[(btn.dataset.tab || tab) + ':' + btn.dataset.key]) {
+          const k = (btn.dataset.tab || tab) + ':' + btn.dataset.key;
+          if (state.features.seen.indexOf(k) === -1) { state.features.seen.push(k); save(true); }
+        }
         if (btn.dataset.viz) {
           ui.viz = btn.dataset.viz;
           try { localStorage.setItem(VIZ_KEY, ui.viz); } catch (e) { /* private mode */ }

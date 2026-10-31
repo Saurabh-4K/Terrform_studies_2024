@@ -1270,3 +1270,13 @@ td .pick2 select { max-width: 132px; }
   .setup-dots { display: none; }
   .setup-bar span { transition: none; }
 }
+
+/* More features: what's not shown yet on a tab, one line each */
+.more-features { display: grid; gap: 10px; }
+.more-item { display: flex; gap: 12px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.more-item .grow { display: grid; min-width: 0; }
+.more-item .hub-icon { flex: none; }
+/* A page that just appeared by itself: "New" until it's opened */
+.hub-tile { position: relative; }
+.hub-new { display: inline-block; margin-top: 2px; background: var(--good); color: #fff; font-size: 0.62rem; font-weight: 700; letter-spacing: 0.03em; padding: 1px 6px; border-radius: 99px; animation: setup-pop 0.5s both; }
+@media (prefers-reduced-motion: reduce) { .hub-new { animation: none; } }
