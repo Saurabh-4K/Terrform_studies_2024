@@ -309,11 +309,12 @@ Plan → **Your privacy** lists what the app does and never does, and each line 
 The rest comes as **setup cards on Runway**, right under today's limit, **one at a time**, each one question that shows what it changes in the person's own rupees:
 - 🏠 **Rent bhi toh dena hai na?** *Right now I think you can spend ₹1,552 a day. Rent and fixed payments will change that, a lot.* Rent and its day, other fixed payments. **Add and show my real limit** → 🎯 *There it is: your real limit*: the old limit struck through and the new one **rolling down** to it (₹1,552 → ₹931 a day).
 - 🏦 **EMIs: the guests who visit every month 😄** The EMI, its day, roughly what's left and the interest (14% if unsure). Same "real limit" moment.
+- 🛟 **Mushkil waqt ke liye kuch bachaya hai?** Money you could use in an emergency (a savings account, an FD you can break, cash at home). **Add and show my Days of Freedom** → *Your Days of Freedom: how long you'd manage if the salary stopped*, rolling up from 0 (0 → 21 days). *Nothing saved yet* is a fine answer.
 - 📩 **Shall I read your bank SMS?** (Android) *No typing… messages from friends and family are never read, and nothing leaves your phone.* Opens the SMS reading.
 - 🛡 **What can't you live without?** *Family, chai, your pet? Tell me, and I'll never ask you to cut it.* Opens What matters most.
 - Each card also has a "none" answer (*I don't pay rent or fixed payments*, *No loans or EMIs*, *I'll type them myself*, *Skip this*), **Later** (that card comes back tomorrow, not in ten seconds; no other card that day) and **I'll explore myself** (no more cards).
 - Someone set up before (salary but no balance) gets *Let's finish the basics* first.
-- **The checklist** on Runway: *Getting started · 4 of 5*, a progress bar, a tick drawn for each step done; each step left is a link that brings its card back, even after *I'll explore myself*. When everything is done: *🎉 You're all set*, confetti once, and the checklist is gone the next day. *Hide the checklist* hides it earlier.
+- **The checklist** on Runway: *Getting started · 5 of 6*, a progress bar, a tick drawn for each step done; each step left is a link that brings its card back, even after *I'll explore myself*. When everything is done: *🎉 You're all set*, confetti once, and the checklist is gone the next day. *Hide the checklist* hides it earlier.
 - **Animations** (off with Android's *Remove animations*): the card slides up and settles, its emoji pops in, three typing dots before the line, the new limit rolls down, ticks draw themselves, the progress bar fills.
 - The old five-step form is gone; anyone part-way through it is finished by itself and gets the cards.
 - `scripts/setup-app.js` walks it in the real app.

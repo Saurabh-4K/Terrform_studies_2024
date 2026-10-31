@@ -7375,6 +7375,16 @@
         setupDone('loans', before);
         break;
       }
+      case 'setup-savings': {
+        const amount = Math.round(Number(obValue('su-fund')) || 0);
+        if (!(amount > 0)) { toast(tr('Enter what you have saved, or tap “Nothing saved yet”.')); return; }
+        const days = () => { const f = Core.freedomDays(state, t); return f ? f.days : 0; };
+        const before = days();
+        state.savings.emergencyBalance = amount;
+        setupDone('savings', null);
+        ui.setupWin = { key: 'savings', from: before, to: days() };
+        break;
+      }
       case 'setup-sms': ui.setupFocus = null; readNativeSms(false); return;
       case 'setup-protect': ui.setupFocus = null; openPage('plan', 'protect'); return;
       case 'setup-none': {
@@ -9106,6 +9116,7 @@
       { key: 'balance', label: 'Today’s bank balance', done: !!state.balanceCheck },
       { key: 'fixed', label: 'Rent and fixed payments', done: (state.fixed || []).length > 0 || !!none.fixed },
       { key: 'loans', label: 'Loans and EMIs', done: (state.debts || []).length > 0 || (state.cards || []).length > 0 || !!none.loans },
+      { key: 'savings', label: 'Emergency savings', done: Number(state.savings.emergencyBalance) > 0 || !!none.savings },
       { key: 'sms', label: 'Bank SMS read for you', done: !!state.smsAuto || !!state.smsReadUntil || state.transactions.some((t) => t.source === 'sms') || !!none.sms, hide: !SmsInbox },
       { key: 'protect', label: 'What matters most', done: Core.protectList(state).length > 0 || !!none.protect },
     ].filter((x) => !x.hide);
@@ -9117,6 +9128,13 @@
     if (!setupOn()) return '';
     const st = state.setup || {};
     const w = ui.setupWin;
+    if (w && w.key === 'savings') {
+      return '<section class="setup-card setup-win" aria-live="polite"><span class="setup-emoji">🛟</span>' +
+        '<b>' + tr(w.to > 0 ? 'Your Days of Freedom: how long you’d manage if the salary stopped.' : 'Started at 0. Every rupee saved adds to it.') + '</b>' +
+        '<div class="setup-roll"><span class="setup-from">' + w.from + '</span><span aria-hidden="true">→</span>' +
+        '<span class="setup-to" data-roll-unit="days" data-roll-from="' + w.from + '" data-roll-to="' + w.to + '">' + w.to + '</span><small>' + tr('days') + '</small></div>' +
+        '<div class="row"><button class="primary" data-action="setup-win-next">' + tr('Next') + '</button></div></section>';
+    }
     if (w) {
       const lower = w.to < w.from;
       return '<section class="setup-card setup-win" aria-live="polite"><span class="setup-emoji">🎯</span>' +
@@ -9155,6 +9173,11 @@
         num('su-left', tr('Left to pay (₹), roughly'), '120000') + num('su-rate', tr('Interest % a year'), '14') + '</div>' +
         '<p class="hint">' + tr('More loans or a credit card? Add them in Debts any time.') + '</p>' +
         '<div class="row"><button class="primary" data-action="setup-loan">' + tr('Add my EMI') + '</button></div>', 'No loans or EMIs');
+    }
+    if (step.key === 'savings') {
+      return card('🛟', tr('Mushkil waqt ke liye kuch bachaya hai?'), tr('Money you could use in an emergency: a savings account, an FD you can break, cash at home. With it I’ll show how many days you’d manage if the salary stopped.'),
+        '<div class="form-grid">' + num('su-fund', tr('Emergency savings (₹)'), '25000') + '</div>' +
+        '<div class="row"><button class="primary" data-action="setup-savings">' + tr('Add and show my Days of Freedom') + '</button></div>', 'Nothing saved yet');
     }
     if (step.key === 'sms') {
       return card('📩', tr('Shall I read your bank SMS?'), tr('No typing: every UPI and card payment gets added by itself. Messages from friends and family are never read, and nothing leaves your phone.'),
@@ -9198,7 +9221,8 @@
       const t0 = performance.now();
       const step = (now) => {
         const k = Math.min(1, (now - t0) / 1100);
-        el.textContent = inr(from + (to - from) * (1 - Math.pow(1 - k, 3)));
+        const v = from + (to - from) * (1 - Math.pow(1 - k, 3));
+        el.textContent = el.dataset.rollUnit === 'days' ? String(Math.round(v)) : inr(v);
         if (k < 1) requestAnimationFrame(step);
       };
       requestAnimationFrame(step);

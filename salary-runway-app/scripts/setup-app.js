@@ -55,13 +55,22 @@ const server = http.createServer((req, res) => {
   // Card 2: loans, answered "none"
   check('next card: EMIs, the guests who visit every month', /EMIs: the guests who visit every month/.test(await text('.setup-card')));
   await c('.setup-card [data-action=setup-none]');
-  // Card 3 (no SMS in a browser): what matters most, then "later"
+  // Card 3: emergency savings, with Days of Freedom rolling up from 0
+  check('next card: Mushkil waqt ke liye kuch bachaya hai?', /Mushkil waqt ke liye kuch bachaya hai\?/.test(await text('.setup-card')), await text('.setup-card'));
+  await page.fill('#su-fund', '20000'); await c('[data-action=setup-savings]');
+  d = await st();
+  const days = await page.evaluate(() => { const e = document.querySelector('.setup-to'); return e && { from: Number(e.dataset.rollFrom), to: Number(e.dataset.rollTo), unit: e.dataset.rollUnit }; });
+  check('savings added; Days of Freedom roll up from 0', d.savings.emergencyBalance === 20000 && days && days.unit === 'days' && days.from === 0 && days.to > 0, days);
+  await page.waitForTimeout(1400); await shot('2b-days-of-freedom', '.setup-card');
+  check('  and land on whole days', (await text('.setup-to')) === String(days.to), await text('.setup-to'));
+  await c('[data-action=setup-win-next]');
+  // Card 4 (no SMS in a browser): what matters most, then "later"
   check('next card: what can’t you live without?', /What can’t you live without\?/.test(await text('.setup-card')));
   await c('.setup-card [data-action=setup-later]');
   check('"Later": no card for the rest of today', !(await page.$('.setup-card')));
   await c('.setup-list-head');
   const list = await text('.setup-list');
-  check('checklist: 4 of 5, the one left is a link', /Getting started · 4 of 5/.test(list) && !!(await page.$('.setup-list [data-action=setup-step][data-key=protect]')), list);
+  check('checklist: 5 of 6, the one left is a link', /Getting started · 5 of 6/.test(list) && !!(await page.$('.setup-list [data-action=setup-step][data-key=protect]')), list);
   await page.waitForTimeout(900); await shot('3-checklist', '.setup-list');
   // Next day: back
   await day('2026-11-03'); await page.reload(); await page.waitForTimeout(600);
